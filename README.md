@@ -1,2 +1,2 @@
 # Sonoritiz
-plateforme de straming musicale
+plateforme de streaming musicale
