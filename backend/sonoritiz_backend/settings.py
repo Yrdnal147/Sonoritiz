@@ -82,7 +82,7 @@ ASGI_APPLICATION = 'sonoritiz_backend.asgi.application'
 # Database configuration
 DATABASE_URL = env('DATABASE_URL', default=None)
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 if DATABASE_URL:
     DATABASES = {
         'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
