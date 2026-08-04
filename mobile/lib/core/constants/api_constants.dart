@@ -2,17 +2,15 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 class ApiConstants {
-  // Base URLs (Support Android Emulator 10.0.2.2, iOS / Web 127.0.0.1)
+  // Base URLs
   static String get baseUrl {
-    if (kIsWeb) return 'http://127.0.0.1:8000';
-    if (Platform.isAndroid) return 'http://192.168.1.171:8000'; // IP locale pour appareil physique
-    return 'http://127.0.0.1:8000';
+    return 'https://sonoritiz-7t36ueq80-yrdnal147s-projects.vercel.app';
   }
 
   static String get wsBaseUrl {
-    if (kIsWeb) return 'ws://127.0.0.1:8000';
-    if (Platform.isAndroid) return 'ws://192.168.1.171:8000'; // IP locale pour appareil physique
-    return 'ws://127.0.0.1:8000';
+    // Vercel ne supporte pas les websockets, donc on utilise wss par défaut
+    // (cela fonctionnera si on passe sur Render plus tard)
+    return 'wss://sonoritiz-7t36ueq80-yrdnal147s-projects.vercel.app';
   }
 
   // Endpoints Auth
