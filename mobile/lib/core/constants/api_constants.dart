@@ -4,13 +4,13 @@ import 'package:flutter/foundation.dart';
 class ApiConstants {
   // Base URLs
   static String get baseUrl {
-    return 'https://sonoritiz-7t36ueq80-yrdnal147s-projects.vercel.app';
+    return 'https://sonoritiz.vercel.app';
   }
 
   static String get wsBaseUrl {
     // Vercel ne supporte pas les websockets, donc on utilise wss par défaut
     // (cela fonctionnera si on passe sur Render plus tard)
-    return 'wss://sonoritiz-7t36ueq80-yrdnal147s-projects.vercel.app';
+    return 'wss://sonoritiz.vercel.app';
   }
 
   // Endpoints Auth
