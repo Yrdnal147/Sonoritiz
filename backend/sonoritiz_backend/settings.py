@@ -17,11 +17,11 @@ env = environ.Env(
 
 environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 
-SECRET_KEY = env('SECRET_KEY')
+SECRET_KEY = env('SECRET_KEY', default='django-insecure-fallback-key-for-vercel')
 DEBUG = env('DEBUG')
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS')
 
-JAMENDO_CLIENT_ID = env('JAMENDO_CLIENT_ID')
+JAMENDO_CLIENT_ID = env('JAMENDO_CLIENT_ID', default='default-client-id')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -81,6 +81,8 @@ ASGI_APPLICATION = 'sonoritiz_backend.asgi.application'
 
 # Database configuration
 DATABASE_URL = env('DATABASE_URL', default=None)
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = True
 if DATABASE_URL:
     DATABASES = {
         'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
