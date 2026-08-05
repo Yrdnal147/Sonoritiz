@@ -33,7 +33,7 @@ class PlaylistSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Playlist
-        fields = ('id', 'name', 'cover_url', 'created_at', 'updated_at', 'tracks_count', 'tracks')
+        fields = ('id', 'name', 'cover_url', 'is_pinned', 'created_at', 'updated_at', 'tracks_count', 'tracks')
         read_only_fields = ('id', 'created_at', 'updated_at')
 
     def get_tracks_count(self, obj):
@@ -42,7 +42,7 @@ class PlaylistSerializer(serializers.ModelSerializer):
 class PlaylistCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Playlist
-        fields = ('name', 'cover_url')
+        fields = ('name', 'cover_url', 'is_pinned')
 
 class PlaylistTrackAddSerializer(serializers.Serializer):
     youtube_id = serializers.CharField()

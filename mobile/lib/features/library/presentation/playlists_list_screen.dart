@@ -45,6 +45,83 @@ class PlaylistsListScreen extends StatelessWidget {
     );
   }
 
+  void _showPlaylistContextMenu(BuildContext context, PlaylistModel playlist) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (bottomSheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 16),
+              Text(playlist.name, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+              Text("${playlist.tracksCount} titres", style: const TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+              const SizedBox(height: 8),
+              const Divider(color: AppColors.surfaceLight),
+              ListTile(
+                leading: const Icon(Icons.edit, color: Colors.white),
+                title: const Text("Modifier", style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(bottomSheetContext);
+                  // Modifier logiq later
+                },
+              ),
+              ListTile(
+                leading: Icon(playlist.isPinned ? Icons.push_pin_outlined : Icons.push_pin, color: Colors.white),
+                title: Text(playlist.isPinned ? "Désépingler" : "Épingler", style: const TextStyle(color: Colors.white)),
+                onTap: () {
+                  context.read<LibraryCubit>().togglePinPlaylist(playlist.id, playlist.isPinned);
+                  Navigator.pop(bottomSheetContext);
+                },
+              ),
+              const ListTile(
+                leading: Icon(Icons.sensors, color: AppColors.textSecondary),
+                title: Text("Connecter (Bientôt disponible)", style: TextStyle(color: AppColors.textSecondary)),
+                onTap: null, // Désactivé
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete, color: AppColors.error),
+                title: const Text("Supprimer", style: TextStyle(color: AppColors.error)),
+                onTap: () {
+                  Navigator.pop(bottomSheetContext);
+                  _confirmDelete(context, playlist);
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _confirmDelete(BuildContext context, PlaylistModel playlist) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text("Supprimer ?", style: TextStyle(color: Colors.white)),
+        content: Text("Veux-tu vraiment supprimer la playlist '${playlist.name}' ?", style: const TextStyle(color: AppColors.textSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Annuler", style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              context.read<LibraryCubit>().deletePlaylist(playlist.id);
+              Navigator.pop(ctx);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            child: const Text("Supprimer"),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -93,6 +170,7 @@ class PlaylistsListScreen extends StatelessWidget {
                       ),
                     );
                   },
+                  onLongPress: () => _showPlaylistContextMenu(context, playlist),
                   child: Container(
                   decoration: BoxDecoration(
                     color: AppColors.surface,
@@ -102,14 +180,25 @@ class PlaylistsListScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: ClipRRect(
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
-                          child: playlist.coverUrl.isNotEmpty
-                              ? CachedNetworkImage(imageUrl: playlist.coverUrl, width: double.infinity, fit: BoxFit.cover)
-                              : Container(
-                                  color: AppColors.surfaceLight,
-                                  child: const Center(child: Icon(Icons.playlist_play, size: 48, color: Colors.white54)),
-                                ),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            ClipRRect(
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                              child: playlist.coverUrl.isNotEmpty
+                                  ? CachedNetworkImage(imageUrl: playlist.coverUrl, width: double.infinity, fit: BoxFit.cover)
+                                  : Container(
+                                      color: AppColors.surfaceLight,
+                                      child: const Center(child: Icon(Icons.playlist_play, size: 48, color: Colors.white54)),
+                                    ),
+                            ),
+                            if (playlist.isPinned)
+                              const Positioned(
+                                top: 8,
+                                right: 8,
+                                child: Icon(Icons.push_pin, color: AppColors.primary, size: 20),
+                              ),
+                          ],
                         ),
                       ),
                       Padding(

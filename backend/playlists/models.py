@@ -5,6 +5,7 @@ class Playlist(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='playlists')
     name = models.CharField(max_length=255)
     cover_url = models.URLField(max_length=500, blank=True, default='')
+    is_pinned = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -13,6 +13,14 @@ class LibraryCubit extends Cubit<LibraryState> {
     try {
       final favorites = await repository.getFavorites();
       final playlists = await repository.getPlaylists();
+      
+      // Sort playlists: pinned first, then by ID (newest usually have higher ID, or we just leave original order)
+      playlists.sort((a, b) {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        return 0; // Keep original order for others
+      });
+
       final history = await repository.getHistory();
 
       emit(LibraryLoaded(
@@ -29,6 +37,20 @@ class LibraryCubit extends Cubit<LibraryState> {
   Future<void> createPlaylist(String name) async {
     try {
       await repository.createPlaylist(name);
+      await loadLibraryData();
+    } catch (_) {}
+  }
+
+  Future<void> deletePlaylist(int playlistId) async {
+    try {
+      await repository.deletePlaylist(playlistId);
+      await loadLibraryData();
+    } catch (_) {}
+  }
+
+  Future<void> togglePinPlaylist(int playlistId, bool currentPinState) async {
+    try {
+      await repository.updatePlaylist(playlistId, isPinned: !currentPinState);
       await loadLibraryData();
     } catch (_) {}
   }

@@ -7,6 +7,7 @@ class PlaylistModel {
   final String name;
   final String coverUrl;
   final int tracksCount;
+  final bool isPinned;
   final List<TrackModel> tracks;
 
   PlaylistModel({
@@ -14,6 +15,7 @@ class PlaylistModel {
     required this.name,
     this.coverUrl = '',
     this.tracksCount = 0,
+    this.isPinned = false,
     this.tracks = const [],
   });
 
@@ -32,6 +34,7 @@ class PlaylistModel {
       name: json['name'] ?? 'Ma Playlist',
       coverUrl: json['cover_url'] ?? '',
       tracksCount: json['tracks_count'] ?? trackList.length,
+      isPinned: json['is_pinned'] ?? false,
       tracks: trackList,
     );
   }
@@ -120,6 +123,16 @@ class LibraryRepository {
 
   Future<void> deletePlaylist(int playlistId) async {
     await apiClient.delete('${ApiConstants.playlists}$playlistId/');
+  }
+
+  Future<PlaylistModel> updatePlaylist(int playlistId, {String? name, String? coverUrl, bool? isPinned}) async {
+    final Map<String, dynamic> data = {};
+    if (name != null) data['name'] = name;
+    if (coverUrl != null) data['cover_url'] = coverUrl;
+    if (isPinned != null) data['is_pinned'] = isPinned;
+    
+    final response = await apiClient.patch('${ApiConstants.playlists}$playlistId/', data: data);
+    return PlaylistModel.fromJson(response.data);
   }
 
   Future<void> addTrackToPlaylist(int playlistId, TrackModel track) async {
