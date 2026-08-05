@@ -80,20 +80,13 @@ WSGI_APPLICATION = 'sonoritiz_backend.wsgi.application'
 ASGI_APPLICATION = 'sonoritiz_backend.asgi.application'
 
 # Database configuration
-DATABASE_URL = env('DATABASE_URL', default=None)
+DATABASE_URL = env('DATABASE_URL', default='postgresql://postgres.wynhitxsnpxkkyxthfbw:paWWhokmaD30bsq4@aws-0-eu-west-1.pooler.supabase.com:6543/postgres')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
-if DATABASE_URL:
-    DATABASES = {
-        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
-    }
-else:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
+
+DATABASES = {
+    'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+}
 
 AUTH_USER_MODEL = 'accounts.User'
 
