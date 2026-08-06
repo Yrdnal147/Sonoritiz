@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -66,7 +67,7 @@ class _HomeScreenBody extends StatelessWidget {
                           _buildSectionHeader("Tendances", onSeeAll: () => context.go('/search'))
                               .animate().fadeIn().slideX(begin: -0.1),
                           const SizedBox(height: 16),
-                          _buildTrendingGrid(context, state.trendingTracks)
+                          _buildTrendingCarousel(context, state.trendingTracks)
                               .animate().fadeIn(delay: 100.ms).slideY(begin: 0.1),
                           
                           const SizedBox(height: 40),
@@ -230,50 +231,115 @@ class _HomeScreenBody extends StatelessWidget {
     );
   }
 
-  Widget _buildTrendingGrid(BuildContext context, List<TrackModel> tracks) {
+  Widget _buildTrendingCarousel(BuildContext context, List<TrackModel> tracks) {
     if (tracks.isEmpty) return const SizedBox();
-    final displayTracks = tracks.take(6).toList(); // Show max 6 in the grid
+    
+    // PageController allows us to show a peek of the previous/next cards
+    final PageController pageController = PageController(viewportFraction: 0.85);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20.0),
-      child: GridView.builder(
-        padding: EdgeInsets.zero,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: ResponsiveUtils.getGridCrossAxisCount(context),
-          childAspectRatio: 2.8,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        itemCount: displayTracks.length,
+    return SizedBox(
+      height: 240,
+      child: PageView.builder(
+        controller: pageController,
+        physics: const BouncingScrollPhysics(),
+        itemCount: tracks.length > 8 ? 8 : tracks.length,
         itemBuilder: (context, index) {
-          final track = displayTracks[index];
-          return GestureDetector(
-            onTap: () => context.read<PlayerCubit>().playTrack(track, queue: tracks),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Row(
-                children: [
-                  track.coverUrl.isNotEmpty
-                      ? CachedNetworkImage(imageUrl: track.coverUrl, width: 56, height: 56, fit: BoxFit.cover)
-                      : Container(width: 56, height: 56, color: Colors.white12, child: const Icon(Icons.music_note_rounded, color: Colors.white38)),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                      child: Text(
-                        track.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13, height: 1.2),
+          final track = tracks[index];
+          return AnimatedBuilder(
+            animation: pageController,
+            builder: (context, child) {
+              double value = 1.0;
+              if (pageController.position.haveDimensions) {
+                value = pageController.page! - index;
+                value = (1 - (value.abs() * 0.2)).clamp(0.8, 1.0);
+              }
+              return Center(
+                child: SizedBox(
+                  height: Curves.easeOut.transform(value) * 240,
+                  width: Curves.easeOut.transform(value) * 400,
+                  child: child,
+                ),
+              );
+            },
+            child: GestureDetector(
+              onTap: () => context.read<PlayerCubit>().playTrack(track, queue: tracks),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 15, offset: const Offset(0, 8)),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Background Image
+                      track.coverUrl.isNotEmpty
+                          ? CachedNetworkImage(imageUrl: track.coverUrl, fit: BoxFit.cover)
+                          : Container(color: AppColors.surface),
+                      
+                      // Dark Overlay for text readability
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Colors.transparent, Colors.black.withOpacity(0.8)],
+                          ),
+                        ),
                       ),
-                    ),
+                      
+                      // Glassmorphism bottom bar
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        child: ClipRRect(
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              color: Colors.white.withOpacity(0.1),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          track.title,
+                                          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          track.artistName,
+                                          style: const TextStyle(color: Colors.white70, fontSize: 13),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const CircleAvatar(
+                                    backgroundColor: AppColors.primary,
+                                    radius: 20,
+                                    child: Icon(Icons.play_arrow_rounded, color: Colors.white),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           );
@@ -281,6 +347,7 @@ class _HomeScreenBody extends StatelessWidget {
       ),
     );
   }
+
 
   Widget _buildTrackCarousel(BuildContext context, List<TrackModel> tracks) {
     if (tracks.isEmpty) return const SizedBox();
