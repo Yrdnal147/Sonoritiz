@@ -198,7 +198,7 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
                         ).animate().fadeIn(),
                       ),
                     ),
-                    if (uiState.viewMode == ViewMode.list)
+                    if (uiState.getViewModeFor('local') == ViewMode.list)
                       SliverList(
                         delegate: SliverChildBuilderDelegate(
                           (context, index) => _buildListItem(context, _localTracks[index], index),
@@ -209,8 +209,8 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
                       // Let's use TrackGridView for grids
                       TrackGridView(
                         tracks: _localTracks,
-                        viewMode: uiState.viewMode,
-                        sortMode: uiState.sortMode,
+                        viewMode: uiState.getViewModeFor('local'),
+                        sortMode: uiState.getSortModeFor('local'),
                       ),
                     const SliverToBoxAdapter(child: SizedBox(height: 100)),
                   ],

@@ -109,8 +109,8 @@ class DownloadsScreen extends StatelessWidget {
                   };
                   return TrackGridView(
                     tracks: offlineTracks.map((e) => e.track).toList(),
-                    viewMode: uiState.viewMode,
-                    sortMode: uiState.sortMode,
+                    viewMode: uiState.getViewModeFor('downloads'),
+                    sortMode: uiState.getSortModeFor('downloads'),
                     localCoverPaths: localCoverPaths,
                   );
                 },

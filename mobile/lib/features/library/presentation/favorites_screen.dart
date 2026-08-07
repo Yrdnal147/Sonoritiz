@@ -91,8 +91,8 @@ class FavoritesScreen extends StatelessWidget {
               ),
               TrackGridView(
                 tracks: favorites,
-                viewMode: uiState.viewMode,
-                sortMode: uiState.sortMode,
+                viewMode: uiState.getViewModeFor('favorites'),
+                sortMode: uiState.getSortModeFor('favorites'),
               ),
               const SliverToBoxAdapter(child: SizedBox(height: 100)),
             ],

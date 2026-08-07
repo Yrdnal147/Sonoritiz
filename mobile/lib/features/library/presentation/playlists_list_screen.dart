@@ -151,7 +151,9 @@ class PlaylistsListScreen extends StatelessWidget {
               builder: (context, uiState) {
                 // Tri des playlists
                 List<PlaylistModel> sortedPlaylists = List.from(playlists);
-                if (uiState.sortMode == SortMode.alpha) {
+                final currentSortMode = uiState.getSortModeFor('playlists');
+                
+                if (currentSortMode == SortMode.alpha) {
                   sortedPlaylists.sort((a, b) {
                     if (a.isPinned && !b.isPinned) return -1;
                     if (!a.isPinned && b.isPinned) return 1;
@@ -166,7 +168,8 @@ class PlaylistsListScreen extends StatelessWidget {
                   });
                 }
 
-                if (uiState.viewMode == ViewMode.list) {
+                final currentViewMode = uiState.getViewModeFor('playlists');
+                if (currentViewMode == ViewMode.list) {
                   return CustomScrollView(
                     physics: const BouncingScrollPhysics(),
                     slivers: [
@@ -183,7 +186,7 @@ class PlaylistsListScreen extends StatelessWidget {
 
                 int crossAxisCount;
                 double childAspectRatio;
-                switch (uiState.viewMode) {
+                switch (currentViewMode) {
                   case ViewMode.gridSmall:
                     crossAxisCount = 3;
                     childAspectRatio = 0.75;

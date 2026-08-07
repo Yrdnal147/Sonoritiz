@@ -65,21 +65,21 @@ class StorageService {
     await _prefs.remove(_keySearchHistory);
   }
 
-  // Library UI Preferences
-  String getViewMode() {
-    return _prefs.getString(_keyViewMode) ?? 'list';
+  // --- LIBRARY UI PREFERENCES ---
+  String getViewMode(String tabId) {
+    return _prefs.getString('${_keyViewMode}_$tabId') ?? 'list';
   }
 
-  Future<void> saveViewMode(String mode) async {
-    await _prefs.setString(_keyViewMode, mode);
+  Future<void> saveViewMode(String tabId, String mode) async {
+    await _prefs.setString('${_keyViewMode}_$tabId', mode);
   }
 
-  String getSortMode() {
-    return _prefs.getString(_keySortMode) ?? 'alpha';
+  String getSortMode(String tabId) {
+    return _prefs.getString('${_keySortMode}_$tabId') ?? 'alpha';
   }
 
-  Future<void> saveSortMode(String mode) async {
-    await _prefs.setString(_keySortMode, mode);
+  Future<void> saveSortMode(String tabId, String mode) async {
+    await _prefs.setString('${_keySortMode}_$tabId', mode);
   }
 
   // Local Audio Files
