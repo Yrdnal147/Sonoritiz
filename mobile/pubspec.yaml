@@ -44,6 +44,8 @@ dependencies:
   path_provider: ^2.1.6
   share_plus: ^10.0.0
   file_picker: ^8.0.7
+  on_audio_query: ^2.9.0
+  flutter_media_metadata: ^1.0.0+1
 
 dev_dependencies:
   flutter_test:

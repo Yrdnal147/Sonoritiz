@@ -7,8 +7,9 @@ import '../../../core/storage/storage_service.dart';
 import '../../../core/widgets/track_grid_view.dart';
 import '../../player/data/models/track_model.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
-import 'cubit/library_ui_cubit.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_media_metadata/flutter_media_metadata.dart';
+import 'package:path_provider/path_provider.dart';
 
 class LocalAudioScreen extends StatefulWidget {
   final StorageService storageService;
@@ -22,13 +23,22 @@ class LocalAudioScreen extends StatefulWidget {
 class _LocalAudioScreenState extends State<LocalAudioScreen> {
   List<TrackModel> _localTracks = [];
 
+  String? _docDirPath;
+
   @override
   void initState() {
     super.initState();
+    _initAndLoad();
+  }
+
+  Future<void> _initAndLoad() async {
+    final dir = await getApplicationDocumentsDirectory();
+    _docDirPath = dir.path;
     _loadLocalTracks();
   }
 
   void _loadLocalTracks() {
+    if (_docDirPath == null) return;
     final paths = widget.storageService.getLocalFiles();
     final List<TrackModel> tracks = [];
     
@@ -63,11 +73,19 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
       }
     }
     
+    String coverUrl = "";
+    if (_docDirPath != null) {
+      final possibleCoverPath = "$_docDirPath/cover_${path.hashCode}.jpg";
+      if (File(possibleCoverPath).existsSync()) {
+        coverUrl = "file://$possibleCoverPath";
+      }
+    }
+
     return TrackModel(
       id: id,
       title: title,
       artistName: artist,
-      coverUrl: "", // Local files usually don't have a simple URL cover
+      coverUrl: coverUrl,
       audioUrl: "file://$path", // Prefix with file:// for just_audio
       durationSeconds: 0, // Duration will be extracted by just_audio
     );
@@ -93,6 +111,31 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
         
         if (addedNew) {
           await widget.storageService.saveLocalFiles(currentPaths);
+          
+          // Show a temporary loading indicator
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Extraction des pochettes en cours...")));
+          }
+          
+          // Extract covers for all new files
+          for (var file in result.files) {
+            if (file.path != null) {
+              try {
+                final metadata = await MetadataRetriever.fromFile(File(file.path!));
+                final albumArt = metadata.albumArt;
+                if (albumArt != null && albumArt.isNotEmpty && _docDirPath != null) {
+                  final coverPath = '$_docDirPath/cover_${file.path!.hashCode}.jpg';
+                  final coverFile = File(coverPath);
+                  if (!coverFile.existsSync()) {
+                    await coverFile.writeAsBytes(albumArt);
+                  }
+                }
+              } catch (e) {
+                debugPrint("Failed to extract cover for ${file.path}: $e");
+              }
+            }
+          }
+          
           _loadLocalTracks();
         }
       }
@@ -223,14 +266,27 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
   Widget _buildListItem(BuildContext context, TrackModel track, int index) {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      leading: Container(
-        width: 50,
-        height: 50,
-        decoration: BoxDecoration(
-          color: AppColors.surfaceLight,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Icon(Icons.music_note, color: AppColors.textSecondary),
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: track.coverUrl.isNotEmpty && track.coverUrl.startsWith('file://')
+            ? Image.file(
+                File(track.coverUrl.replaceFirst('file://', '')),
+                width: 50,
+                height: 50,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  width: 50,
+                  height: 50,
+                  color: AppColors.surfaceLight,
+                  child: const Icon(Icons.music_note, color: AppColors.textSecondary),
+                ),
+              )
+            : Container(
+                width: 50,
+                height: 50,
+                color: AppColors.surfaceLight,
+                child: const Icon(Icons.music_note, color: AppColors.textSecondary),
+              ),
       ),
       title: Text(track.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(track.artistName, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),

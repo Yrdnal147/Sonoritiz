@@ -86,6 +86,16 @@ class TrackGridView extends StatelessWidget {
   Widget _buildCover(TrackModel track, double size, {double borderRadius = 8}) {
     final localPath = localCoverPaths?[track.id];
     
+    if (track.coverUrl.startsWith("file://")) {
+      final file = File(track.coverUrl.replaceFirst("file://", ""));
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: file.existsSync()
+            ? Image.file(file, width: size, height: size, fit: BoxFit.cover)
+            : _buildPlaceholder(size),
+      );
+    }
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: localPath != null && localPath.isNotEmpty && File(localPath).existsSync()

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
@@ -134,9 +135,19 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
     if (_lastCoverUrl == coverUrl) return;
     _lastCoverUrl = coverUrl;
     try {
-      final palette = await PaletteGenerator.fromImageProvider(
-        CachedNetworkImageProvider(coverUrl),
-      );
+      ImageProvider imageProvider;
+      if (coverUrl.startsWith("file://")) {
+        final path = coverUrl.replaceFirst("file://", "");
+        if (File(path).existsSync()) {
+          imageProvider = FileImage(File(path));
+        } else {
+          return;
+        }
+      } else {
+        imageProvider = CachedNetworkImageProvider(coverUrl);
+      }
+      
+      final palette = await PaletteGenerator.fromImageProvider(imageProvider);
       if (mounted) {
         setState(() {
           _dominantColor = palette.dominantColor?.color ?? palette.vibrantColor?.color;
@@ -448,14 +459,23 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                                             child: ClipRRect(
                                               borderRadius: BorderRadius.circular(24),
                                               child: track.coverUrl.isNotEmpty
-                                                  ? CachedNetworkImage(
-                                                      imageUrl: track.coverUrl,
-                                                      fit: BoxFit.cover,
-                                                      errorWidget: (context, url, error) => Container(
-                                                        color: AppColors.surfaceLight,
-                                                        child: const Center(child: Icon(Icons.music_note, color: Colors.white54, size: 64)),
-                                                      ),
-                                                    )
+                                                  ? (track.coverUrl.startsWith("file://")
+                                                      ? Image.file(
+                                                          File(track.coverUrl.replaceFirst("file://", "")),
+                                                          fit: BoxFit.cover,
+                                                          errorBuilder: (context, error, stackTrace) => Container(
+                                                            color: AppColors.surfaceLight,
+                                                            child: const Center(child: Icon(Icons.music_note, color: Colors.white54, size: 64)),
+                                                          ),
+                                                        )
+                                                      : CachedNetworkImage(
+                                                          imageUrl: track.coverUrl,
+                                                          fit: BoxFit.cover,
+                                                          errorWidget: (context, url, error) => Container(
+                                                            color: AppColors.surfaceLight,
+                                                            child: const Center(child: Icon(Icons.music_note, color: Colors.white54, size: 64)),
+                                                          ),
+                                                        ))
                                                   : Container(
                                                       color: AppColors.surfaceLight,
                                                       child: const Center(child: Icon(Icons.music_note, color: Colors.white54, size: 64)),

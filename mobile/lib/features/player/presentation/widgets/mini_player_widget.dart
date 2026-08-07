@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -107,10 +108,12 @@ class MiniPlayerWidget extends StatelessWidget {
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(10),
                                   child: track.coverUrl.isNotEmpty
-                                      ? CachedNetworkImage(
-                                          imageUrl: track.coverUrl,
-                                          fit: BoxFit.cover,
-                                        )
+                                      ? (track.coverUrl.startsWith('file://')
+                                          ? Image.file(File(track.coverUrl.replaceFirst('file://', '')), fit: BoxFit.cover)
+                                          : CachedNetworkImage(
+                                              imageUrl: track.coverUrl,
+                                              fit: BoxFit.cover,
+                                            ))
                                       : Container(color: AppColors.surfaceLight, child: const Icon(Icons.music_note, color: Colors.white54)),
                                 ),
                               ),
