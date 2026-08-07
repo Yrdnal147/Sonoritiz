@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/theme/app_colors.dart';
 import '../data/repositories/library_repository.dart';
 import 'cubit/library_cubit.dart';
@@ -100,21 +99,21 @@ class PlaylistsListScreen extends StatelessWidget {
   void _confirmDelete(BuildContext context, PlaylistModel playlist) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: const Text("Supprimer ?", style: TextStyle(color: Colors.white)),
+        title: const Text("Supprimer", style: TextStyle(color: Colors.white)),
         content: Text("Veux-tu vraiment supprimer la playlist '${playlist.name}' ?", style: const TextStyle(color: AppColors.textSecondary)),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text("Annuler", style: TextStyle(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () {
               context.read<LibraryCubit>().deletePlaylist(playlist.id);
-              Navigator.pop(ctx);
+              Navigator.pop(dialogContext);
             },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
             child: const Text("Supprimer"),
           ),
         ],
@@ -125,7 +124,7 @@ class PlaylistsListScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.transparent, // Inherits from LibraryScreen
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showCreatePlaylistDialog(context),
         backgroundColor: AppColors.primary,
@@ -149,79 +148,79 @@ class PlaylistsListScreen extends StatelessWidget {
               ),
             )
           : BlocBuilder<LibraryUiCubit, LibraryUiState>(
-        builder: (context, uiState) {
-          // Tri des playlists
-          List<PlaylistModel> sortedPlaylists = List.from(playlists);
-          if (uiState.sortMode == SortMode.alpha) {
-            sortedPlaylists.sort((a, b) {
-              if (a.isPinned && !b.isPinned) return -1;
-              if (!a.isPinned && b.isPinned) return 1;
-              return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-            });
-          } else {
-            // "Recent" means keep original ID-based or DB order, but pinned first
-            sortedPlaylists.sort((a, b) {
-              if (a.isPinned && !b.isPinned) return -1;
-              if (!a.isPinned && b.isPinned) return 1;
-              return b.id.compareTo(a.id); // Assuming higher ID = newer
-            });
-          }
+              builder: (context, uiState) {
+                // Tri des playlists
+                List<PlaylistModel> sortedPlaylists = List.from(playlists);
+                if (uiState.sortMode == SortMode.alpha) {
+                  sortedPlaylists.sort((a, b) {
+                    if (a.isPinned && !b.isPinned) return -1;
+                    if (!a.isPinned && b.isPinned) return 1;
+                    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+                  });
+                } else {
+                  // "Recent" means keep original ID-based or DB order, but pinned first
+                  sortedPlaylists.sort((a, b) {
+                    if (a.isPinned && !b.isPinned) return -1;
+                    if (!a.isPinned && b.isPinned) return 1;
+                    return b.id.compareTo(a.id); // Assuming higher ID = newer
+                  });
+                }
 
-          if (uiState.viewMode == ViewMode.list) {
-            return CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => _buildListItem(context, sortedPlaylists[index]),
-                    childCount: sortedPlaylists.length,
-                  ),
-                ),
-                const SliverToBoxAdapter(child: SizedBox(height: 100)),
-              ],
-            );
-          }
+                if (uiState.viewMode == ViewMode.list) {
+                  return CustomScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    slivers: [
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) => _buildListItem(context, sortedPlaylists[index]),
+                          childCount: sortedPlaylists.length,
+                        ),
+                      ),
+                      const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                    ],
+                  );
+                }
 
-          int crossAxisCount;
-          double childAspectRatio;
-          switch (uiState.viewMode) {
-            case ViewMode.gridSmall:
-              crossAxisCount = 3;
-              childAspectRatio = 0.75;
-              break;
-            case ViewMode.gridLarge:
-              crossAxisCount = 1;
-              childAspectRatio = 1.0;
-              break;
-            case ViewMode.gridMedium:
-            default:
-              crossAxisCount = 2;
-              childAspectRatio = 0.8;
-          }
+                int crossAxisCount;
+                double childAspectRatio;
+                switch (uiState.viewMode) {
+                  case ViewMode.gridSmall:
+                    crossAxisCount = 3;
+                    childAspectRatio = 0.75;
+                    break;
+                  case ViewMode.gridLarge:
+                    crossAxisCount = 1;
+                    childAspectRatio = 1.0;
+                    break;
+                  case ViewMode.gridMedium:
+                  default:
+                    crossAxisCount = 2;
+                    childAspectRatio = 0.8;
+                }
 
-          return CustomScrollView(
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              SliverPadding(
-                padding: const EdgeInsets.all(16.0),
-                sliver: SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: crossAxisCount,
-                    childAspectRatio: childAspectRatio,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => _buildGridItem(context, sortedPlaylists[index], uiState.viewMode),
-                    childCount: sortedPlaylists.length,
-                  ),
-                ),
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: 100)),
-            ],
-          );
-        },
-      ),
+                return CustomScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  slivers: [
+                    SliverPadding(
+                      padding: const EdgeInsets.all(16.0),
+                      sliver: SliverGrid(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: crossAxisCount,
+                          childAspectRatio: childAspectRatio,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) => _buildGridItem(context, sortedPlaylists[index], uiState.viewMode),
+                          childCount: sortedPlaylists.length,
+                        ),
+                      ),
+                    ),
+                    const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                  ],
+                );
+              },
+            ),
     );
   }
 
@@ -318,6 +317,25 @@ class PlaylistsListScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.all(12.0),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    playlist.name,
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: mode == ViewMode.gridSmall ? 12 : 15),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "${playlist.tracksCount} titres",
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: mode == ViewMode.gridSmall ? 10 : 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
