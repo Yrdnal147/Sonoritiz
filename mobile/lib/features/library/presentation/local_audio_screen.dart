@@ -239,6 +239,6 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
         onPressed: () => _showRemoveDialog(track),
       ),
       onTap: () => context.read<PlayerCubit>().playTrack(track, queue: _localTracks),
-    ).animate().fadeIn(delay: Duration(milliseconds: 30 * index));
+    );
   }
 }

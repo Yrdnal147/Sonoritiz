@@ -122,7 +122,7 @@ class TrackGridView extends StatelessWidget {
         onPressed: () => TrackContextMenu.show(context, track),
       ),
       onTap: () => context.read<PlayerCubit>().playTrack(track, queue: queue),
-    ).animate().fadeIn(delay: Duration(milliseconds: 20 * index));
+    );
   }
 
   Widget _buildGridItem(BuildContext context, TrackModel track, List<TrackModel> queue, int index, ViewMode mode) {
@@ -164,7 +164,7 @@ class TrackGridView extends StatelessWidget {
             ),
           ],
         ),
-      ).animate().fadeIn(delay: Duration(milliseconds: 20 * index)).scale(begin: const Offset(0.9, 0.9)),
+      ),
     );
   }
 }
