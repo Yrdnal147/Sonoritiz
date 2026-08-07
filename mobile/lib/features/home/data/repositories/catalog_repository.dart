@@ -8,7 +8,7 @@ class CatalogRepository {
 
   CatalogRepository({required this.apiClient});
 
-  Future<List<TrackModel>> getTrendingTracks({int limit = 20, int offset = 0}) async {
+  Future<List<TrackModel>> getTrendingTracks({int limit = 50, int offset = 0}) async {
     try {
       final searchResults = await yt.search.search('top hits 2026 musique officielle');
       final videos = searchResults.whereType<Video>().take(limit).toList();
@@ -20,7 +20,7 @@ class CatalogRepository {
     }
   }
 
-  Future<List<TrackModel>> searchTracks({String query = '', String genre = '', int limit = 20, int offset = 0}) async {
+  Future<List<TrackModel>> searchTracks({String query = '', String genre = '', int limit = 50, int offset = 0}) async {
     try {
       final searchQuery = genre.isNotEmpty ? '$query $genre official music' : '$query official music';
       final searchResults = await yt.search.search(searchQuery);

@@ -6,6 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../player/data/models/track_model.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
 import '../../../core/utils/responsive_utils.dart';
+import '../../../core/widgets/track_context_menu.dart';
 import 'cubit/search_cubit.dart';
 import 'cubit/search_state.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -323,7 +324,7 @@ class _SearchScreenState extends State<SearchScreen> {
       trailing: IconButton(
         icon: const Icon(Icons.more_vert, color: Colors.white54),
         onPressed: () {
-          // Future: Open context menu (add to playlist, like, etc)
+          TrackContextMenu.show(context, track);
         },
       ),
       onTap: () {

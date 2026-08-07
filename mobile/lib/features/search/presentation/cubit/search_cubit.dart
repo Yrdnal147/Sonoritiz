@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/storage/storage_service.dart';
-import '../../home/data/repositories/catalog_repository.dart';
+import '../../../home/data/repositories/catalog_repository.dart' show CatalogRepository;
 import 'search_state.dart';
 
 class SearchCubit extends Cubit<SearchState> {
