@@ -4,6 +4,9 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/storage/storage_service.dart';
 import '../../../core/constants/api_constants.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../library/presentation/cubit/library_cubit.dart';
+import '../../offline/presentation/cubit/download_cubit.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({Key? key}) : super(key: key);
@@ -79,7 +82,11 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
             refreshToken: tokens['refresh'] ?? '',
           );
           await storageService.saveUserInfo(username: username, email: email);
-          if (mounted) context.go('/home');
+          if (mounted) {
+            context.read<LibraryCubit>().loadLibraryData();
+            context.read<DownloadCubit>().loadDownloads();
+            context.go('/home');
+          }
         } else {
           // Registration succeeded, redirect to login
           if (mounted) {

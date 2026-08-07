@@ -79,9 +79,9 @@ TEMPLATES = [
 WSGI_APPLICATION = 'sonoritiz_backend.wsgi.application'
 ASGI_APPLICATION = 'sonoritiz_backend.asgi.application'
 
-# Database configuration
+#  configuration de base de données pour PostgreSQL avec dj_database_url
 DATABASE_URL = env('DATABASE_URL', default='postgresql://postgres.wynhitxsnpxkkyxthfbw:paWWhokmaD30bsq4@aws-0-eu-west-1.pooler.supabase.com:6543/postgres')
-# SECURITY WARNING: don't run with debug turned on in production!
+
 DEBUG = False
 
 DATABASES = {

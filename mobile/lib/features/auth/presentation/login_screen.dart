@@ -4,6 +4,9 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/storage/storage_service.dart';
 import '../../../core/constants/api_constants.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../library/presentation/cubit/library_cubit.dart';
+import '../../offline/presentation/cubit/download_cubit.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -75,7 +78,11 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           );
         }
 
-        if (mounted) context.go('/home');
+        if (mounted) {
+          context.read<LibraryCubit>().loadLibraryData();
+          context.read<DownloadCubit>().loadDownloads();
+          context.go('/home');
+        }
       }
     } catch (e) {
       setState(() {
