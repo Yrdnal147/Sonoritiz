@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/storage/storage_service.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../player/presentation/cubit/player_cubit.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -56,7 +58,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final storage = StorageService();
       await storage.init();
       await storage.clearSession();
-      if (mounted) context.go('/splash');
+      if (mounted) {
+        context.read<PlayerCubit>().pause();
+        context.go('/login');
+      }
     }
   }
 
