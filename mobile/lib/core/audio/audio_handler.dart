@@ -97,8 +97,14 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
         audioUrl = item.id;
       }
       
-      print('Playing URL (Muxed) avec Caching agressif...');
-      await _player.setAudioSource(LockCachingAudioSource(Uri.parse(audioUrl)));
+      if (audioUrl.startsWith('file://')) {
+        print('Playing LOCAL file: $audioUrl');
+        await _player.setAudioSource(AudioSource.uri(Uri.parse(audioUrl)));
+      } else {
+        print('Playing URL (Muxed) avec Caching agressif...');
+        await _player.setAudioSource(LockCachingAudioSource(Uri.parse(audioUrl)));
+      }
+      
       await _player.play();
     } catch (e, stack) {
       print("Audio playback error: \$e");

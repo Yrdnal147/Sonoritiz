@@ -451,9 +451,15 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                                                   ? CachedNetworkImage(
                                                       imageUrl: track.coverUrl,
                                                       fit: BoxFit.cover,
-                                                      errorWidget: (context, url, error) => Container(color: AppColors.surfaceLight),
+                                                      errorWidget: (context, url, error) => Container(
+                                                        color: AppColors.surfaceLight,
+                                                        child: const Center(child: Icon(Icons.music_note, color: Colors.white54, size: 64)),
+                                                      ),
                                                     )
-                                                  : Container(color: AppColors.surfaceLight),
+                                                  : Container(
+                                                      color: AppColors.surfaceLight,
+                                                      child: const Center(child: Icon(Icons.music_note, color: Colors.white54, size: 64)),
+                                                    ),
                                             ),
                                           ),
                                         ).animate().fadeIn(duration: 500.ms).scaleXY(begin: 0.9, end: 1.0),
