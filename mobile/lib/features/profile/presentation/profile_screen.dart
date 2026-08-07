@@ -56,7 +56,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final storage = StorageService();
       await storage.init();
       await storage.clearSession();
-      if (mounted) context.go('/login');
+      if (mounted) context.go('/splash');
     }
   }
 
