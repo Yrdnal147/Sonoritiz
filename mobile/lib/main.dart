@@ -12,6 +12,8 @@ import 'features/library/data/repositories/library_repository.dart';
 import 'features/library/presentation/cubit/library_cubit.dart';
 import 'features/offline/data/repositories/offline_repository.dart';
 import 'features/offline/presentation/cubit/download_cubit.dart';
+import 'features/search/presentation/cubit/search_cubit.dart';
+import 'features/home/data/repositories/catalog_repository.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -65,6 +67,12 @@ class SonoritizApp extends StatelessWidget {
         ),
         BlocProvider<DownloadCubit>(
           create: (_) => DownloadCubit(repository: offlineRepository)..loadDownloads(),
+        ),
+        BlocProvider<SearchCubit>(
+          create: (_) => SearchCubit(
+            repository: CatalogRepository(apiClient: ApiClient(storageService: storageService)),
+            storageService: storageService,
+          ),
         ),
       ],
       child: MaterialApp.router(

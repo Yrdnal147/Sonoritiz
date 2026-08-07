@@ -9,6 +9,7 @@ class StorageService {
   static const String _keyOnboardingSeen = 'onboarding_seen';
   static const String _keyUsername = 'username';
   static const String _keyEmail = 'email';
+  static const String _keySearchHistory = 'search_history';
 
   late SharedPreferences _prefs;
 
@@ -41,6 +42,25 @@ class StorageService {
 
   String get username => _prefs.getString(_keyUsername) ?? '';
   String get email => _prefs.getString(_keyEmail) ?? '';
+
+  // Search History
+  List<String> getSearchHistory() {
+    return _prefs.getStringList(_keySearchHistory) ?? [];
+  }
+
+  Future<void> addSearchQuery(String query) async {
+    final history = getSearchHistory();
+    history.remove(query); // Remove if exists to put it at the top
+    history.insert(0, query);
+    if (history.length > 10) {
+      history.removeLast(); // Keep only last 10
+    }
+    await _prefs.setStringList(_keySearchHistory, history);
+  }
+
+  Future<void> clearSearchHistory() async {
+    await _prefs.remove(_keySearchHistory);
+  }
 
   Future<void> clearSession() async {
     await _prefs.remove(_keyAccessToken);
