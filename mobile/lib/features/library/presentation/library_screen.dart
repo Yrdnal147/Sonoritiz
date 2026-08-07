@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/network/api_client.dart';
 import '../../../core/storage/storage_service.dart';
-import '../data/repositories/library_repository.dart';
 import 'cubit/library_cubit.dart';
 import 'cubit/library_state.dart';
 import 'cubit/library_ui_cubit.dart';
@@ -12,6 +10,7 @@ import 'favorites_screen.dart';
 import 'playlists_list_screen.dart';
 import 'history_screen.dart';
 import 'downloads_screen.dart';
+import 'local_audio_screen.dart';
 
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({Key? key}) : super(key: key);
@@ -28,7 +27,7 @@ class _LibraryScreenBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
@@ -74,6 +73,7 @@ class _LibraryScreenBody extends StatelessWidget {
             indicatorColor: AppColors.primary,
             indicatorWeight: 3,
             labelColor: Colors.white,
+            isScrollable: true,
             labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
             unselectedLabelColor: AppColors.textSecondary,
             unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 15),
@@ -83,6 +83,7 @@ class _LibraryScreenBody extends StatelessWidget {
               Tab(text: "Playlists"),
               Tab(text: "Historique"),
               Tab(text: "Téléchargements"),
+              Tab(text: "Sons internes"),
             ],
           ),
         ),
@@ -122,6 +123,7 @@ class _LibraryScreenBody extends StatelessWidget {
                   PlaylistsListScreen(playlists: state.playlists),
                   HistoryScreen(history: state.history),
                   const DownloadsScreen(),
+                  LocalAudioScreen(storageService: context.read<LibraryUiCubit>().storageService),
                 ],
               );
             }

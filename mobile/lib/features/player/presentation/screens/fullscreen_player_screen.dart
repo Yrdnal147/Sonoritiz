@@ -69,7 +69,20 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
       try {
         await cubit.pause();
         
-        final manifest = await _yt.videos.streamsClient.getManifest(track.id);
+        String youtubeId = track.id;
+        
+        // If it's a local track, search YouTube to find a video
+        if (track.id.startsWith('local_')) {
+          final query = "${track.artistName} ${track.title} official video";
+          final searchResults = await _yt.search.search(query);
+          if (searchResults.isNotEmpty) {
+            youtubeId = searchResults.first.id.value;
+          } else {
+            throw Exception("Aucune vidéo trouvée pour ce son.");
+          }
+        }
+        
+        final manifest = await _yt.videos.streamsClient.getManifest(youtubeId);
         final muxed = manifest.muxed;
         
         if (muxed.isNotEmpty) {

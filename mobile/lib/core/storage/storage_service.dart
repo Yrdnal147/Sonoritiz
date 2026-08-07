@@ -12,6 +12,7 @@ class StorageService {
   static const String _keySearchHistory = 'search_history';
   static const String _keyViewMode = 'library_view_mode';
   static const String _keySortMode = 'library_sort_mode';
+  static const String _keyLocalFiles = 'local_audio_files';
 
   late SharedPreferences _prefs;
 
@@ -79,6 +80,15 @@ class StorageService {
 
   Future<void> saveSortMode(String mode) async {
     await _prefs.setString(_keySortMode, mode);
+  }
+
+  // Local Audio Files
+  List<String> getLocalFiles() {
+    return _prefs.getStringList(_keyLocalFiles) ?? [];
+  }
+
+  Future<void> saveLocalFiles(List<String> files) async {
+    await _prefs.setStringList(_keyLocalFiles, files);
   }
 
   Future<void> clearSession() async {
