@@ -126,18 +126,29 @@ class PlaylistsListScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.primary,
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showCreatePlaylistDialog(context),
-        child: const Icon(Icons.add, color: Colors.white, size: 28),
-      ),
-      body: playlists.isEmpty
-          ? Center(
         backgroundColor: AppColors.primary,
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text("Nouvelle", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
-      body: BlocBuilder<LibraryUiCubit, LibraryUiState>(
+      body: playlists.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.queue_music, size: 64, color: AppColors.textSecondary),
+                  const SizedBox(height: 16),
+                  const Text("Crée ta première playlist", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: () => _showCreatePlaylistDialog(context),
+                    child: const Text("Créer une playlist"),
+                  ),
+                ],
+              ),
+            )
+          : BlocBuilder<LibraryUiCubit, LibraryUiState>(
         builder: (context, uiState) {
           // Tri des playlists
           List<PlaylistModel> sortedPlaylists = List.from(playlists);
