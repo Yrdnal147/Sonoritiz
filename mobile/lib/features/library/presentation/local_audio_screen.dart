@@ -9,7 +9,7 @@ import '../../player/data/models/track_model.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
 import 'cubit/library_ui_cubit.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_media_metadata/flutter_media_metadata.dart';
+import 'package:audiotags/audiotags.dart';
 import 'package:path_provider/path_provider.dart';
 
 class LocalAudioScreen extends StatefulWidget {
@@ -122,8 +122,9 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
           for (var file in result.files) {
             if (file.path != null) {
               try {
-                final metadata = await MetadataRetriever.fromFile(File(file.path!));
-                final albumArt = metadata.albumArt;
+                final tag = await AudioTags.read(file.path!);
+                final picture = (tag?.pictures.isNotEmpty == true) ? tag?.pictures.first : null;
+                final albumArt = picture?.bytes;
                 if (albumArt != null && albumArt.isNotEmpty && _docDirPath != null) {
                   final coverPath = '$_docDirPath/cover_${file.path!.hashCode}.jpg';
                   final coverFile = File(coverPath);
