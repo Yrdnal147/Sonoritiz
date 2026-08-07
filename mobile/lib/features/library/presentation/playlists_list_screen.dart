@@ -214,7 +214,7 @@ class PlaylistsListScreen extends StatelessWidget {
                           mainAxisSpacing: 16,
                         ),
                         delegate: SliverChildBuilderDelegate(
-                          (context, index) => _buildGridItem(context, sortedPlaylists[index], uiState.viewMode),
+                          (context, index) => _buildGridItem(context, sortedPlaylists[index], currentViewMode),
                           childCount: sortedPlaylists.length,
                         ),
                       ),
