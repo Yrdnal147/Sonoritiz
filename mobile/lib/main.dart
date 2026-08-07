@@ -10,6 +10,7 @@ import 'features/player/presentation/cubit/player_cubit.dart';
 import 'core/network/api_client.dart';
 import 'features/library/data/repositories/library_repository.dart';
 import 'features/library/presentation/cubit/library_cubit.dart';
+import 'features/library/presentation/cubit/library_ui_cubit.dart';
 import 'features/offline/data/repositories/offline_repository.dart';
 import 'features/offline/presentation/cubit/download_cubit.dart';
 import 'features/search/presentation/cubit/search_cubit.dart';
@@ -64,6 +65,9 @@ class SonoritizApp extends StatelessWidget {
           create: (_) => LibraryCubit(
             repository: LibraryRepository(apiClient: ApiClient(storageService: storageService)),
           )..loadLibraryData(),
+        ),
+        BlocProvider<LibraryUiCubit>(
+          create: (_) => LibraryUiCubit(storageService: storageService),
         ),
         BlocProvider<DownloadCubit>(
           create: (_) => DownloadCubit(repository: offlineRepository)..loadDownloads(),

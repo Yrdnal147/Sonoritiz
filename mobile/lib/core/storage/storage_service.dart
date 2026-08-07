@@ -10,6 +10,8 @@ class StorageService {
   static const String _keyUsername = 'username';
   static const String _keyEmail = 'email';
   static const String _keySearchHistory = 'search_history';
+  static const String _keyViewMode = 'library_view_mode';
+  static const String _keySortMode = 'library_sort_mode';
 
   late SharedPreferences _prefs;
 
@@ -60,6 +62,23 @@ class StorageService {
 
   Future<void> clearSearchHistory() async {
     await _prefs.remove(_keySearchHistory);
+  }
+
+  // Library UI Preferences
+  String getViewMode() {
+    return _prefs.getString(_keyViewMode) ?? 'list';
+  }
+
+  Future<void> saveViewMode(String mode) async {
+    await _prefs.setString(_keyViewMode, mode);
+  }
+
+  String getSortMode() {
+    return _prefs.getString(_keySortMode) ?? 'alpha';
+  }
+
+  Future<void> saveSortMode(String mode) async {
+    await _prefs.setString(_keySortMode, mode);
   }
 
   Future<void> clearSession() async {

@@ -6,7 +6,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../offline/presentation/cubit/download_cubit.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
-import '../../../core/widgets/track_context_menu.dart';
+import '../../../core/widgets/track_grid_view.dart';
+import 'cubit/library_ui_cubit.dart';
 
 class DownloadsScreen extends StatelessWidget {
   const DownloadsScreen({Key? key}) : super(key: key);
@@ -101,47 +102,18 @@ class DownloadsScreen extends StatelessWidget {
                   ).animate().fadeIn(),
                 ),
               ),
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final offlineTrack = offlineTracks[index];
-                    final track = offlineTrack.track;
-                    final queue = offlineTracks.map((e) => e.track).toList();
-
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                      leading: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: offlineTrack.localCoverPath.isNotEmpty && File(offlineTrack.localCoverPath).existsSync()
-                            ? Image.file(File(offlineTrack.localCoverPath), width: 50, height: 50, fit: BoxFit.cover)
-                            : CachedNetworkImage(
-                                imageUrl: track.coverUrl,
-                                width: 50,
-                                height: 50,
-                                fit: BoxFit.cover,
-                                errorWidget: (context, url, error) => Container(
-                                  width: 50,
-                                  height: 50,
-                                  color: AppColors.surface,
-                                  child: const Icon(Icons.music_note, color: AppColors.textSecondary),
-                                ),
-                              ),
-                      ),
-                      title: Text(track.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: Text(track.artistName, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.more_vert, color: Colors.white54),
-                        onPressed: () {
-                          TrackContextMenu.show(context, track);
-                        },
-                      ),
-                      onTap: () {
-                        context.read<PlayerCubit>().playTrack(track, queue: queue);
-                      },
-                    ).animate().fadeIn(delay: Duration(milliseconds: 50 * index));
-                  },
-                  childCount: offlineTracks.length,
-                ),
+              BlocBuilder<LibraryUiCubit, LibraryUiState>(
+                builder: (context, uiState) {
+                  final Map<String, String> localCoverPaths = {
+                    for (var ot in offlineTracks) ot.track.id: ot.localCoverPath
+                  };
+                  return TrackGridView(
+                    tracks: offlineTracks.map((e) => e.track).toList(),
+                    viewMode: uiState.viewMode,
+                    sortMode: uiState.sortMode,
+                    localCoverPaths: localCoverPaths,
+                  );
+                },
               ),
             ],
             const SliverToBoxAdapter(child: SizedBox(height: 100)), // Espace en bas

@@ -7,6 +7,7 @@ import '../../../core/storage/storage_service.dart';
 import '../data/repositories/library_repository.dart';
 import 'cubit/library_cubit.dart';
 import 'cubit/library_state.dart';
+import 'cubit/library_ui_cubit.dart';
 import 'favorites_screen.dart';
 import 'playlists_list_screen.dart';
 import 'history_screen.dart';
@@ -42,6 +43,33 @@ class _LibraryScreenBody extends StatelessWidget {
               letterSpacing: -0.5,
             ),
           ).animate().fadeIn(duration: 400.ms).slideX(begin: -0.1),
+          actions: [
+            BlocBuilder<LibraryUiCubit, LibraryUiState>(
+              builder: (context, uiState) {
+                return Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(uiState.sortMode == SortMode.alpha ? Icons.sort_by_alpha : Icons.access_time_rounded, color: Colors.white),
+                      onPressed: () => context.read<LibraryUiCubit>().toggleSortMode(),
+                      tooltip: "Changer le tri",
+                    ),
+                    PopupMenuButton<ViewMode>(
+                      icon: const Icon(Icons.grid_view_rounded, color: Colors.white),
+                      color: AppColors.surface,
+                      tooltip: "Mode d'affichage",
+                      onSelected: (mode) => context.read<LibraryUiCubit>().setViewMode(mode),
+                      itemBuilder: (context) => [
+                        _buildViewMenuItem(ViewMode.list, Icons.view_list_rounded, "Liste", uiState.viewMode),
+                        _buildViewMenuItem(ViewMode.gridSmall, Icons.grid_on_rounded, "Petite Grille", uiState.viewMode),
+                        _buildViewMenuItem(ViewMode.gridMedium, Icons.grid_view_rounded, "Grille", uiState.viewMode),
+                        _buildViewMenuItem(ViewMode.gridLarge, Icons.crop_square_rounded, "Grande", uiState.viewMode),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
           bottom: TabBar(
             indicatorColor: AppColors.primary,
             indicatorWeight: 3,
@@ -98,9 +126,23 @@ class _LibraryScreenBody extends StatelessWidget {
               );
             }
 
-            return const SizedBox.shrink();
+            return const SizedBox();
           },
         ),
+      ),
+    );
+  }
+
+  PopupMenuItem<ViewMode> _buildViewMenuItem(ViewMode mode, IconData icon, String title, ViewMode currentMode) {
+    final isSelected = mode == currentMode;
+    return PopupMenuItem(
+      value: mode,
+      child: Row(
+        children: [
+          Icon(icon, color: isSelected ? AppColors.primary : Colors.white70, size: 20),
+          const SizedBox(width: 12),
+          Text(title, style: TextStyle(color: isSelected ? AppColors.primary : Colors.white)),
+        ],
       ),
     );
   }
