@@ -18,10 +18,12 @@ class AppTheme {
 
       colorScheme: const ColorScheme.dark(
         primary: AppColors.primary,
+        secondary: AppColors.secondary,
         surface: AppColors.surface,
         background: AppColors.background,
         error: AppColors.error,
         onPrimary: Colors.white,
+        onSecondary: Colors.black,
         onSurface: AppColors.textPrimary,
         onBackground: AppColors.textPrimary,
       ),

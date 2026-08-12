@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_playlist_container"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:padding="8dp">
+
+    <!-- Icône / Image -->
+    <ImageView
+        android:id="@+id/widget_playlist_cover"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_above="@id/widget_playlist_title"
+        android:layout_marginBottom="8dp"
+        android:scaleType="centerInside"
+        android:src="@mipmap/launcher_icon" />
+
+    <!-- Nom de la Playlist -->
+    <TextView
+        android:id="@+id/widget_playlist_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:text="Mes Playlists"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+</RelativeLayout>

@@ -8,23 +8,31 @@ enum SortMode { alpha, recent }
 class LibraryUiState extends Equatable {
   final Map<String, ViewMode> viewModes;
   final Map<String, SortMode> sortModes;
-  final String activeTabId; // To know which settings to show in AppBar
+  final String activeTabId;
+  final bool isSearchActive;
+  final String searchQuery;
 
   const LibraryUiState({
     required this.viewModes,
     required this.sortModes,
     this.activeTabId = 'favorites',
+    this.isSearchActive = false,
+    this.searchQuery = '',
   });
 
   LibraryUiState copyWith({
     Map<String, ViewMode>? viewModes,
     Map<String, SortMode>? sortModes,
     String? activeTabId,
+    bool? isSearchActive,
+    String? searchQuery,
   }) {
     return LibraryUiState(
       viewModes: viewModes ?? this.viewModes,
       sortModes: sortModes ?? this.sortModes,
       activeTabId: activeTabId ?? this.activeTabId,
+      isSearchActive: isSearchActive ?? this.isSearchActive,
+      searchQuery: searchQuery ?? this.searchQuery,
     );
   }
 
@@ -35,7 +43,7 @@ class LibraryUiState extends Equatable {
   SortMode getSortModeFor(String tabId) => sortModes[tabId] ?? SortMode.alpha;
 
   @override
-  List<Object> get props => [viewModes, sortModes, activeTabId];
+  List<Object> get props => [viewModes, sortModes, activeTabId, isSearchActive, searchQuery];
 }
 
 class LibraryUiCubit extends Cubit<LibraryUiState> {
@@ -90,6 +98,22 @@ class LibraryUiCubit extends Cubit<LibraryUiState> {
     final currentMode = state.currentSortMode;
     final newMode = currentMode == SortMode.alpha ? SortMode.recent : SortMode.alpha;
     setSortMode(newMode);
+  }
+
+  void toggleSearch() {
+    final newActive = !state.isSearchActive;
+    emit(state.copyWith(
+      isSearchActive: newActive,
+      searchQuery: newActive ? state.searchQuery : '',
+    ));
+  }
+
+  void updateSearchQuery(String query) {
+    emit(state.copyWith(searchQuery: query));
+  }
+
+  void closeSearch() {
+    emit(state.copyWith(isSearchActive: false, searchQuery: ''));
   }
 
   static ViewMode _parseViewMode(String mode) {

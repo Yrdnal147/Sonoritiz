@@ -8,6 +8,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:palette_generator/palette_generator.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/track_context_menu.dart';
+import '../../../../core/widgets/artist_name_display.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
@@ -37,11 +39,14 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
   bool _isVideoLoading = false;
   VideoPlayerController? _videoController;
   final YoutubeExplode _yt = YoutubeExplode();
+  PageController? _pageController;
 
   @override
   void initState() {
     super.initState();
-    final track = context.read<PlayerCubit>().state.currentTrack;
+    final state = context.read<PlayerCubit>().state;
+    _pageController = PageController(initialPage: state.currentIndex >= 0 ? state.currentIndex : 0, viewportFraction: 0.85);
+    final track = state.currentTrack;
     if (track != null && track.coverUrl.isNotEmpty) {
       _updateDominantColor(track.coverUrl);
     }
@@ -49,6 +54,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
 
   @override
   void dispose() {
+    _pageController?.dispose();
     _videoController?.dispose();
     _yt.close();
     super.dispose();
@@ -286,9 +292,18 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
           borderRadius: const BorderRadius.vertical(top: Radius.circular(40)),
           child: Scaffold(
             backgroundColor: Colors.transparent,
-            body: BlocListener<PlayerCubit, PlayerState>(
-              listenWhen: (previous, current) => previous.currentTrack?.id != current.currentTrack?.id,
+            body: BlocConsumer<PlayerCubit, PlayerState>(
+              listenWhen: (prev, cur) => prev.currentIndex != cur.currentIndex,
               listener: (context, state) {
+                if (_pageController != null && _pageController!.hasClients) {
+                  if (_pageController!.page?.round() != state.currentIndex) {
+                    _pageController!.animateToPage(
+                      state.currentIndex,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                    );
+                  }
+                }
                 if (_isVideoMode) {
                   setState(() {
                     _isVideoMode = false;
@@ -396,57 +411,57 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
 
 
 
-                        final coverArt = 
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                              child: CustomPaint(
-                                foregroundPainter: RectangularProgressPainter(
-                                  progress: duration.inMilliseconds > 0 
-                                      ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0) 
-                                      : 0.0,
-                                  color: AppColors.primary,
-                                  strokeWidth: 4.0,
-                                  borderRadius: 32.0,
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8.0),
-                                  child: _isVideoMode
-                                      ? Container(
-                                          width: coverSize,
-                                          height: (coverSize) * 1.05,
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(24),
-                                            color: Colors.black, // Fond noir pendant le chargement
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: (_dominantColor ?? AppColors.primary).withOpacity(0.4),
-                                                blurRadius: 40,
-                                                spreadRadius: 4,
-                                                offset: const Offset(0, 15),
-                                              ),
-                                            ],
-                                          ),
-                                          child: ClipRRect(
-                                            borderRadius: BorderRadius.circular(24),
-                                            child: _isVideoLoading || _videoController == null || !_videoController!.value.isInitialized
-                                                ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-                                                : FittedBox(
-                                                    fit: BoxFit.contain,
-                                                    child: SizedBox(
-                                                      width: _videoController!.value.size.width,
-                                                      height: _videoController!.value.size.height,
-                                                      child: VideoPlayer(_videoController!),
-                                                    ),
-                                                  ),
-                                          ),
-                                        ).animate().fadeIn()
-                                      : Hero(
-                                          tag: 'cover_' + track.id,
-                                          child: Container(
-                                            width: (coverSize - 16),
-                                            height: ((coverSize - 16)) * 1.05, 
+                        final coverArt = SizedBox(
+                          height: (coverSize) * 1.05 + 40,
+                          child: PageView.builder(
+                            controller: _pageController,
+                            physics: const BouncingScrollPhysics(),
+                            onPageChanged: (index) {
+                              final cubit = context.read<PlayerCubit>();
+                              if (index > cubit.state.currentIndex) {
+                                cubit.playNext();
+                              } else if (index < cubit.state.currentIndex) {
+                                cubit.playPrevious();
+                              }
+                            },
+                            itemCount: state.queue.length,
+                            itemBuilder: (context, index) {
+                              final qTrack = state.queue[index];
+                              return AnimatedBuilder(
+                                animation: _pageController!,
+                                builder: (context, child) {
+                                  double value = 1.0;
+                                  if (_pageController!.position.haveDimensions) {
+                                    value = _pageController!.page! - index;
+                                    value = (1 - (value.abs() * 0.15)).clamp(0.0, 1.0);
+                                  } else if (index != state.currentIndex) {
+                                    value = 0.85;
+                                  }
+                                  return Center(
+                                    child: Transform.scale(
+                                      scale: value,
+                                      child: child,
+                                    ),
+                                  );
+                                },
+                                child: CustomPaint(
+                                  foregroundPainter: index == state.currentIndex ? RectangularProgressPainter(
+                                    progress: duration.inMilliseconds > 0 
+                                        ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0) 
+                                        : 0.0,
+                                    color: AppColors.primary,
+                                    strokeWidth: 4.0,
+                                    borderRadius: 32.0,
+                                  ) : null,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(8.0),
+                                    child: _isVideoMode && index == state.currentIndex
+                                        ? Container(
+                                            width: coverSize,
+                                            height: (coverSize) * 1.05,
                                             decoration: BoxDecoration(
                                               borderRadius: BorderRadius.circular(24),
+                                              color: Colors.black,
                                               boxShadow: [
                                                 BoxShadow(
                                                   color: (_dominantColor ?? AppColors.primary).withOpacity(0.4),
@@ -458,34 +473,67 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                                             ),
                                             child: ClipRRect(
                                               borderRadius: BorderRadius.circular(24),
-                                              child: track.coverUrl.isNotEmpty
-                                                  ? (track.coverUrl.startsWith("file://")
-                                                      ? Image.file(
-                                                          File(track.coverUrl.replaceFirst("file://", "")),
-                                                          fit: BoxFit.cover,
-                                                          errorBuilder: (context, error, stackTrace) => Container(
-                                                            color: AppColors.surfaceLight,
-                                                            child: const Center(child: Icon(Icons.music_note, color: Colors.white54, size: 64)),
-                                                          ),
-                                                        )
-                                                      : CachedNetworkImage(
-                                                          imageUrl: track.coverUrl,
-                                                          fit: BoxFit.cover,
-                                                          errorWidget: (context, url, error) => Container(
-                                                            color: AppColors.surfaceLight,
-                                                            child: const Center(child: Icon(Icons.music_note, color: Colors.white54, size: 64)),
-                                                          ),
-                                                        ))
-                                                  : Container(
-                                                      color: AppColors.surfaceLight,
-                                                      child: const Center(child: Icon(Icons.music_note, color: Colors.white54, size: 64)),
+                                              child: _isVideoLoading || _videoController == null || !_videoController!.value.isInitialized
+                                                  ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                                                  : FittedBox(
+                                                      fit: BoxFit.contain,
+                                                      child: SizedBox(
+                                                        width: _videoController!.value.size.width,
+                                                        height: _videoController!.value.size.height,
+                                                        child: VideoPlayer(_videoController!),
+                                                      ),
                                                     ),
                                             ),
-                                          ),
-                                        ).animate().fadeIn(duration: 500.ms).scaleXY(begin: 0.9, end: 1.0),
+                                          )
+                                        : Hero(
+                                            tag: 'cover_${qTrack.id}_$index',
+                                            child: Container(
+                                                width: coverSize - 16,
+                                                height: (coverSize - 16) * 1.05, 
+                                                decoration: BoxDecoration(
+                                                  borderRadius: BorderRadius.circular(24),
+                                                  boxShadow: [
+                                                    BoxShadow(
+                                                      color: index == state.currentIndex ? (_dominantColor ?? AppColors.primary).withOpacity(0.4) : Colors.black26,
+                                                      blurRadius: 40,
+                                                      spreadRadius: 4,
+                                                      offset: const Offset(0, 15),
+                                                    ),
+                                                  ],
+                                                ),
+                                                child: ClipRRect(
+                                                  borderRadius: BorderRadius.circular(24),
+                                                  child: qTrack.coverUrl.isNotEmpty
+                                                      ? (qTrack.coverUrl.startsWith("file://")
+                                                          ? Image.file(
+                                                              File(qTrack.coverUrl.replaceFirst("file://", "")),
+                                                              fit: BoxFit.cover,
+                                                              errorBuilder: (context, error, stackTrace) => Container(
+                                                                color: AppColors.surfaceLight,
+                                                                child: const Center(child: Icon(Icons.music_note, color: Colors.white54, size: 64)),
+                                                              ),
+                                                            )
+                                                          : CachedNetworkImage(
+                                                              imageUrl: qTrack.coverUrl,
+                                                              fit: BoxFit.cover,
+                                                              errorWidget: (context, url, error) => Container(
+                                                                color: AppColors.surfaceLight,
+                                                                child: const Center(child: Icon(Icons.music_note, color: Colors.white54, size: 64)),
+                                                              ),
+                                                            ))
+                                                      : Container(
+                                                          color: AppColors.surfaceLight,
+                                                          child: const Center(child: Icon(Icons.music_note, color: Colors.white54, size: 64)),
+                                                        ),
+                                                ),
+                                              ),
+                                            ),
+                                  ),
                                 ),
-                              ).animate().fadeIn(duration: 600.ms),
-                            );
+                              );
+                            },
+                          ),
+                        ).animate().fadeIn(duration: 600.ms);
 
 
 
@@ -506,9 +554,8 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                                     ),
                                   ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2, end: 0),
                                   const SizedBox(height: 4),
-                                  Text(
-                                    track.artistName,
-                                    textAlign: TextAlign.center,
+                                  ArtistNameDisplay(
+                                    artistName: track.artistName,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -522,6 +569,42 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                             );
 
 
+
+                        final miniLyricsWidget = state.isFreeLyricsMode && state.currentLyrics != null && state.currentLyrics!.hasSynced
+                            ? Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+                              child: BlocBuilder<PlayerCubit, PlayerState>(
+                                  buildWhen: (previous, current) => previous.position != current.position || previous.currentLyrics != current.currentLyrics,
+                                  builder: (context, state) {
+                                    if (state.currentLyrics?.parsedSyncedLyrics == null) return const SizedBox.shrink();
+                                    final lines = state.currentLyrics!.parsedSyncedLyrics!;
+                                    String currentLine = "🎵...";
+                                    for (int i = 0; i < lines.length; i++) {
+                                      final isLast = i == lines.length - 1;
+                                      if (state.position >= lines[i].time && (isLast || state.position < lines[i + 1].time)) {
+                                        currentLine = lines[i].text.isNotEmpty ? lines[i].text : "🎵...";
+                                        break;
+                                      }
+                                    }
+                                    return AnimatedSwitcher(
+                                      duration: const Duration(milliseconds: 300),
+                                      child: Text(
+                                        currentLine,
+                                        key: ValueKey<String>(currentLine),
+                                        textAlign: TextAlign.center,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white.withOpacity(0.9),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              )
+                            : const SizedBox.shrink();
 
                         final sliderWidget = 
                             Padding(
@@ -752,6 +835,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                                             mainAxisAlignment: MainAxisAlignment.center,
                                             children: [
                                               info,
+                                              miniLyricsWidget,
                                               const SizedBox(height: 32),
                                               sliderWidget,
                                               const SizedBox(height: 24),
@@ -777,6 +861,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                             coverArt,
                             const SizedBox(height: 24),
                             info,
+                            miniLyricsWidget,
                             const SizedBox(height: 24),
                             sliderWidget,
                             const Spacer(),

@@ -24,6 +24,18 @@ class LibraryLoaded extends LibraryState {
     required this.history,
   });
 
+  LibraryLoaded copyWith({
+    List<TrackModel>? favorites,
+    List<PlaylistModel>? playlists,
+    List<HistoryModel>? history,
+  }) {
+    return LibraryLoaded(
+      favorites: favorites ?? this.favorites,
+      playlists: playlists ?? this.playlists,
+      history: history ?? this.history,
+    );
+  }
+
   @override
   List<Object?> get props => [favorites, playlists, history];
 }

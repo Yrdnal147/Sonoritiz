@@ -49,11 +49,27 @@ class OfflineRepository {
       final localAudioPath = '${offlineDir.path}/$audioFileName';
       
       String audioUrl = track.audioUrl;
+      StreamInfo? manifestStreamInfo;
       
       if (audioUrl.isEmpty && track.id.isNotEmpty) {
-        final manifest = await _yt.videos.streamsClient.getManifest(track.id);
-        final streamInfo = manifest.muxed.sortByVideoQuality().last;
-        audioUrl = streamInfo.url.toString();
+        try {
+          final manifest = await _yt.videos.streamsClient
+              .getManifest(track.id)
+              .timeout(const Duration(seconds: 15));
+              
+          // Utiliser le flux mixte (Audio+Vidéo) de plus basse qualité pour éviter l'erreur 403 de YouTube sur les flux purement audio
+          if (manifest.muxed.isNotEmpty) {
+            try {
+              manifestStreamInfo = manifest.muxed.sortByVideoQuality().first;
+              audioUrl = manifestStreamInfo!.url.toString();
+            } catch (e) {
+              manifestStreamInfo = manifest.muxed.first;
+              audioUrl = manifestStreamInfo!.url.toString();
+            }
+          }
+        } catch (e) {
+          print("Erreur d'extraction du flux YouTube: $e");
+        }
       }
 
       if (audioUrl.isEmpty) {
@@ -61,15 +77,35 @@ class OfflineRepository {
       }
 
       // Download audio
-      await _dio.download(
-        audioUrl,
-        localAudioPath,
-        onReceiveProgress: (received, total) {
-          if (total != -1) {
-            onProgress(received / total);
-          }
-        },
-      );
+      if (manifestStreamInfo != null) {
+        // Use youtube explode's own client to avoid 403 Forbidden
+        final stream = _yt.videos.streamsClient.get(manifestStreamInfo);
+        final file = File(localAudioPath);
+        final fileStream = file.openWrite();
+        
+        int downloadedBytes = 0;
+        int totalBytes = manifestStreamInfo.size.totalBytes;
+        
+        await for (final chunk in stream) {
+          fileStream.add(chunk);
+          downloadedBytes += chunk.length;
+          onProgress(downloadedBytes / totalBytes);
+        }
+        
+        await fileStream.flush();
+        await fileStream.close();
+      } else {
+        // Fallback for non-youtube URLs
+        await _dio.download(
+          audioUrl,
+          localAudioPath,
+          onReceiveProgress: (received, total) {
+            if (total != -1) {
+              onProgress(received / total);
+            }
+          },
+        );
+      }
 
       // Download cover if exists
       String localCoverPath = '';

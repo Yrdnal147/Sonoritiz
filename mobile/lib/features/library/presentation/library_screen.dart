@@ -20,6 +20,7 @@ class LibraryScreen extends StatefulWidget {
 
 class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -30,7 +31,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
         context.read<LibraryUiCubit>().setActiveTab(_tabController.index);
       }
     });
-    // Set initial tab in Cubit
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<LibraryUiCubit>().setActiveTab(_tabController.index);
     });
@@ -39,119 +39,169 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        title: const Text(
-          "Ma Bibliothèque",
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            fontSize: 26,
-            color: Colors.white,
-            letterSpacing: -0.5,
-          ),
-        ).animate().fadeIn(duration: 400.ms).slideX(begin: -0.1),
-        actions: [
-          BlocBuilder<LibraryUiCubit, LibraryUiState>(
-            builder: (context, uiState) {
-              return Row(
-                children: [
-                  IconButton(
-                    icon: Icon(
-                      uiState.currentSortMode == SortMode.alpha ? Icons.sort_by_alpha : Icons.access_time_rounded,
-                      color: Colors.white,
+    return BlocBuilder<LibraryUiCubit, LibraryUiState>(
+      builder: (context, uiState) {
+        return Scaffold(
+          backgroundColor: AppColors.background,
+          appBar: AppBar(
+            backgroundColor: AppColors.background,
+            elevation: 0,
+            title: uiState.isSearchActive
+                ? TextField(
+                    controller: _searchController,
+                    autofocus: true,
+                    style: const TextStyle(color: Colors.white, fontSize: 18),
+                    decoration: InputDecoration(
+                      hintText: "Rechercher dans la bibliothèque...",
+                      hintStyle: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 16),
+                      border: InputBorder.none,
                     ),
-                    onPressed: () => context.read<LibraryUiCubit>().toggleSortMode(),
-                    tooltip: "Changer le tri",
+                    onChanged: (value) {
+                      context.read<LibraryUiCubit>().updateSearchQuery(value);
+                    },
+                  )
+                : const Text(
+                    "Ma Bibliothèque",
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 26,
+                      color: Colors.white,
+                      letterSpacing: -0.5,
+                    ),
+                  ).animate().fadeIn(duration: 400.ms).slideX(begin: -0.1),
+            actions: [
+              IconButton(
+                icon: Icon(
+                  uiState.isSearchActive ? Icons.close : Icons.search,
+                  color: Colors.white,
+                ),
+                onPressed: () {
+                  if (uiState.isSearchActive) {
+                    _searchController.clear();
+                    context.read<LibraryUiCubit>().closeSearch();
+                  } else {
+                    context.read<LibraryUiCubit>().toggleSearch();
+                  }
+                },
+              ),
+              if (!uiState.isSearchActive) ...[
+                IconButton(
+                  icon: Icon(
+                    uiState.currentSortMode == SortMode.alpha ? Icons.sort_by_alpha : Icons.access_time_rounded,
+                    color: Colors.white,
                   ),
-                  PopupMenuButton<ViewMode>(
-                    icon: const Icon(Icons.grid_view_rounded, color: Colors.white),
-                    color: AppColors.surface,
-                    tooltip: "Mode d'affichage",
-                    onSelected: (mode) => context.read<LibraryUiCubit>().setViewMode(mode),
-                    itemBuilder: (context) => [
-                      _buildViewMenuItem(ViewMode.list, Icons.view_list_rounded, "Liste", uiState.currentViewMode),
-                      _buildViewMenuItem(ViewMode.gridSmall, Icons.grid_on_rounded, "Petite Grille", uiState.currentViewMode),
-                      _buildViewMenuItem(ViewMode.gridMedium, Icons.grid_view_rounded, "Grille", uiState.currentViewMode),
-                      _buildViewMenuItem(ViewMode.gridLarge, Icons.crop_square_rounded, "Grande", uiState.currentViewMode),
+                  onPressed: () => context.read<LibraryUiCubit>().toggleSortMode(),
+                  tooltip: "Changer le tri",
+                ),
+                PopupMenuButton<ViewMode>(
+                  icon: const Icon(Icons.grid_view_rounded, color: Colors.white),
+                  color: AppColors.surface,
+                  tooltip: "Mode d'affichage",
+                  onSelected: (mode) => context.read<LibraryUiCubit>().setViewMode(mode),
+                  itemBuilder: (context) => [
+                    _buildViewMenuItem(ViewMode.list, Icons.view_list_rounded, "Liste", uiState.currentViewMode),
+                    _buildViewMenuItem(ViewMode.gridSmall, Icons.grid_on_rounded, "Petite Grille", uiState.currentViewMode),
+                    _buildViewMenuItem(ViewMode.gridMedium, Icons.grid_view_rounded, "Grille", uiState.currentViewMode),
+                    _buildViewMenuItem(ViewMode.gridLarge, Icons.crop_square_rounded, "Grande", uiState.currentViewMode),
+                  ],
+                ),
+              ],
+            ],
+            bottom: TabBar(
+              controller: _tabController,
+              indicatorColor: AppColors.primary,
+              indicatorWeight: 3,
+              labelColor: Colors.white,
+              isScrollable: true,
+              labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              unselectedLabelColor: AppColors.textSecondary,
+              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 15),
+              dividerColor: Colors.white.withOpacity(0.05),
+              tabs: const [
+                Tab(text: "Favoris"),
+                Tab(text: "Playlists"),
+                Tab(text: "Historique"),
+                Tab(text: "Téléchargements"),
+                Tab(text: "Sons internes"),
+              ],
+            ),
+          ),
+          body: BlocBuilder<LibraryCubit, LibraryState>(
+            builder: (context, state) {
+              if (state is LibraryLoading) {
+                return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+              }
+
+              if (state is LibraryError) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.error_outline_rounded, size: 64, color: AppColors.error.withOpacity(0.8)),
+                      const SizedBox(height: 16),
+                      Text(state.message, style: const TextStyle(color: Colors.white70, fontSize: 16)),
+                      const SizedBox(height: 24),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        ),
+                        onPressed: () => context.read<LibraryCubit>().loadLibraryData(),
+                        child: const Text("Réessayer", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      ),
                     ],
                   ),
-                ],
-              );
+                ).animate().fadeIn().scale();
+              }
+
+              if (state is LibraryLoaded) {
+                final query = uiState.searchQuery.toLowerCase().trim();
+
+                final filteredFavorites = query.isEmpty
+                    ? state.favorites
+                    : state.favorites.where((t) =>
+                        t.title.toLowerCase().contains(query) ||
+                        t.artistName.toLowerCase().contains(query)).toList();
+
+                final filteredPlaylists = query.isEmpty
+                    ? state.playlists
+                    : state.playlists.where((p) =>
+                        p.name.toLowerCase().contains(query)).toList();
+
+                final filteredHistory = query.isEmpty
+                    ? state.history
+                    : state.history.where((h) {
+                        if (h.track != null) {
+                          return h.track!.title.toLowerCase().contains(query) ||
+                                 h.track!.artistName.toLowerCase().contains(query);
+                        }
+                        return h.trackId.toLowerCase().contains(query);
+                      }).toList();
+
+                return TabBarView(
+                  controller: _tabController,
+                  physics: const BouncingScrollPhysics(),
+                  children: [
+                    FavoritesScreen(favorites: filteredFavorites),
+                    PlaylistsListScreen(playlists: filteredPlaylists),
+                    HistoryScreen(history: filteredHistory),
+                    const DownloadsScreen(),
+                    LocalAudioScreen(storageService: context.read<LibraryUiCubit>().storageService),
+                  ],
+                );
+              }
+
+              return const SizedBox();
             },
           ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: AppColors.primary,
-          indicatorWeight: 3,
-          labelColor: Colors.white,
-          isScrollable: true,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-          unselectedLabelColor: AppColors.textSecondary,
-          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 15),
-          dividerColor: Colors.white.withOpacity(0.05),
-          tabs: const [
-            Tab(text: "Favoris"),
-            Tab(text: "Playlists"),
-            Tab(text: "Historique"),
-            Tab(text: "Téléchargements"),
-            Tab(text: "Sons internes"),
-          ],
-        ),
-      ),
-      body: BlocBuilder<LibraryCubit, LibraryState>(
-        builder: (context, state) {
-          if (state is LibraryLoading) {
-            return const Center(child: CircularProgressIndicator(color: AppColors.primary));
-          }
-
-          if (state is LibraryError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.error_outline_rounded, size: 64, color: AppColors.error.withOpacity(0.8)),
-                  const SizedBox(height: 16),
-                  Text(state.message, style: const TextStyle(color: Colors.white70, fontSize: 16)),
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    ),
-                    onPressed: () => context.read<LibraryCubit>().loadLibraryData(),
-                    child: const Text("Réessayer", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-            ).animate().fadeIn().scale();
-          }
-
-          if (state is LibraryLoaded) {
-            return TabBarView(
-              controller: _tabController,
-              physics: const BouncingScrollPhysics(),
-              children: [
-                FavoritesScreen(favorites: state.favorites),
-                PlaylistsListScreen(playlists: state.playlists),
-                HistoryScreen(history: state.history),
-                const DownloadsScreen(),
-                LocalAudioScreen(storageService: context.read<LibraryUiCubit>().storageService),
-              ],
-            );
-          }
-
-          return const SizedBox();
-        },
-      ),
+        );
+      },
     );
   }
 
@@ -169,3 +219,4 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     );
   }
 }
+

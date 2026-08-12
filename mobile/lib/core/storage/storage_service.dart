@@ -13,6 +13,7 @@ class StorageService {
   static const String _keyViewMode = 'library_view_mode';
   static const String _keySortMode = 'library_sort_mode';
   static const String _keyLocalFiles = 'local_audio_files';
+  static const String _keyProfileImagePath = 'profile_image_path';
 
   late SharedPreferences _prefs;
 
@@ -87,8 +88,43 @@ class StorageService {
     return _prefs.getStringList(_keyLocalFiles) ?? [];
   }
 
-  Future<void> saveLocalFiles(List<String> files) async {
-    await _prefs.setStringList(_keyLocalFiles, files);
+  Future<void> saveLocalFiles(List<String> paths) async {
+    await _prefs.setStringList(_keyLocalFiles, paths);
+  }
+
+  static const String _keyFavoriteArtists = 'favorite_artists';
+
+  // Profile Image Path
+  String? getProfileImagePath() {
+    return _prefs.getString(_keyProfileImagePath);
+  }
+
+  Future<void> saveProfileImagePath(String path) async {
+    await _prefs.setString(_keyProfileImagePath, path);
+  }
+
+  Future<void> removeProfileImagePath() async {
+    await _prefs.remove(_keyProfileImagePath);
+  }
+
+  // Favorite Artists
+  List<String> getFavoriteArtists() {
+    return _prefs.getStringList(_keyFavoriteArtists) ?? [];
+  }
+
+  Future<void> saveFavoriteArtists(List<String> artists) async {
+    await _prefs.setStringList(_keyFavoriteArtists, artists);
+  }
+
+  // Free Lyrics Mode
+  static const String _keyFreeLyricsMode = 'is_free_lyrics_mode';
+  
+  bool get isFreeLyricsMode {
+    return _prefs.getBool(_keyFreeLyricsMode) ?? false;
+  }
+  
+  Future<void> setFreeLyricsMode(bool value) async {
+    await _prefs.setBool(_keyFreeLyricsMode, value);
   }
 
   Future<void> clearSession() async {

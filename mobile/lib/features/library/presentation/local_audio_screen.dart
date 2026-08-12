@@ -5,6 +5,7 @@ import 'dart:io';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/storage/storage_service.dart';
 import '../../../core/widgets/track_grid_view.dart';
+import '../../../../core/widgets/artist_name_display.dart';
 import '../../player/data/models/track_model.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
 import 'cubit/library_ui_cubit.dart';
@@ -38,23 +39,25 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
     _loadLocalTracks();
   }
 
-  void _loadLocalTracks() {
+  Future<void> _loadLocalTracks() async {
     if (_docDirPath == null) return;
     final paths = widget.storageService.getLocalFiles();
     final List<TrackModel> tracks = [];
     
     for (String path in paths) {
       if (File(path).existsSync()) {
-        tracks.add(_pathToTrackModel(path));
+        tracks.add(await _pathToTrackModel(path));
       }
     }
     
-    setState(() {
-      _localTracks = tracks;
-    });
+    if (mounted) {
+      setState(() {
+        _localTracks = tracks;
+      });
+    }
   }
 
-  TrackModel _pathToTrackModel(String path) {
+  Future<TrackModel> _pathToTrackModel(String path) async {
     // Generate a local ID
     final id = "local_${path.hashCode}";
     
@@ -62,11 +65,27 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
     final fileName = path.split('/').last;
     final nameWithoutExt = fileName.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '');
     
-    // Try to guess artist and title (e.g. "Artist - Title")
     String artist = "Artiste inconnu";
     String title = nameWithoutExt;
     
-    if (nameWithoutExt.contains('-')) {
+    try {
+      final tag = await AudioTags.read(path);
+      if (tag != null) {
+        if (tag.trackArtist != null && tag.trackArtist!.isNotEmpty) {
+          artist = tag.trackArtist!;
+        } else if (tag.albumArtist != null && tag.albumArtist!.isNotEmpty) {
+          artist = tag.albumArtist!;
+        }
+        if (tag.title != null && tag.title!.isNotEmpty) {
+          title = tag.title!;
+        }
+      }
+    } catch (e) {
+      // Ignorer l'erreur et utiliser le nom du fichier
+    }
+    
+    // Fallback if still unknown artist
+    if (artist == "Artiste inconnu" && nameWithoutExt.contains('-')) {
       final parts = nameWithoutExt.split('-');
       if (parts.length >= 2) {
         artist = parts[0].trim();
@@ -100,13 +119,25 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
       );
 
       if (result != null) {
-        final List<String> currentPaths = widget.storageService.getLocalFiles();
+        final List<String> currentPaths = List<String>.from(widget.storageService.getLocalFiles());
         bool addedNew = false;
         
         for (var file in result.files) {
-          if (file.path != null && !currentPaths.contains(file.path!)) {
-            currentPaths.add(file.path!);
-            addedNew = true;
+          if (file.path != null) {
+            // Check if already in persistent storage
+            final fileName = file.path!.split('/').last;
+            final persistentPath = '$_docDirPath/$fileName';
+            
+            if (!currentPaths.contains(persistentPath)) {
+              try {
+                // Copy the file from the temporary cache to the persistent documents directory
+                final persistentFile = await File(file.path!).copy(persistentPath);
+                currentPaths.add(persistentFile.path);
+                addedNew = true;
+              } catch (e) {
+                debugPrint("Failed to copy file to persistent storage: $e");
+              }
+            }
           }
         }
         
@@ -122,11 +153,16 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
           for (var file in result.files) {
             if (file.path != null) {
               try {
-                final tag = await AudioTags.read(file.path!);
+                final persistentPath = '$_docDirPath/${file.path!.split('/').last}';
+                final persistentFile = File(persistentPath);
+                
+                // Read tags from the original file or the copied file
+                final tag = await AudioTags.read(persistentFile.existsSync() ? persistentPath : file.path!);
                 final picture = (tag?.pictures.isNotEmpty == true) ? tag?.pictures.first : null;
                 final albumArt = picture?.bytes;
                 if (albumArt != null && albumArt.isNotEmpty && _docDirPath != null) {
-                  final coverPath = '$_docDirPath/cover_${file.path!.hashCode}.jpg';
+                  // MUST use the persistent path's hashcode so it matches _pathToTrackModel
+                  final coverPath = '$_docDirPath/cover_${persistentPath.hashCode}.jpg';
                   final coverFile = File(coverPath);
                   if (!coverFile.existsSync()) {
                     await coverFile.writeAsBytes(albumArt);
@@ -291,7 +327,12 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
               ),
       ),
       title: Text(track.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(track.artistName, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: ArtistNameDisplay(
+        artistName: track.artistName,
+        style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
       trailing: IconButton(
         icon: const Icon(Icons.delete_outline, color: AppColors.error),
         onPressed: () => _showRemoveDialog(track),

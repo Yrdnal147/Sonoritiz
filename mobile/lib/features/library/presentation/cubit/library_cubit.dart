@@ -34,9 +34,9 @@ class LibraryCubit extends Cubit<LibraryState> {
     }
   }
 
-  Future<void> createPlaylist(String name) async {
+  Future<void> createPlaylist(String name, {String coverUrl = ''}) async {
     try {
-      await repository.createPlaylist(name);
+      await repository.createPlaylist(name, coverUrl: coverUrl);
       await loadLibraryData();
     } catch (_) {}
   }
@@ -65,13 +65,23 @@ class LibraryCubit extends Cubit<LibraryState> {
   }
 
   Future<void> addFavorite(TrackModel track) async {
+    if (state is LibraryLoaded) {
+      final loadedState = state as LibraryLoaded;
+      final newFavorites = List<TrackModel>.from(loadedState.favorites)..add(track);
+      emit(loadedState.copyWith(favorites: newFavorites));
+    }
     try {
       await repository.addFavorite(track);
-      await loadLibraryData(); // Refresh the list
+      await loadLibraryData(); // Refresh the list from server to be sure
     } catch (_) {}
   }
 
   Future<void> removeFavorite(String trackId) async {
+    if (state is LibraryLoaded) {
+      final loadedState = state as LibraryLoaded;
+      final newFavorites = loadedState.favorites.where((t) => t.id != trackId).toList();
+      emit(loadedState.copyWith(favorites: newFavorites));
+    }
     try {
       await repository.removeFavorite(trackId);
       await loadLibraryData();

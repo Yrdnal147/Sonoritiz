@@ -29,10 +29,15 @@ class PlaylistModel {
       }
     }
 
+    String cUrl = json['cover_url'] ?? '';
+    if (cUrl.startsWith('http://local.image/')) {
+      cUrl = cUrl.replaceFirst('http://local.image/', 'file://');
+    }
+
     return PlaylistModel(
       id: json['id'] ?? 0,
       name: json['name'] ?? 'Ma Playlist',
-      coverUrl: json['cover_url'] ?? '',
+      coverUrl: cUrl,
       tracksCount: json['tracks_count'] ?? trackList.length,
       isPinned: json['is_pinned'] ?? false,
       tracks: trackList,

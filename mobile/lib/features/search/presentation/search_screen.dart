@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:ui';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/artist_name_display.dart';
 import '../../player/data/models/track_model.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
 import '../../../core/utils/responsive_utils.dart';
@@ -293,7 +294,14 @@ class _SearchScreenState extends State<SearchScreen> {
                         child: const Text("Titre", style: TextStyle(color: Colors.white, fontSize: 10)),
                       ),
                       const SizedBox(width: 8),
-                      Expanded(child: Text(track.artistName, style: const TextStyle(color: AppColors.textSecondary, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                      Expanded(
+                        child: ArtistNameDisplay(
+                          artistName: track.artistName, 
+                          style: const TextStyle(color: AppColors.textSecondary, fontSize: 14), 
+                          maxLines: 1, 
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -320,7 +328,12 @@ class _SearchScreenState extends State<SearchScreen> {
             : Container(width: 50, height: 50, color: AppColors.surface, child: const Icon(Icons.music_note, color: Colors.white70)),
       ),
       title: Text(track.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(track.artistName, style: const TextStyle(color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: ArtistNameDisplay(
+        artistName: track.artistName, 
+        style: const TextStyle(color: AppColors.textSecondary), 
+        maxLines: 1, 
+        overflow: TextOverflow.ellipsis,
+      ),
       trailing: IconButton(
         icon: const Icon(Icons.more_vert, color: Colors.white54),
         onPressed: () {

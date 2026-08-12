@@ -10,7 +10,15 @@ import '../../features/search/presentation/search_screen.dart';
 import '../../features/library/presentation/library_screen.dart';
 import '../../features/connect/presentation/connect_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
-
+import '../../features/player/presentation/screens/fullscreen_player_screen.dart';
+import '../../features/home/presentation/screens/nouveautes_screen.dart';
+import '../../features/home/presentation/screens/select_artists_screen.dart';
+import '../../features/home/presentation/screens/artist_playlist_screen.dart';
+import '../../features/artist/presentation/screens/artist_detail_screen.dart';
+import '../../features/quiz/presentation/quiz_screen.dart';
+import '../../features/podcast/presentation/podcast_screen.dart';
+import '../../features/podcast/presentation/podcast_player_screen.dart';
+import '../../features/player/data/models/track_model.dart';
 class AppRouter {
   static GoRouter createRouter(StorageService storageService) {
     return GoRouter(
@@ -74,6 +82,47 @@ class AppRouter {
               ],
             ),
           ],
+        ),
+        GoRoute(
+          path: '/fullscreen',
+          builder: (context, state) => const FullscreenPlayerScreen(),
+        ),
+        GoRoute(
+          path: '/trends',
+          builder: (context, state) => const NouveautesScreen(),
+        ),
+        GoRoute(
+          path: '/select-artists',
+          builder: (context, state) => const SelectArtistsScreen(),
+        ),
+        GoRoute(
+          path: '/artist-playlist',
+          builder: (context, state) {
+            final artistName = state.extra as String?;
+            return ArtistPlaylistScreen(artistName: artistName ?? 'Artiste');
+          },
+        ),
+        GoRoute(
+          path: '/artist',
+          builder: (context, state) {
+            final artistInfo = state.extra as Map<String, String>?;
+            return ArtistDetailScreen(artistInfo: artistInfo ?? {});
+          },
+        ),
+        GoRoute(
+          path: '/quiz',
+          builder: (context, state) => const QuizScreen(),
+        ),
+        GoRoute(
+          path: '/podcasts',
+          builder: (context, state) => const PodcastScreen(),
+        ),
+        GoRoute(
+          path: '/podcast_player',
+          builder: (context, state) {
+            final track = state.extra as TrackModel;
+            return PodcastPlayerScreen(track: track);
+          },
         ),
       ],
     );

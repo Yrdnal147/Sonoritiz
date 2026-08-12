@@ -8,6 +8,7 @@ import '../../../features/player/presentation/cubit/player_cubit.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../features/library/presentation/cubit/library_ui_cubit.dart';
 import 'track_context_menu.dart';
+import 'artist_name_display.dart';
 
 class TrackGridView extends StatelessWidget {
   final List<TrackModel> tracks;
@@ -126,7 +127,12 @@ class TrackGridView extends StatelessWidget {
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
       leading: _buildCover(track, 50),
       title: Text(track.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(track.artistName, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: ArtistNameDisplay(
+        artistName: track.artistName, 
+        style: const TextStyle(color: AppColors.textSecondary, fontSize: 13), 
+        maxLines: 1, 
+        overflow: TextOverflow.ellipsis,
+      ),
       trailing: IconButton(
         icon: const Icon(Icons.more_vert, color: Colors.white54),
         onPressed: () => TrackContextMenu.show(context, track),
@@ -163,8 +169,8 @@ class TrackGridView extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    track.artistName,
+                  ArtistNameDisplay(
+                    artistName: track.artistName,
                     style: TextStyle(color: AppColors.textSecondary, fontSize: mode == ViewMode.gridSmall ? 10 : 12),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

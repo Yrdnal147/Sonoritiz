@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/artist_name_display.dart';
 import '../data/repositories/library_repository.dart';
 import '../../player/data/models/track_model.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
@@ -165,8 +166,8 @@ class PlaylistDetailScreen extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                     ),
-                    subtitle: Text(
-                      track.artistName,
+                    subtitle: ArtistNameDisplay(
+                      artistName: track.artistName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),

@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../data/repositories/library_repository.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
 import '../../../core/utils/share_utils.dart';
+import '../../../core/widgets/artist_name_display.dart';
 
 class HistoryScreen extends StatelessWidget {
   final List<HistoryModel> history;
@@ -47,7 +48,7 @@ class HistoryScreen extends StatelessWidget {
                   : Container(width: 44, height: 44, color: AppColors.surface, child: const Icon(Icons.music_note, color: Colors.white70)),
             ),
             title: Text(track.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            subtitle: Text(track.artistName, style: const TextStyle(color: AppColors.textSecondary)),
+            subtitle: ArtistNameDisplay(artistName: track.artistName, style: const TextStyle(color: AppColors.textSecondary)),
             trailing: PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert, color: Colors.white54),
               color: AppColors.surface,

@@ -101,9 +101,33 @@ class _LyricsScreenState extends State<LyricsScreen> {
                               ],
                             ),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.more_vert, color: Colors.white),
-                            onPressed: () {},
+                          BlocBuilder<PlayerCubit, PlayerState>(
+                            builder: (context, state) {
+                              return PopupMenuButton<String>(
+                                icon: const Icon(Icons.more_vert, color: Colors.white),
+                                color: AppColors.surfaceLight, // Assuming AppColors is imported, it is at line 9. Wait, let's use color: const Color(0xFF2E2E2E) or similar if AppColors is not available, but it is.
+                                onSelected: (value) {
+                                  if (value == 'free_lyrics') {
+                                    context.read<PlayerCubit>().toggleFreeLyricsMode();
+                                  }
+                                },
+                                itemBuilder: (context) => [
+                                  PopupMenuItem(
+                                    value: 'free_lyrics',
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          state.isFreeLyricsMode ? Icons.check_box : Icons.check_box_outline_blank,
+                                          color: Colors.white,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        const Text('Mode paroles libres', style: TextStyle(color: Colors.white)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }
                           ),
                         ],
                       ),

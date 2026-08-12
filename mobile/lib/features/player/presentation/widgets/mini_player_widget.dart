@@ -9,6 +9,7 @@ import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
 import '../screens/fullscreen_player_screen.dart';
 import '../../data/models/track_model.dart';
+import '../../../../core/widgets/artist_name_display.dart';
 
 class MiniPlayerWidget extends StatelessWidget {
   const MiniPlayerWidget({Key? key}) : super(key: key);
@@ -132,8 +133,8 @@ class MiniPlayerWidget extends StatelessWidget {
                                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
                                   ),
                                   const SizedBox(height: 2),
-                                  Text(
-                                    track.artistName,
+                                  ArtistNameDisplay(
+                                    artistName: track.artistName,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12, fontWeight: FontWeight.w500),

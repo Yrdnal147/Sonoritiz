@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:just_audio/just_audio.dart' show LoopMode;
 import '../../data/models/track_model.dart';
-
+import '../../data/models/lyrics_model.dart';
 class PlayerState extends Equatable {
   final List<TrackModel> queue;
   final int currentIndex;
@@ -12,6 +12,8 @@ class PlayerState extends Equatable {
   final String? errorMessage;
   final bool isShuffleModeEnabled;
   final LoopMode loopMode;
+  final bool isFreeLyricsMode;
+  final LyricsModel? currentLyrics;
 
   const PlayerState({
     this.queue = const [],
@@ -23,6 +25,8 @@ class PlayerState extends Equatable {
     this.errorMessage,
     this.isShuffleModeEnabled = false,
     this.loopMode = LoopMode.off,
+    this.isFreeLyricsMode = false,
+    this.currentLyrics,
   });
 
   TrackModel? get currentTrack {
@@ -44,6 +48,8 @@ class PlayerState extends Equatable {
     String? errorMessage,
     bool? isShuffleModeEnabled,
     LoopMode? loopMode,
+    bool? isFreeLyricsMode,
+    LyricsModel? currentLyrics,
   }) {
     return PlayerState(
       queue: queue ?? this.queue,
@@ -55,6 +61,8 @@ class PlayerState extends Equatable {
       errorMessage: errorMessage,
       isShuffleModeEnabled: isShuffleModeEnabled ?? this.isShuffleModeEnabled,
       loopMode: loopMode ?? this.loopMode,
+      isFreeLyricsMode: isFreeLyricsMode ?? this.isFreeLyricsMode,
+      currentLyrics: currentLyrics ?? this.currentLyrics,
     );
   }
 
@@ -69,5 +77,7 @@ class PlayerState extends Equatable {
         errorMessage,
         isShuffleModeEnabled,
         loopMode,
+        isFreeLyricsMode,
+        currentLyrics,
       ];
 }

@@ -82,15 +82,19 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
 
       print('Setting URL...');
       
-      // Si on a un ID YouTube, on force l'utilisation du flux complet (Vidéo + Audio)
-      // car YouTube bloque souvent (403) les flux purement audio pour les bots.
+      // On force l'utilisation du flux complet (Vidéo + Audio) car YouTube 
+      // bloque souvent (erreur 403) les flux purement audio pour les requêtes non-navigateur.
+      // Optimisation: On prend la vidéo avec la plus BASSE qualité possible (ex: 144p) 
+      // pour économiser énormément de bande passante tout en gardant l'audio.
       if (audioUrl.isEmpty && item.id.isNotEmpty) {
         final manifest = await _yt.videos.streamsClient.getManifest(item.id);
-        
-        // On récupère le flux MP4 standard (muxed) avec la qualité la plus BASSE
-        // car on n'a besoin que du son ! Ça va régler le problème de "ça cale" (buffering).
-        final streamInfo = manifest.muxed.sortByVideoQuality().last;
-        audioUrl = streamInfo.url.toString();
+        try {
+          final streamInfo = manifest.muxed.sortByVideoQuality().first;
+          audioUrl = streamInfo.url.toString();
+        } catch(e) {
+          final streamInfo = manifest.muxed.first;
+          audioUrl = streamInfo.url.toString();
+        }
       }
 
       if (audioUrl.isEmpty) {

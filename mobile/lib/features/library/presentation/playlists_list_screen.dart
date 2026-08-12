@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../core/theme/app_colors.dart';
 import '../data/repositories/library_repository.dart';
 import 'cubit/library_cubit.dart';
@@ -14,32 +17,73 @@ class PlaylistsListScreen extends StatelessWidget {
 
   void _showCreatePlaylistDialog(BuildContext context) {
     final controller = TextEditingController();
+    String? selectedImagePath;
+
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text("Nouvelle Playlist", style: TextStyle(color: Colors.white)),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(hintText: "Nom de la playlist"),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text("Annuler", style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (controller.text.trim().isNotEmpty) {
-                context.read<LibraryCubit>().createPlaylist(controller.text.trim());
-                Navigator.pop(dialogContext);
-              }
-            },
-            child: const Text("Créer"),
-          ),
-        ],
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            backgroundColor: AppColors.surface,
+            title: const Text("Nouvelle Playlist", style: TextStyle(color: Colors.white)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: () async {
+                    final picker = ImagePicker();
+                    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+                    if (pickedFile != null) {
+                      setState(() {
+                        selectedImagePath = pickedFile.path;
+                      });
+                    }
+                  },
+                  child: Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceLight,
+                      borderRadius: BorderRadius.circular(8),
+                      image: selectedImagePath != null 
+                          ? DecorationImage(image: FileImage(File(selectedImagePath!)), fit: BoxFit.cover)
+                          : null,
+                    ),
+                    child: selectedImagePath == null 
+                        ? const Icon(Icons.add_a_photo, color: Colors.white54, size: 40)
+                        : null,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(hintText: "Nom de la playlist"),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text("Annuler", style: TextStyle(color: AppColors.textSecondary)),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  if (controller.text.trim().isNotEmpty) {
+                    context.read<LibraryCubit>().createPlaylist(
+                      controller.text.trim(),
+                      // Vercel backend expects a valid URL. We prefix with a dummy URL to bypass validation.
+                      coverUrl: selectedImagePath != null ? 'http://local.image/$selectedImagePath' : ''
+                    );
+                    Navigator.pop(dialogContext);
+                  }
+                },
+                child: const Text("Créer"),
+              ),
+            ],
+          );
+        }
       ),
     );
   }
@@ -234,7 +278,7 @@ class PlaylistsListScreen extends StatelessWidget {
         width: 50,
         height: 50,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [AppColors.primary, Colors.deepPurple]),
+          gradient: const LinearGradient(colors: [AppColors.primary, AppColors.secondary]),
           borderRadius: BorderRadius.circular(8),
         ),
         child: const Icon(Icons.queue_music, color: Colors.white),

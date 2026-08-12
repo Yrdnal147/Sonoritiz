@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 class AppColors {
   // Primary Brand Color
-  static const Color primary = Color(0xFFFF6929); // Vibrant Orange
+  static const Color primary = Color(0xFFFF5E5B); // Primary Coral Red
+  static const Color secondary = Color(0xFFFFAC93); // Secondary Peach
 
   // Background & Surface Dark Palette
   static const Color background = Color(0xFF121212); // Deep Black

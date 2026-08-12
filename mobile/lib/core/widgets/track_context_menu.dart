@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../features/player/data/models/track_model.dart';
-import '../../../features/library/presentation/cubit/library_cubit.dart';
-import '../../../features/library/presentation/cubit/library_state.dart';
+import '../../../features/player/presentation/cubit/player_cubit.dart';
+import '../../../features/library/presentation/cubit/library_ui_cubit.dart';
+import '../../features/library/presentation/cubit/library_cubit.dart';
+import '../../features/library/presentation/cubit/library_state.dart';
+import 'artist_name_display.dart';
 import '../../../features/offline/presentation/cubit/download_cubit.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/share_utils.dart';
@@ -49,7 +52,7 @@ class TrackContextMenu extends StatelessWidget {
                   children: [
                     Text(track.title, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 4),
-                    Text(track.artistName, style: const TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+                    ArtistNameDisplay(artistName: track.artistName, style: const TextStyle(color: AppColors.textSecondary, fontSize: 14)),
                   ],
                 ),
               ),
