@@ -66,7 +66,7 @@ def custom_exception_handler(exc, context):
         {
             "error": {
                 "code": "INTERNAL_SERVER_ERROR",
-                "message": f"Une erreur interne s'est produite: {str(exc)}"
+                "message": "Une erreur interne s'est produite. Notre équipe technique en a été informée."
             }
         },
         status=status.HTTP_500_INTERNAL_SERVER_ERROR

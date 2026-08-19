@@ -1,23 +1,32 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' show Random;
+import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:just_audio/just_audio.dart' show ProcessingState, LoopMode;
 import 'package:home_widget/home_widget.dart';
 import '../../../../core/audio/audio_handler.dart';
 import '../../../../core/storage/storage_service.dart';
+import '../../data/models/lyrics_model.dart';
 import '../../data/models/track_model.dart';
 import '../../data/services/lyrics_service.dart';
+import '../../../library/data/repositories/library_repository.dart';
 import 'player_state.dart';
 
 class PlayerCubit extends Cubit<PlayerState> {
   final SonoritizAudioHandler _audioHandler;
   final LyricsService _lyricsService = LyricsService();
+  final LibraryRepository? libraryRepository;
   StreamSubscription? _playerStateSubscription;
   StreamSubscription? _positionSubscription;
   StreamSubscription? _durationSubscription;
+  Timer? _sleepTimer;
 
-  PlayerCubit({required SonoritizAudioHandler audioHandler})
-      : _audioHandler = audioHandler,
+  PlayerCubit({
+    required SonoritizAudioHandler audioHandler,
+    this.libraryRepository,
+  }) : _audioHandler = audioHandler,
         super(PlayerState(isFreeLyricsMode: StorageService().isFreeLyricsMode)) {
     _initSubscriptions();
   }
@@ -71,10 +80,74 @@ class PlayerCubit extends Cubit<PlayerState> {
     try {
       await HomeWidget.saveWidgetData<String>('title', track.title);
       await HomeWidget.saveWidgetData<String>('artist', track.artistName);
+      
+      final isFav = await libraryRepository?.isFavorite(track.id) ?? false;
+      await HomeWidget.saveWidgetData<bool>('isFavorite', isFav);
+      
       if (track.coverUrl.isNotEmpty) {
-        await HomeWidget.saveWidgetData<String>('coverUrl', track.coverUrl);
+        try {
+          final tempDir = await getTemporaryDirectory();
+          final uri = Uri.parse(track.coverUrl);
+          String ext = uri.pathSegments.isNotEmpty ? uri.pathSegments.last.split('.').last : 'jpg';
+          if (!['jpg', 'jpeg', 'png'].contains(ext.toLowerCase())) ext = 'jpg';
+          final localPath = '${tempDir.path}/widget_cover_${track.id}.$ext';
+          final file = File(localPath);
+          if (!await file.exists()) {
+            final dio = Dio();
+            await dio.download(track.coverUrl, localPath);
+          }
+          await HomeWidget.saveWidgetData<String>('coverPath', localPath);
+        } catch (e) {
+          await HomeWidget.saveWidgetData<String>('coverPath', null);
+        }
+      } else {
+        await HomeWidget.saveWidgetData<String>('coverPath', null);
       }
+
+      // --- Download history covers for the large widget ---
+      try {
+        final historyList = await libraryRepository?.getHistory() ?? [];
+        final coversList = <TrackModel>[];
+        final seenUrls = <String>[];
+        for (var item in historyList) {
+           if (item.track != null && item.track!.coverUrl.isNotEmpty && !seenUrls.contains(item.track!.coverUrl)) {
+               seenUrls.add(item.track!.coverUrl);
+               coversList.add(item.track!);
+           }
+           if (coversList.length >= 5) break;
+        }
+        
+        final tempDir = await getTemporaryDirectory();
+        final dio = Dio();
+        for (int i = 0; i < 5; i++) {
+           if (i < coversList.length) {
+              final track = coversList[i];
+              final url = track.coverUrl;
+              final uri = Uri.parse(url);
+              String ext = uri.pathSegments.isNotEmpty ? uri.pathSegments.last.split('.').last : 'jpg';
+              if (!['jpg', 'jpeg', 'png'].contains(ext.toLowerCase())) ext = 'jpg';
+              final localPath = '${tempDir.path}/widget_hist_$i.$ext';
+              final file = File(localPath);
+              if (!await file.exists()) {
+                 await dio.download(url, localPath);
+              }
+              await HomeWidget.saveWidgetData<String>('hist_cover_$i', localPath);
+              await HomeWidget.saveWidgetData<String>('hist_title_$i', coversList[i].title);
+              await HomeWidget.saveWidgetData<String>('hist_artist_$i', coversList[i].artistName);
+           } else {
+              await HomeWidget.saveWidgetData<String>('hist_cover_$i', null);
+              await HomeWidget.saveWidgetData<String>('hist_title_$i', null);
+              await HomeWidget.saveWidgetData<String>('hist_artist_$i', null);
+           }
+        }
+      } catch (e) {
+        // Ignore history fetch errors
+      }
+
       await HomeWidget.updateWidget(androidName: 'NowPlayingWidgetProvider');
+      await HomeWidget.updateWidget(androidName: 'PlaylistWidgetProvider');
+      await HomeWidget.updateWidget(androidName: 'MiniSquareWidgetProvider');
+      await HomeWidget.updateWidget(androidName: 'RecentListWidgetProvider');
     } catch (e) {
       // Ignorer l'erreur si le widget n'est pas encore prêt
     }
@@ -93,13 +166,14 @@ class PlayerCubit extends Cubit<PlayerState> {
     ));
 
     _updateHomeWidget(track);
+    libraryRepository?.addToHistory(track);
     await _audioHandler.playTrack(track.toMediaItem());
     _fetchLyrics(track);
   }
 
   Future<void> _fetchLyrics(TrackModel track) async {
     // Optional: Only fetch if in free lyrics mode? Let's always fetch so it's ready.
-    emit(state.copyWith(currentLyrics: null));
+    emit(state.copyWith(currentLyrics: LyricsModel(plainLyrics: '', syncedLyrics: '')));
     try {
       final lyrics = await _lyricsService.getLyrics(track.id, track.artistName, track.title, track.durationSeconds);
       if (state.currentTrack?.id == track.id) {
@@ -238,6 +312,37 @@ class PlayerCubit extends Cubit<PlayerState> {
     _playerStateSubscription?.cancel();
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
+    _sleepTimer?.cancel();
     return super.close();
+  }
+
+  void startSleepTimer(Duration duration) {
+    cancelSleepTimer();
+    emit(state.copyWith(
+      isSleepTimerActive: true,
+      sleepTimerRemaining: duration,
+    ));
+
+    _sleepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (state.sleepTimerRemaining == null) return;
+      
+      final remaining = state.sleepTimerRemaining! - const Duration(seconds: 1);
+      
+      if (remaining.inSeconds <= 0) {
+        cancelSleepTimer();
+        _audioHandler.pause();
+      } else {
+        emit(state.copyWith(sleepTimerRemaining: remaining));
+      }
+    });
+  }
+
+  void cancelSleepTimer() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    emit(state.copyWith(
+      isSleepTimerActive: false,
+      sleepTimerRemaining: Duration.zero,
+    ));
   }
 }

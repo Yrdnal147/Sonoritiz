@@ -48,22 +48,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
               // Arrière-plan ambiant flouté (comme le lecteur)
               Positioned.fill(
                 child: track.coverUrl.isNotEmpty
-                    ? Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          CachedNetworkImage(
-                            imageUrl: track.coverUrl,
-                            fit: BoxFit.cover,
-                            errorWidget: (context, url, error) => Container(color: AppColors.background),
-                          ),
-                          BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 55.0, sigmaY: 55.0),
-                            child: Container(
-                              color: Colors.black.withOpacity(0.6), // Assombrir un peu plus pour les paroles
-                            ),
-                          ),
-                        ],
-                      )
+                    ? AnimatedBlurBackground(imageUrl: track.coverUrl)
                     : Container(color: AppColors.background),
               ),
 
@@ -232,6 +217,64 @@ class _LyricsScreenState extends State<LyricsScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+class AnimatedBlurBackground extends StatefulWidget {
+  final String imageUrl;
+  const AnimatedBlurBackground({Key? key, required this.imageUrl}) : super(key: key);
+
+  @override
+  State<AnimatedBlurBackground> createState() => _AnimatedBlurBackgroundState();
+}
+
+class _AnimatedBlurBackgroundState extends State<AnimatedBlurBackground> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 15))..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Transform.scale(
+              scale: 1.2 + (_controller.value * 0.4),
+              child: Transform.translate(
+                offset: Offset(
+                  (_controller.value - 0.5) * 60,
+                  (1.0 - _controller.value - 0.5) * 60,
+                ),
+                child: CachedNetworkImage(
+                  imageUrl: widget.imageUrl,
+                  fit: BoxFit.cover,
+                  errorWidget: (context, url, error) => Container(color: AppColors.background),
+                ),
+              ),
+            ),
+            BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 70.0, sigmaY: 70.0),
+              child: Container(
+                color: Colors.black.withOpacity(0.4 + (_controller.value * 0.3)),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

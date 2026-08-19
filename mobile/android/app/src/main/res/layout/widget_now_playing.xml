@@ -1,72 +1,105 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_background"
-    android:padding="16dp">
+    android:orientation="vertical">
 
-    <!-- Pochette -->
-    <ImageView
-        android:id="@+id/widget_cover"
-        android:layout_width="70dp"
-        android:layout_height="70dp"
-        android:layout_centerVertical="true"
-        android:layout_alignParentStart="true"
-        android:scaleType="centerCrop"
-        android:background="#333333" />
+    <!-- Section Infos Haut -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:padding="16dp">
 
-    <!-- Infos -->
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:layout_toEndOf="@id/widget_cover"
-        android:layout_toStartOf="@id/widget_controls"
-        android:layout_centerVertical="true"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="8dp">
+        <!-- Pochette -->
+        <ImageView
+            android:id="@+id/widget_cover"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_centerVertical="true"
+            android:layout_alignParentStart="true"
+            android:scaleType="centerCrop"
+            android:background="@drawable/widget_cover_bg"
+            android:clipToOutline="true"
+            android:src="@mipmap/launcher_icon" />
 
-        <TextView
-            android:id="@+id/widget_title"
-            android:layout_width="wrap_content"
+        <!-- Infos -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Sonoritiz"
-            android:textColor="#FFFFFF"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:maxLines="1"
-            android:ellipsize="end" />
+            android:orientation="vertical"
+            android:layout_toEndOf="@id/widget_cover"
+            android:layout_toStartOf="@id/widget_logo"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="8dp">
 
-        <TextView
-            android:id="@+id/widget_artist"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="En attente de musique..."
-            android:textColor="#AAAAAA"
-            android:textSize="14sp"
-            android:layout_marginTop="4dp"
-            android:maxLines="1"
-            android:ellipsize="end" />
-    </LinearLayout>
+            <TextView
+                android:id="@+id/widget_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Sonoritiz"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:letterSpacing="0.02" />
 
-    <!-- Contrôles -->
+            <TextView
+                android:id="@+id/widget_artist"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="En attente de musique..."
+                android:textColor="#999999"
+                android:textSize="13sp"
+                android:textAllCaps="true"
+                android:layout_marginTop="2dp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:letterSpacing="0.05" />
+        </LinearLayout>
+
+        <!-- Logo App -->
+        <ImageView
+            android:id="@+id/widget_logo"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:src="@mipmap/launcher_icon"
+            android:alpha="0.5" />
+    </RelativeLayout>
+
+    <!-- Barre de contrôle Bas -->
     <LinearLayout
         android:id="@+id/widget_controls"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="@drawable/widget_control_bar_bg"
         android:orientation="horizontal"
-        android:layout_alignParentEnd="true"
-        android:layout_centerVertical="true"
         android:gravity="center">
 
         <ImageButton
+            android:id="@+id/btn_favorite"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginEnd="8dp"
+            android:background="?android:selectableItemBackgroundBorderless"
+            android:src="@android:drawable/btn_star"
+            android:tint="#FFFFFF"
+            android:scaleType="center"
+            android:padding="8dp"/>
+
+        <ImageButton
             android:id="@+id/btn_prev"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:background="?android:selectableItemBackgroundBorderless"
             android:src="@android:drawable/ic_media_previous"
-            android:tint="#FFFFFF"
-            android:scaleType="fitCenter"
+            android:tint="#E0E0E0"
+            android:scaleType="center"
             android:padding="8dp"/>
 
         <ImageButton
@@ -75,19 +108,20 @@
             android:layout_height="48dp"
             android:background="?android:selectableItemBackgroundBorderless"
             android:src="@android:drawable/ic_media_play"
-            android:tint="#FF6600"
-            android:scaleType="fitCenter"
+            android:tint="#FFFFFF"
+            android:scaleType="center"
             android:padding="8dp"/>
 
         <ImageButton
             android:id="@+id/btn_next"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="16dp"
             android:background="?android:selectableItemBackgroundBorderless"
             android:src="@android:drawable/ic_media_next"
-            android:tint="#FFFFFF"
-            android:scaleType="fitCenter"
+            android:tint="#E0E0E0"
+            android:scaleType="center"
             android:padding="8dp"/>
     </LinearLayout>
 
-</RelativeLayout>
+</LinearLayout>

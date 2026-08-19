@@ -87,13 +87,22 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
       // Optimisation: On prend la vidéo avec la plus BASSE qualité possible (ex: 144p) 
       // pour économiser énormément de bande passante tout en gardant l'audio.
       if (audioUrl.isEmpty && item.id.isNotEmpty) {
-        final manifest = await _yt.videos.streamsClient.getManifest(item.id);
         try {
-          final streamInfo = manifest.muxed.sortByVideoQuality().first;
-          audioUrl = streamInfo.url.toString();
-        } catch(e) {
-          final streamInfo = manifest.muxed.first;
-          audioUrl = streamInfo.url.toString();
+          final manifest = await _yt.videos.streamsClient.getManifest(item.id).timeout(const Duration(seconds: 10));
+          if (manifest.muxed.isNotEmpty) {
+            try {
+              final streamInfo = manifest.muxed.sortByVideoQuality().first;
+              audioUrl = streamInfo.url.toString();
+            } catch(e) {
+              final streamInfo = manifest.muxed.first;
+              audioUrl = streamInfo.url.toString();
+            }
+          } else if (manifest.audioOnly.isNotEmpty) {
+            final streamInfo = manifest.audioOnly.withHighestBitrate();
+            audioUrl = streamInfo.url.toString();
+          }
+        } catch (e) {
+          print("Erreur getManifest audio_handler: $e");
         }
       }
 

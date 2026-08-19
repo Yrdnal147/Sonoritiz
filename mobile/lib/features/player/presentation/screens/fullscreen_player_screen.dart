@@ -4,13 +4,16 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../../../../core/utils/responsive_utils.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:palette_generator/palette_generator.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/widgets/track_context_menu.dart';
-import '../../../../core/widgets/artist_name_display.dart';
-import '../../../../core/constants/app_strings.dart';
+import '../../../../core/theme/app_dimensions.dart';
+import '../../../../core/theme/app_animations.dart';
+import '../../../../core/widgets/sonoritiz_icon_button.dart';
+import '../../../../core/utils/share_utils.dart';
+
 import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
 import '../widgets/queue_bottom_sheet.dart';
@@ -22,7 +25,12 @@ import 'lyrics_screen.dart';
 import '../../../../features/library/presentation/cubit/library_cubit.dart';
 import '../../../../features/library/presentation/cubit/library_state.dart';
 import '../../../../features/offline/presentation/cubit/download_cubit.dart';
-import '../../../../core/utils/share_utils.dart';
+
+import '../widgets/player_components/player_artwork_carousel.dart';
+import '../widgets/player_components/player_track_info.dart';
+import '../widgets/player_components/player_progress_bar.dart';
+import '../widgets/player_components/player_primary_controls.dart';
+import '../widgets/player_components/player_secondary_controls.dart';
 
 class FullscreenPlayerScreen extends StatefulWidget {
   const FullscreenPlayerScreen({Key? key}) : super(key: key);
@@ -62,30 +70,25 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
 
   Future<void> _toggleVideoMode(Duration currentPosition) async {
     if (_isVideoLoading) return;
-
     final cubit = context.read<PlayerCubit>();
     final track = cubit.state.currentTrack;
     if (track == null) return;
 
-    setState(() {
-      _isVideoMode = !_isVideoMode;
-    });
+    setState(() { _isVideoMode = !_isVideoMode; });
 
     if (_isVideoMode) {
       setState(() { _isVideoLoading = true; });
       try {
         await cubit.pause();
-        
         String youtubeId = track.id;
         
-        // If it's a local track, search YouTube to find a video
         if (track.id.startsWith('local_')) {
           final query = "${track.artistName} ${track.title} official video";
           final searchResults = await _yt.search.search(query);
           if (searchResults.isNotEmpty) {
             youtubeId = searchResults.first.id.value;
           } else {
-            throw Exception("Aucune vidéo trouvée pour ce son.");
+            throw Exception("Aucune vidéo trouvée");
           }
         }
         
@@ -107,22 +110,18 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
             _videoController!.play();
           }
         } else {
-          throw Exception("Aucun flux vidéo disponible");
+          throw Exception("Aucun flux vidéo");
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Vidéo indisponible, retour à l'audio.")),
           );
-          setState(() {
-            _isVideoMode = false;
-          });
+          setState(() { _isVideoMode = false; });
           cubit.play();
         }
       } finally {
-        if (mounted) {
-          setState(() { _isVideoLoading = false; });
-        }
+        if (mounted) setState(() { _isVideoLoading = false; });
       }
     } else {
       if (_videoController != null) {
@@ -166,17 +165,131 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     final minutes = twoDigits(duration.inMinutes.remainder(60));
     final seconds = twoDigits(duration.inSeconds.remainder(60));
-    return minutes + ':' + seconds;
+    return '$minutes:$seconds';
   }
 
+  void _showMoreOptionsBottomSheet(BuildContext context, TrackModel track) {
+    final colorScheme = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: colorScheme.surface,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40, height: 4,
+                margin: const EdgeInsets.symmetric(vertical: AppDimensions.spacingMd),
+                decoration: BoxDecoration(
+                  color: colorScheme.onSurfaceVariant.withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(AppDimensions.radiusPill),
+                ),
+              ),
+              ListTile(
+                leading: Icon(_isVideoMode ? Icons.audiotrack_outlined : Icons.videocam_outlined),
+                title: Text(_isVideoMode ? "Passer en mode audio" : "Passer en mode vidéo"),
+                onTap: () {
+                  Navigator.pop(context);
+                  _toggleVideoMode(context.read<PlayerCubit>().state.position);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.playlist_add),
+                title: const Text("Ajouter à la playlist"),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showAddToPlaylistSheet(context, track);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.timer_outlined),
+                title: const Text("Minuteur de sommeil"),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showSleepTimerBottomSheet(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.share_rounded),
+                title: const Text("Partager"),
+                onTap: () {
+                  Navigator.pop(context);
+                  ShareUtils.shareTrack(track);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
+  void _showSleepTimerBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) {
+        return BlocProvider.value(
+          value: context.read<PlayerCubit>(),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(AppDimensions.spacingLg),
+                  child: Text("Minuteur de sommeil", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                ),
+                BlocBuilder<PlayerCubit, PlayerState>(
+                  builder: (context, state) {
+                    return Column(
+                      children: [
+                        if (state.isSleepTimerActive && state.sleepTimerRemaining != null) ...[
+                          Text(
+                            "S'arrête dans : ${_formatDuration(state.sleepTimerRemaining!)}",
+                            style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: AppDimensions.spacingMd),
+                          ListTile(
+                            leading: const Icon(Icons.timer_off_outlined),
+                            title: const Text("Désactiver le minuteur"),
+                            onTap: () {
+                              context.read<PlayerCubit>().cancelSleepTimer();
+                              Navigator.pop(context);
+                            },
+                          ),
+                          const Divider(),
+                        ],
+                        _buildTimerOption(context, 15),
+                        _buildTimerOption(context, 30),
+                        _buildTimerOption(context, 45),
+                        _buildTimerOption(context, 60),
+                      ],
+                    );
+                  }
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTimerOption(BuildContext context, int minutes) {
+    return ListTile(
+      leading: const Icon(Icons.timer_outlined),
+      title: Text("$minutes minutes"),
+      onTap: () {
+        context.read<PlayerCubit>().startSleepTimer(Duration(minutes: minutes));
+        Navigator.pop(context);
+      },
+    );
+  }
 
   void _showAddToPlaylistSheet(BuildContext parentContext, TrackModel track) {
     final libraryCubit = parentContext.read<LibraryCubit>();
     showModalBottomSheet(
       context: parentContext,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (sheetContext) {
         return BlocProvider.value(
           value: libraryCubit,
@@ -186,46 +299,29 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                 final playlists = state.playlists;
                 if (playlists.isEmpty) {
                   return const Padding(
-                    padding: EdgeInsets.all(24.0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.playlist_add, size: 48, color: Colors.white38),
-                        SizedBox(height: 12),
-                        Text("Aucune playlist disponible.\nCrée-en une dans ta bibliothèque.", textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
-                      ],
-                    ),
+                    padding: EdgeInsets.all(AppDimensions.spacingLg),
+                    child: Text("Aucune playlist disponible."),
                   );
                 }
                 return Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Padding(
-                      padding: EdgeInsets.all(16.0),
-                      child: Text("Ajouter à la playlist", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                      padding: EdgeInsets.all(AppDimensions.spacingMd),
+                      child: Text("Ajouter à la playlist", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     ),
-                    SizedBox(
-                      height: (playlists.length * 56.0).clamp(56.0, 300.0),
+                    Expanded(
                       child: ListView.builder(
-                        shrinkWrap: true,
                         itemCount: playlists.length,
                         itemBuilder: (context, index) {
                           final playlist = playlists[index];
                           return ListTile(
-                            leading: const Icon(Icons.queue_music, color: AppColors.primary),
-                            title: Text(playlist.name, style: const TextStyle(color: Colors.white)),
-                            subtitle: Text("${playlist.tracksCount} morceaux", style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                            leading: const Icon(Icons.queue_music),
+                            title: Text(playlist.name),
+                            subtitle: Text("${playlist.tracksCount} morceaux"),
                             onTap: () {
                               libraryCubit.addTrackToPlaylist(playlist.id, track);
                               Navigator.pop(sheetContext);
-                              ScaffoldMessenger.of(parentContext).showSnackBar(
-                                SnackBar(
-                                  content: Text("✓ Ajouté à ${playlist.name}", style: const TextStyle(color: Colors.white)),
-                                  backgroundColor: AppColors.primary.withOpacity(0.9),
-                                  behavior: SnackBarBehavior.floating,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                              );
                             },
                           );
                         },
@@ -234,27 +330,11 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                   ],
                 );
               }
-              return const SizedBox(height: 100, child: Center(child: CircularProgressIndicator(color: AppColors.primary)));
+              return const SizedBox(height: 100, child: Center(child: CircularProgressIndicator()));
             },
           ),
         );
       },
-    );
-  }
-
-  Widget _buildGlassCircleButton({required IconData icon, required VoidCallback onTap, Color iconColor = Colors.white}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 44,
-        height: 44,
-        margin: const EdgeInsets.only(left: 8),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, color: iconColor, size: 22),
-      ),
     );
   }
 
@@ -263,44 +343,41 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
     final dismissThreshold = screenHeight * 0.2;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return GestureDetector(
       onVerticalDragUpdate: (details) {
         if (details.primaryDelta! > 0) {
-          setState(() {
-            _dragOffsetY += details.primaryDelta!;
-          });
+          setState(() { _dragOffsetY += details.primaryDelta!; });
         }
       },
       onVerticalDragEnd: (details) {
         if (_dragOffsetY > dismissThreshold) {
           Navigator.of(context).pop();
         } else {
-          setState(() {
-            _dragOffsetY = 0.0;
-          });
+          setState(() { _dragOffsetY = 0.0; });
         }
       },
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 100),
+        duration: AppAnimations.fast,
         transform: Matrix4.translationValues(0, _dragOffsetY, 0),
         decoration: BoxDecoration(
-          color: const Color(0xFF121212).withOpacity((1 - (_dragOffsetY / screenHeight)).clamp(0.2, 1.0)),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(40)),
+          color: colorScheme.surface.withOpacity((1 - (_dragOffsetY / screenHeight)).clamp(0.2, 1.0)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(AppDimensions.radiusXxl)),
         ),
         child: ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(40)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(AppDimensions.radiusXxl)),
           child: Scaffold(
             backgroundColor: Colors.transparent,
-            body: BlocConsumer<PlayerCubit, PlayerState>(
+            body: BlocListener<PlayerCubit, PlayerState>(
               listenWhen: (prev, cur) => prev.currentIndex != cur.currentIndex,
               listener: (context, state) {
                 if (_pageController != null && _pageController!.hasClients) {
                   if (_pageController!.page?.round() != state.currentIndex) {
                     _pageController!.animateToPage(
                       state.currentIndex,
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
+                      duration: AppAnimations.normal,
+                      curve: AppAnimations.standard,
                     );
                   }
                 }
@@ -318,82 +395,75 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
               },
               child: Stack(
                 children: [
-                  // --- ARRIÈRE-PLAN DÉGRADÉ DYNAMIQUE ---
+                  // Arrière-plan dégradé
                   AnimatedContainer(
-                    duration: const Duration(milliseconds: 800),
+                    duration: AppAnimations.verySlow,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          _dominantColor?.withOpacity(0.8) ?? AppColors.primary.withOpacity(0.5),
-                          _dominantColor?.withOpacity(0.2) ?? const Color(0xFF121212),
-                          Colors.black,
+                          _dominantColor?.withOpacity(0.6) ?? colorScheme.primary.withOpacity(0.3),
+                          _dominantColor?.withOpacity(0.1) ?? colorScheme.surface,
+                          colorScheme.surface,
                         ],
-                        stops: const [0.0, 0.5, 1.0],
+                        stops: const [0.0, 0.4, 1.0],
                       ),
                     ),
                   ),
 
-                  // --- CONTENU PRINCIPAL ---
+                  // Contenu
                   SafeArea(
                     child: BlocBuilder<PlayerCubit, PlayerState>(
                       builder: (context, state) {
                         if (!state.hasTrack) {
-                          return const Center(child: Text("Aucun morceau", style: TextStyle(color: Colors.white)));
+                          return const Center(child: Text("Aucun morceau"));
                         }
 
                         final track = state.currentTrack!;
-                        
-                        // Variables dynamiques selon le mode (Audio ou Vidéo)
                         final isPlaying = _isVideoMode && _videoController != null 
                             ? _videoController!.value.isPlaying 
                             : state.isPlaying;
-                            
                         final position = _isVideoMode && _videoController != null 
                             ? _videoController!.value.position 
                             : state.position;
-                            
                         final duration = _isVideoMode && _videoController != null && _videoController!.value.duration.inMilliseconds > 0
                             ? _videoController!.value.duration 
                             : state.duration;
-
+                        
                         final isDesktop = ResponsiveUtils.isDesktop(context) || ResponsiveUtils.isTablet(context);
                         final double coverSize = isDesktop 
                             ? math.min(screenWidth / 2 - 64, screenHeight * 0.6) 
                             : screenWidth - 32;
 
-                        final appBar = // --- APP BAR (Top) ---
+                        return Column(
+                          children: [
+                            // Header
                             Padding(
-                              padding: const EdgeInsets.only(top: 40.0, bottom: 16.0, left: 24.0, right: 24.0),
+                              padding: const EdgeInsets.fromLTRB(AppDimensions.spacingMd, AppDimensions.spacingLg, AppDimensions.spacingMd, AppDimensions.spacingSm),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  _buildGlassCircleButton(
+                                  SonoritizIconButton(
                                     icon: Icons.keyboard_arrow_down_rounded,
-                                    onTap: () => Navigator.pop(context),
+                                    tooltip: "Fermer",
+                                    color: colorScheme.onSurface,
+                                    onPressed: () => Navigator.pop(context),
                                   ),
-                                  const Text(
+                                  Text(
                                     "En cours de lecture",
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                                    style: Theme.of(context).textTheme.titleSmall,
                                   ),
                                   Row(
                                     children: [
-                                      _buildGlassCircleButton(
-                                        icon: Icons.playlist_add,
-                                        onTap: () => _showAddToPlaylistSheet(context, track),
-                                      ),
                                       BlocBuilder<LibraryCubit, LibraryState>(
                                         builder: (context, libraryState) {
                                           final isFav = context.read<LibraryCubit>().isFavorite(track.id);
-                                          return _buildGlassCircleButton(
+                                          return SonoritizIconButton(
                                             icon: isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                                            iconColor: isFav ? AppColors.primary : Colors.white,
-                                            onTap: () {
+                                            tooltip: isFav ? "Retirer des favoris" : "Ajouter aux favoris",
+                                            color: isFav ? colorScheme.primary : colorScheme.onSurface,
+                                            onPressed: () {
                                               if (isFav) {
                                                 context.read<LibraryCubit>().removeFavorite(track.id);
                                               } else {
@@ -403,472 +473,109 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                                           );
                                         },
                                       ),
+                                      SonoritizIconButton(
+                                        icon: Icons.more_vert_rounded,
+                                        tooltip: "Options",
+                                        color: colorScheme.onSurface,
+                                        onPressed: () => _showMoreOptionsBottomSheet(context, track),
+                                      ),
                                     ],
                                   ),
                                 ],
                               ),
-                            ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.2, end: 0);
+                            ).animate().fadeIn(duration: AppAnimations.normal).slideY(begin: -0.2, end: 0),
 
+                            const SizedBox(height: AppDimensions.spacingMd),
 
+                            // Artwork Carousel
+                            PlayerArtworkCarousel(
+                              pageController: _pageController!,
+                              coverSize: coverSize,
+                              dominantColor: _dominantColor,
+                              isVideoMode: _isVideoMode,
+                              isVideoLoading: _isVideoLoading,
+                              videoController: _videoController,
+                              position: position,
+                              duration: duration,
+                            ).animate().fadeIn(duration: AppAnimations.slow),
 
-                        final coverArt = SizedBox(
-                          height: (coverSize) * 1.05 + 40,
-                          child: PageView.builder(
-                            controller: _pageController,
-                            physics: const BouncingScrollPhysics(),
-                            onPageChanged: (index) {
-                              final cubit = context.read<PlayerCubit>();
-                              if (index > cubit.state.currentIndex) {
-                                cubit.playNext();
-                              } else if (index < cubit.state.currentIndex) {
-                                cubit.playPrevious();
-                              }
-                            },
-                            itemCount: state.queue.length,
-                            itemBuilder: (context, index) {
-                              final qTrack = state.queue[index];
-                              return AnimatedBuilder(
-                                animation: _pageController!,
-                                builder: (context, child) {
-                                  double value = 1.0;
-                                  if (_pageController!.position.haveDimensions) {
-                                    value = _pageController!.page! - index;
-                                    value = (1 - (value.abs() * 0.15)).clamp(0.0, 1.0);
-                                  } else if (index != state.currentIndex) {
-                                    value = 0.85;
+                            const SizedBox(height: AppDimensions.spacingLg),
+
+                            // Track Info
+                            PlayerTrackInfo(
+                              title: track.title,
+                              artistName: track.artistName,
+                            ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2, end: 0),
+
+                            const SizedBox(height: AppDimensions.spacingXl),
+
+                            // Progress Bar
+                            PlayerProgressBar(
+                              position: position,
+                              duration: duration,
+                              onSeek: (newPosition) {
+                                if (_isVideoMode && _videoController != null) {
+                                  _videoController!.seekTo(newPosition);
+                                } else {
+                                  context.read<PlayerCubit>().seek(newPosition);
+                                }
+                              },
+                            ).animate().fadeIn(delay: 300.ms),
+
+                            const Spacer(),
+
+                            // Primary Controls
+                            PlayerPrimaryControls(
+                              isPlaying: isPlaying,
+                              isShuffleModeEnabled: state.isShuffleModeEnabled,
+                              loopMode: state.loopMode,
+                              onPlayPause: () {
+                                if (_isVideoMode && _videoController != null) {
+                                  if (_videoController!.value.isPlaying) {
+                                    _videoController!.pause();
+                                  } else {
+                                    _videoController!.play();
                                   }
-                                  return Center(
-                                    child: Transform.scale(
-                                      scale: value,
-                                      child: child,
-                                    ),
-                                  );
-                                },
-                                child: CustomPaint(
-                                  foregroundPainter: index == state.currentIndex ? RectangularProgressPainter(
-                                    progress: duration.inMilliseconds > 0 
-                                        ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0) 
-                                        : 0.0,
-                                    color: AppColors.primary,
-                                    strokeWidth: 4.0,
-                                    borderRadius: 32.0,
-                                  ) : null,
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(8.0),
-                                    child: _isVideoMode && index == state.currentIndex
-                                        ? Container(
-                                            width: coverSize,
-                                            height: (coverSize) * 1.05,
-                                            decoration: BoxDecoration(
-                                              borderRadius: BorderRadius.circular(24),
-                                              color: Colors.black,
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: (_dominantColor ?? AppColors.primary).withOpacity(0.4),
-                                                  blurRadius: 40,
-                                                  spreadRadius: 4,
-                                                  offset: const Offset(0, 15),
-                                                ),
-                                              ],
-                                            ),
-                                            child: ClipRRect(
-                                              borderRadius: BorderRadius.circular(24),
-                                              child: _isVideoLoading || _videoController == null || !_videoController!.value.isInitialized
-                                                  ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-                                                  : FittedBox(
-                                                      fit: BoxFit.contain,
-                                                      child: SizedBox(
-                                                        width: _videoController!.value.size.width,
-                                                        height: _videoController!.value.size.height,
-                                                        child: VideoPlayer(_videoController!),
-                                                      ),
-                                                    ),
-                                            ),
-                                          )
-                                        : Hero(
-                                            tag: 'cover_${qTrack.id}_$index',
-                                            child: Container(
-                                                width: coverSize - 16,
-                                                height: (coverSize - 16) * 1.05, 
-                                                decoration: BoxDecoration(
-                                                  borderRadius: BorderRadius.circular(24),
-                                                  boxShadow: [
-                                                    BoxShadow(
-                                                      color: index == state.currentIndex ? (_dominantColor ?? AppColors.primary).withOpacity(0.4) : Colors.black26,
-                                                      blurRadius: 40,
-                                                      spreadRadius: 4,
-                                                      offset: const Offset(0, 15),
-                                                    ),
-                                                  ],
-                                                ),
-                                                child: ClipRRect(
-                                                  borderRadius: BorderRadius.circular(24),
-                                                  child: qTrack.coverUrl.isNotEmpty
-                                                      ? (qTrack.coverUrl.startsWith("file://")
-                                                          ? Image.file(
-                                                              File(qTrack.coverUrl.replaceFirst("file://", "")),
-                                                              fit: BoxFit.cover,
-                                                              errorBuilder: (context, error, stackTrace) => Container(
-                                                                color: AppColors.surfaceLight,
-                                                                child: const Center(child: Icon(Icons.music_note, color: Colors.white54, size: 64)),
-                                                              ),
-                                                            )
-                                                          : CachedNetworkImage(
-                                                              imageUrl: qTrack.coverUrl,
-                                                              fit: BoxFit.cover,
-                                                              errorWidget: (context, url, error) => Container(
-                                                                color: AppColors.surfaceLight,
-                                                                child: const Center(child: Icon(Icons.music_note, color: Colors.white54, size: 64)),
-                                                              ),
-                                                            ))
-                                                      : Container(
-                                                          color: AppColors.surfaceLight,
-                                                          child: const Center(child: Icon(Icons.music_note, color: Colors.white54, size: 64)),
-                                                        ),
-                                                ),
-                                              ),
-                                            ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ).animate().fadeIn(duration: 600.ms);
+                                } else {
+                                  context.read<PlayerCubit>().togglePlayPause();
+                                }
+                              },
+                              onPrevious: () => context.read<PlayerCubit>().playPrevious(),
+                              onNext: () => context.read<PlayerCubit>().playNext(),
+                              onShuffle: () => context.read<PlayerCubit>().toggleShuffle(),
+                              onRepeat: () => context.read<PlayerCubit>().toggleRepeat(),
+                            ).animate().fadeIn(delay: 400.ms).slideY(begin: 0.2, end: 0),
 
-
-
-                        final info = 
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                              child: Column(
-                                children: [
-                                  Text(
-                                    track.title,
-                                    textAlign: TextAlign.center,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2, end: 0),
-                                  const SizedBox(height: 4),
-                                  ArtistNameDisplay(
-                                    artistName: track.artistName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.white.withOpacity(0.8),
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.2, end: 0),
-                                ],
-                              ),
-                            );
-
-
-
-                        final miniLyricsWidget = state.isFreeLyricsMode && state.currentLyrics != null && state.currentLyrics!.hasSynced
-                            ? Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
-                              child: BlocBuilder<PlayerCubit, PlayerState>(
-                                  buildWhen: (previous, current) => previous.position != current.position || previous.currentLyrics != current.currentLyrics,
-                                  builder: (context, state) {
-                                    if (state.currentLyrics?.parsedSyncedLyrics == null) return const SizedBox.shrink();
-                                    final lines = state.currentLyrics!.parsedSyncedLyrics!;
-                                    String currentLine = "🎵...";
-                                    for (int i = 0; i < lines.length; i++) {
-                                      final isLast = i == lines.length - 1;
-                                      if (state.position >= lines[i].time && (isLast || state.position < lines[i + 1].time)) {
-                                        currentLine = lines[i].text.isNotEmpty ? lines[i].text : "🎵...";
-                                        break;
-                                      }
-                                    }
-                                    return AnimatedSwitcher(
-                                      duration: const Duration(milliseconds: 300),
-                                      child: Text(
-                                        currentLine,
-                                        key: ValueKey<String>(currentLine),
-                                        textAlign: TextAlign.center,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.white.withOpacity(0.9),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              )
-                            : const SizedBox.shrink();
-
-                        final sliderWidget = 
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 32.0), // Jauge plus courte
-                              child: Column(
-                                children: [
-                                  SliderTheme(
-                                    data: SliderTheme.of(context).copyWith(
-                                      activeTrackColor: Colors.white,
-                                      inactiveTrackColor: Colors.white.withOpacity(0.3),
-                                      thumbColor: Colors.white,
-                                      trackHeight: 3,
-                                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-                                    ),
-                                    child: Slider(
-                                      value: duration.inMilliseconds > 0
-                                          ? position.inMilliseconds.toDouble().clamp(0.0, duration.inMilliseconds.toDouble())
-                                          : 0.0,
-                                      max: duration.inMilliseconds > 0 ? duration.inMilliseconds.toDouble() : 1.0,
-                                      onChanged: (val) {
-                                        final newPosition = Duration(milliseconds: val.toInt());
-                                        if (_isVideoMode && _videoController != null) {
-                                          _videoController!.seekTo(newPosition);
-                                        } else {
-                                          context.read<PlayerCubit>().seek(newPosition);
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(_formatDuration(position), style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 12, fontWeight: FontWeight.w600)),
-                                        Text(_formatDuration(duration), style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 12, fontWeight: FontWeight.w600)),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-
-
-
-                        final mainControls = 
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                IconButton(
-                                  icon: Icon(
-                                    Icons.shuffle,
-                                    color: state.isShuffleModeEnabled ? AppColors.primary : Colors.white.withOpacity(0.5),
-                                    size: 26,
-                                  ),
-                                  onPressed: () => context.read<PlayerCubit>().toggleShuffle(),
-                                ),
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  icon: const Icon(Icons.skip_previous_rounded, color: Colors.white, size: 36),
-                                  onPressed: () => context.read<PlayerCubit>().playPrevious(),
-                                ),
-                                const SizedBox(width: 16),
-                                GestureDetector(
-                                  onTap: () {
-                                    if (_isVideoMode && _videoController != null) {
-                                      if (_videoController!.value.isPlaying) {
-                                        _videoController!.pause();
-                                      } else {
-                                        _videoController!.play();
-                                      }
-                                    } else {
-                                      context.read<PlayerCubit>().togglePlayPause();
-                                    }
-                                  },
-                                  child: Container(
-                                    width: 64,
-                                    height: 64,
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withOpacity(0.1),
-                                          blurRadius: 10,
-                                          offset: const Offset(0, 4),
-                                        ),
-                                      ],
-                                    ),
-                                    child: Icon(
-                                      isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                      color: _dominantColor ?? Colors.black87,
-                                      size: 36,
-                                    ),
-                                  ).animate(target: isPlaying ? 1 : 0).scaleXY(begin: 1.0, end: 1.05, duration: 200.ms),
-                                ),
-                                const SizedBox(width: 16),
-                                IconButton(
-                                  icon: const Icon(Icons.skip_next_rounded, color: Colors.white, size: 36),
-                                  onPressed: () => context.read<PlayerCubit>().playNext(),
-                                ),
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  icon: Icon(
-                                    state.loopMode == LoopMode.one ? Icons.repeat_one : Icons.repeat,
-                                    color: state.loopMode != LoopMode.off ? AppColors.primary : Colors.white.withOpacity(0.5),
-                                    size: 26,
-                                  ),
-                                  onPressed: () => context.read<PlayerCubit>().toggleRepeat(),
-                                ),
-                              ],
-                              ),
-                            ).animate().fadeIn(delay: 600.ms).slideY(begin: 0.2, end: 0);
-
-                        final sideActions = 
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.lyrics_outlined, color: Colors.white, size: 26),
-                                    tooltip: "Paroles",
-                                    onPressed: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => BlocProvider.value(
-                                            value: context.read<PlayerCubit>(),
-                                            child: const LyricsScreen(),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ).animate().fadeIn(delay: 400.ms),
-                                  IconButton(
-                                    icon: Icon(_isVideoMode ? Icons.audiotrack_outlined : Icons.videocam_outlined, color: Colors.white, size: 28),
-                                    tooltip: _isVideoMode ? "Passer en mode audio" : "Passer en mode vidéo",
-                                    onPressed: () => _toggleVideoMode(position),
-                                  ).animate().fadeIn(delay: 400.ms),
-                                  IconButton(
-                                    icon: const Icon(Icons.queue_music_rounded, color: Colors.white, size: 28),
-                                    tooltip: "File d'attente",
-                                    onPressed: () {
-                                      showModalBottomSheet(
-                                        context: context,
-                                        backgroundColor: Colors.transparent,
-                                        isScrollControlled: true,
-                                        builder: (_) => BlocProvider.value(
-                                          value: context.read<PlayerCubit>(),
-                                          child: const QueueBottomSheet(),
-                                        ),
-                                      );
-                                    },
-                                  ).animate().fadeIn(delay: 400.ms),
-                                  IconButton(
-                                    icon: const Icon(Icons.share_rounded, color: Colors.white, size: 26),
-                                    tooltip: "Partager",
-                                    onPressed: () {
-                                      ShareUtils.shareTrack(track);
-                                    },
-                                  ).animate().fadeIn(delay: 400.ms),
-                                  BlocBuilder<DownloadCubit, DownloadState>(
-                                    builder: (context, downloadState) {
-                                      bool isDownloaded = false;
-                                      bool isDownloading = false;
-                                      double progress = 0.0;
-                                      
-                                      if (downloadState is DownloadStateData) {
-                                        isDownloaded = downloadState.downloadedIds.contains(track.id);
-                                        if (downloadState.downloadingProgress.containsKey(track.id)) {
-                                          isDownloading = true;
-                                          progress = downloadState.downloadingProgress[track.id]!;
-                                        }
-                                      }
-
-                                      if (isDownloading) {
-                                        return Padding(
-                                          padding: const EdgeInsets.all(12.0),
-                                          child: SizedBox(
-                                            width: 24, height: 24,
-                                            child: CircularProgressIndicator(value: progress, color: AppColors.primary, strokeWidth: 3),
-                                          ),
-                                        );
-                                      }
-
-                                      return IconButton(
-                                        icon: Icon(
-                                          isDownloaded ? Icons.download_done : Icons.download_outlined,
-                                          color: isDownloaded ? AppColors.primary : Colors.white,
-                                          size: 28,
-                                        ),
-                                        tooltip: isDownloaded ? "Téléchargé" : "Télécharger",
-                                        onPressed: () {
-                                          if (isDownloaded) {
-                                            context.read<DownloadCubit>().removeDownload(track.id);
-                                          } else {
-                                            context.read<DownloadCubit>().downloadTrack(track);
-                                          }
-                                        },
-                                      ).animate().fadeIn(delay: 400.ms);
-                                    },
-                                  ),
-                                ],
-                              ),
-                            );
-
-
-
-                        if (isDesktop) {
-                          return Column(
-                            children: [
-                              appBar,
-                              Expanded(
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Center(child: coverArt),
-                                    ),
-                                    Expanded(
-                                      child: Center(
-                                        child: SingleChildScrollView(
-                                          padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 16.0),
-                                          child: Column(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              info,
-                                              miniLyricsWidget,
-                                              const SizedBox(height: 32),
-                                              sliderWidget,
-                                              const SizedBox(height: 24),
-                                              mainControls,
-                                              const SizedBox(height: 32),
-                                              sideActions,
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          );
-                        }
-
-                        return Column(
-                          children: [
-                            appBar,
-                            const SizedBox(height: 16),
-                            coverArt,
-                            const SizedBox(height: 24),
-                            info,
-                            miniLyricsWidget,
-                            const SizedBox(height: 24),
-                            sliderWidget,
                             const Spacer(),
-                            mainControls,
-                            const Spacer(),
-                            sideActions,
-                            const SizedBox(height: 24),
+
+                            // Secondary Controls
+                            PlayerSecondaryControls(
+                              currentTrack: track,
+                              onQueueTapped: () {
+                                showModalBottomSheet(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  builder: (_) => BlocProvider.value(
+                                    value: context.read<PlayerCubit>(),
+                                    child: const QueueBottomSheet(),
+                                  ),
+                                );
+                              },
+                              onLyricsTapped: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => BlocProvider.value(
+                                      value: context.read<PlayerCubit>(),
+                                      child: const LyricsScreen(),
+                                    ),
+                                  ),
+                                );
+                              },
+                              onDownloadTapped: () {},
+                            ).animate().fadeIn(delay: 500.ms),
+
+                            const SizedBox(height: AppDimensions.spacingLg),
                           ],
                         );
                       },
@@ -881,62 +588,5 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
         ),
       ),
     );
-  }
-}
-
-class RectangularProgressPainter extends CustomPainter {
-  final double progress;
-  final Color color;
-  final double strokeWidth;
-  final double borderRadius;
-
-  RectangularProgressPainter({
-    required this.progress,
-    required this.color,
-    this.strokeWidth = 4.0,
-    this.borderRadius = 32.0,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (progress < 0) return;
-
-    final rect = Rect.fromLTWH(
-      strokeWidth / 2, 
-      strokeWidth / 2, 
-      size.width - strokeWidth, 
-      size.height - strokeWidth
-    );
-    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(borderRadius));
-
-    final path = Path()..addRRect(rrect);
-    
-    // Piste de fond
-    final trackPaint = Paint()
-      ..color = Colors.white.withOpacity(0.15)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth;
-    canvas.drawPath(path, trackPaint);
-
-    if (progress > 0) {
-      final pathMetrics = path.computeMetrics().toList();
-      if (pathMetrics.isNotEmpty) {
-        final metric = pathMetrics.first;
-        final extractPath = metric.extractPath(0.0, metric.length * progress);
-        
-        final paint = Paint()
-          ..color = color
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = strokeWidth
-          ..strokeCap = StrokeCap.round;
-
-        canvas.drawPath(extractPath, paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant RectangularProgressPainter oldDelegate) {
-    return oldDelegate.progress != progress || oldDelegate.color != color;
   }
 }

@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:go_router/go_router.dart';
-import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/utils/responsive_utils.dart';
 import '../../player/presentation/widgets/mini_player_widget.dart';
+
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../player/presentation/cubit/player_cubit.dart';
+import '../../player/presentation/cubit/player_state.dart';
+import '../../library/presentation/cubit/library_cubit.dart';
 
 class MainShellScreen extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
@@ -22,55 +27,76 @@ class MainShellScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ResponsiveBuilder(
-      mobile: (context) => _buildMobileLayout(context),
-      tablet: (context) => _buildDesktopLayout(context), // Use desktop layout (rail) for tablet
-      desktop: (context) => _buildDesktopLayout(context),
+    return BlocListener<PlayerCubit, PlayerState>(
+      listenWhen: (previous, current) => previous.currentTrack?.id != current.currentTrack?.id,
+      listener: (context, state) {
+        if (state.currentTrack != null) {
+          context.read<LibraryCubit>().addHistoryRecordLocal(state.currentTrack!);
+        }
+      },
+      child: ResponsiveBuilder(
+        mobile: (context) => _buildMobileLayout(context),
+        tablet: (context) => _buildDesktopLayout(context), 
+        desktop: (context) => _buildDesktopLayout(context),
+      ),
     );
   }
 
   Widget _buildMobileLayout(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Scaffold(
-      body: Column(
+      body: navigationShell,
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(child: navigationShell),
           const MiniPlayerWidget(),
-        ],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: navigationShell.currentIndex,
-        onTap: _onTap,
-        backgroundColor: AppColors.surface,
-        selectedItemColor: AppColors.primary,
-        unselectedItemColor: AppColors.textSecondary,
-        selectedFontSize: 12,
-        unselectedFontSize: 12,
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home, color: AppColors.primary),
-            label: AppStrings.tabHome,
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search_outlined),
-            activeIcon: Icon(Icons.search, color: AppColors.primary),
-            label: AppStrings.tabSearch,
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.library_music_outlined),
-            activeIcon: Icon(Icons.library_music, color: AppColors.primary),
-            label: AppStrings.tabLibrary,
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.sensors_outlined),
-            activeIcon: Icon(Icons.sensors, color: AppColors.primary),
-            label: AppStrings.tabConnect,
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person, color: AppColors.primary),
-            label: AppStrings.tabProfile,
+          ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: colorScheme.surface.withOpacity(0.85),
+                  border: Border(
+                    top: BorderSide(color: colorScheme.outline.withOpacity(0.2), width: 1),
+                  ),
+                ),
+                child: BottomNavigationBar(
+                  currentIndex: navigationShell.currentIndex,
+                  onTap: _onTap,
+                  backgroundColor: Colors.transparent,
+                  elevation: 0,
+                  type: BottomNavigationBarType.fixed,
+                  items: const [
+                    BottomNavigationBarItem(
+                      icon: Padding(padding: EdgeInsets.only(bottom: 4), child: Icon(Icons.home_outlined)),
+                      activeIcon: Padding(padding: EdgeInsets.only(bottom: 4), child: Icon(Icons.home_rounded)),
+                      label: AppStrings.tabHome,
+                    ),
+                    BottomNavigationBarItem(
+                      icon: Padding(padding: EdgeInsets.only(bottom: 4), child: Icon(Icons.search_outlined)),
+                      activeIcon: Padding(padding: EdgeInsets.only(bottom: 4), child: Icon(Icons.search_rounded)),
+                      label: AppStrings.tabSearch,
+                    ),
+                    BottomNavigationBarItem(
+                      icon: Padding(padding: EdgeInsets.only(bottom: 4), child: Icon(Icons.library_music_outlined)),
+                      activeIcon: Padding(padding: EdgeInsets.only(bottom: 4), child: Icon(Icons.library_music_rounded)),
+                      label: AppStrings.tabLibrary,
+                    ),
+                    BottomNavigationBarItem(
+                      icon: Padding(padding: EdgeInsets.only(bottom: 4), child: Icon(Icons.sensors_outlined)),
+                      activeIcon: Padding(padding: EdgeInsets.only(bottom: 4), child: Icon(Icons.sensors_rounded)),
+                      label: AppStrings.tabConnect,
+                    ),
+                    BottomNavigationBarItem(
+                      icon: Padding(padding: EdgeInsets.only(bottom: 4), child: Icon(Icons.person_outline)),
+                      activeIcon: Padding(padding: EdgeInsets.only(bottom: 4), child: Icon(Icons.person_rounded)),
+                      label: AppStrings.tabProfile,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -78,47 +104,45 @@ class MainShellScreen extends StatelessWidget {
   }
 
   Widget _buildDesktopLayout(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       body: Row(
         children: [
           NavigationRail(
             selectedIndex: navigationShell.currentIndex,
             onDestinationSelected: _onTap,
-            backgroundColor: AppColors.surface,
-            selectedIconTheme: const IconThemeData(color: AppColors.primary),
-            unselectedIconTheme: const IconThemeData(color: AppColors.textSecondary),
-            selectedLabelTextStyle: const TextStyle(color: AppColors.primary, fontSize: 12),
-            unselectedLabelTextStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            backgroundColor: colorScheme.surface,
             labelType: NavigationRailLabelType.all,
             destinations: const [
               NavigationRailDestination(
                 icon: Icon(Icons.home_outlined),
-                selectedIcon: Icon(Icons.home),
+                selectedIcon: Icon(Icons.home_rounded),
                 label: Text(AppStrings.tabHome),
               ),
               NavigationRailDestination(
                 icon: Icon(Icons.search_outlined),
-                selectedIcon: Icon(Icons.search),
+                selectedIcon: Icon(Icons.search_rounded),
                 label: Text(AppStrings.tabSearch),
               ),
               NavigationRailDestination(
                 icon: Icon(Icons.library_music_outlined),
-                selectedIcon: Icon(Icons.library_music),
+                selectedIcon: Icon(Icons.library_music_rounded),
                 label: Text(AppStrings.tabLibrary),
               ),
               NavigationRailDestination(
                 icon: Icon(Icons.sensors_outlined),
-                selectedIcon: Icon(Icons.sensors),
+                selectedIcon: Icon(Icons.sensors_rounded),
                 label: Text(AppStrings.tabConnect),
               ),
               NavigationRailDestination(
                 icon: Icon(Icons.person_outline),
-                selectedIcon: Icon(Icons.person),
+                selectedIcon: Icon(Icons.person_rounded),
                 label: Text(AppStrings.tabProfile),
               ),
             ],
           ),
-          const VerticalDivider(thickness: 1, width: 1, color: Colors.white10),
+          VerticalDivider(thickness: 1, width: 1, color: colorScheme.outline.withOpacity(0.2)),
           Expanded(
             child: Column(
               children: [
@@ -132,4 +156,3 @@ class MainShellScreen extends StatelessWidget {
     );
   }
 }
-

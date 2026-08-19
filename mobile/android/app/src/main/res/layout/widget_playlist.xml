@@ -3,31 +3,210 @@
     android:id="@+id/widget_playlist_container"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_background"
-    android:padding="8dp">
+    android:background="@drawable/widget_large_bg"
+    android:padding="20dp">
 
-    <!-- Icône / Image -->
-    <ImageView
-        android:id="@+id/widget_playlist_cover"
+    <!-- Section Infos Haut (Similaire au petit widget) -->
+    <RelativeLayout
+        android:id="@+id/top_info_section"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_above="@id/widget_playlist_title"
-        android:layout_marginBottom="8dp"
-        android:scaleType="centerInside"
-        android:src="@mipmap/launcher_icon" />
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true">
 
-    <!-- Nom de la Playlist -->
+        <ImageView
+            android:id="@+id/widget_cover"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_centerVertical="true"
+            android:layout_alignParentStart="true"
+            android:scaleType="centerCrop"
+            android:background="@drawable/widget_cover_bg"
+            android:clipToOutline="true"
+            android:src="@mipmap/launcher_icon" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_toEndOf="@id/widget_cover"
+            android:layout_toStartOf="@id/widget_logo"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="8dp">
+
+            <TextView
+                android:id="@+id/widget_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Sonoritiz"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:letterSpacing="0.02" />
+
+            <TextView
+                android:id="@+id/widget_artist"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Premium Edition"
+                android:textColor="#E0E0E0"
+                android:textSize="14sp"
+                android:textAllCaps="true"
+                android:layout_marginTop="2dp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:letterSpacing="0.05" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/widget_logo"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:src="@mipmap/launcher_icon"
+            android:alpha="0.8" />
+    </RelativeLayout>
+
+    <!-- Contrôles Centraux -->
+    <LinearLayout
+        android:id="@+id/middle_controls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/top_info_section"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginTop="24dp">
+
+        <ImageButton
+            android:id="@+id/btn_favorite"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?android:selectableItemBackgroundBorderless"
+            android:src="@android:drawable/btn_star"
+            android:tint="#FFFFFF"
+            android:scaleType="center"
+            android:padding="8dp"/>
+
+        <ImageButton
+            android:id="@+id/btn_prev"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginEnd="16dp"
+            android:background="?android:selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_media_previous"
+            android:tint="#FFFFFF"
+            android:scaleType="center"
+            android:padding="8dp"/>
+
+        <ImageButton
+            android:id="@+id/btn_play_pause"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:background="@drawable/widget_play_btn_bg"
+            android:src="@android:drawable/ic_media_play"
+            android:tint="#FFFFFF"
+            android:scaleType="center"
+            android:padding="12dp"/>
+
+        <ImageButton
+            android:id="@+id/btn_next"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginStart="24dp"
+            android:background="?android:selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_media_next"
+            android:tint="#FFFFFF"
+            android:scaleType="center"
+            android:padding="8dp"/>
+    </LinearLayout>
+
+    <!-- Footer Texte -->
     <TextView
-        android:id="@+id/widget_playlist_title"
+        android:id="@+id/footer_text"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_alignParentBottom="true"
-        android:text="Mes Playlists"
-        android:textColor="#FFFFFF"
-        android:textSize="14sp"
+        android:text="DÉCOUVREZ DE NOUVELLES VIBES SUR SONORITIZ PREMIUM"
+        android:textColor="#B3FFFFFF"
+        android:textSize="10sp"
         android:textStyle="bold"
         android:gravity="center"
-        android:maxLines="1"
-        android:ellipsize="end" />
+        android:textAllCaps="true"
+        android:letterSpacing="0.05"
+        android:layout_marginTop="16dp" />
+
+    <!-- Playlists Row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_above="@id/footer_text"
+        android:layout_below="@id/middle_controls"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginTop="24dp"
+        android:layout_marginBottom="16dp">
+
+        <ImageView
+            android:id="@+id/hist_cover_0"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp"
+            android:scaleType="centerCrop"
+            android:background="@drawable/widget_cover_bg"
+            android:clipToOutline="true"
+            android:src="@mipmap/launcher_icon"
+            android:alpha="0.8"/>
+
+        <ImageView
+            android:id="@+id/hist_cover_1"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp"
+            android:scaleType="centerCrop"
+            android:background="@drawable/widget_cover_bg"
+            android:clipToOutline="true"
+            android:src="@mipmap/launcher_icon"
+            android:alpha="0.8"/>
+
+        <ImageView
+            android:id="@+id/hist_cover_2"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp"
+            android:scaleType="centerCrop"
+            android:background="@drawable/widget_cover_bg"
+            android:clipToOutline="true"
+            android:src="@mipmap/launcher_icon"
+            android:alpha="0.8"/>
+
+        <ImageView
+            android:id="@+id/hist_cover_3"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp"
+            android:scaleType="centerCrop"
+            android:background="@drawable/widget_cover_bg"
+            android:clipToOutline="true"
+            android:src="@mipmap/launcher_icon"
+            android:alpha="0.8"/>
+
+        <ImageView
+            android:id="@+id/hist_cover_4"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:scaleType="centerCrop"
+            android:background="@drawable/widget_cover_bg"
+            android:clipToOutline="true"
+            android:src="@mipmap/launcher_icon"
+            android:alpha="0.8"/>
+    </LinearLayout>
 
 </RelativeLayout>

@@ -14,6 +14,8 @@ class PlayerState extends Equatable {
   final LoopMode loopMode;
   final bool isFreeLyricsMode;
   final LyricsModel? currentLyrics;
+  final Duration? sleepTimerRemaining;
+  final bool isSleepTimerActive;
 
   const PlayerState({
     this.queue = const [],
@@ -27,6 +29,8 @@ class PlayerState extends Equatable {
     this.loopMode = LoopMode.off,
     this.isFreeLyricsMode = false,
     this.currentLyrics,
+    this.sleepTimerRemaining,
+    this.isSleepTimerActive = false,
   });
 
   TrackModel? get currentTrack {
@@ -50,6 +54,8 @@ class PlayerState extends Equatable {
     LoopMode? loopMode,
     bool? isFreeLyricsMode,
     LyricsModel? currentLyrics,
+    Duration? sleepTimerRemaining,
+    bool? isSleepTimerActive,
   }) {
     return PlayerState(
       queue: queue ?? this.queue,
@@ -63,6 +69,8 @@ class PlayerState extends Equatable {
       loopMode: loopMode ?? this.loopMode,
       isFreeLyricsMode: isFreeLyricsMode ?? this.isFreeLyricsMode,
       currentLyrics: currentLyrics ?? this.currentLyrics,
+      sleepTimerRemaining: sleepTimerRemaining ?? this.sleepTimerRemaining,
+      isSleepTimerActive: isSleepTimerActive ?? this.isSleepTimerActive,
     );
   }
 
@@ -79,5 +87,7 @@ class PlayerState extends Equatable {
         loopMode,
         isFreeLyricsMode,
         currentLyrics,
+        sleepTimerRemaining,
+        isSleepTimerActive,
       ];
 }

@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../player/presentation/cubit/player_cubit.dart';
 
 /// Liste de pistes populaires mondiales avec leur ID YouTube rÃ©el.
 /// Cela Ã©vite totalement les appels rÃ©seau pour charger la liste du quiz.
@@ -298,6 +300,9 @@ class _QuizScreenState extends State<QuizScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<PlayerCubit>().pause();
+    });
     _loadQuizData();
   }
 
@@ -339,7 +344,7 @@ class _QuizScreenState extends State<QuizScreen> {
       _isLoading = true;
       _isAnswered = false;
       _selectedOption = null;
-      _timeLeft = 15;
+      _timeLeft = 30;
       _errorMessage = '';
     });
 
@@ -373,10 +378,17 @@ class _QuizScreenState extends State<QuizScreen> {
           .timeout(const Duration(seconds: 10));
       String audioUrl = '';
       if (manifest.muxed.isNotEmpty) {
-        audioUrl = manifest.muxed.sortByVideoQuality().first.url.toString();
+        try {
+          audioUrl = manifest.muxed.sortByVideoQuality().first.url.toString();
+        } catch(e) {
+          audioUrl = manifest.muxed.first.url.toString();
+        }
+      } else if (manifest.audioOnly.isNotEmpty) {
+        audioUrl = manifest.audioOnly.withHighestBitrate().url.toString();
       } else {
         throw Exception("Aucun flux audio disponible");
       }
+      await _audioPlayer.stop();
       await _audioPlayer.setUrl(audioUrl).timeout(const Duration(seconds: 8));
       _audioPlayer.play();
     } catch (e) {
@@ -451,12 +463,12 @@ class _QuizScreenState extends State<QuizScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.black,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.black,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black87),
-        title: const Text("Quiz Musical", style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: const Text("Quiz Musical", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         centerTitle: true,
       ),
       body: _currentQuestionIndex >= 10
@@ -473,7 +485,7 @@ class _QuizScreenState extends State<QuizScreen> {
           children: [
             const CircularProgressIndicator(color: AppColors.primary),
             const SizedBox(height: 20),
-            const Text("Préparation de la piste...", style: TextStyle(color: Colors.black54, fontSize: 16)).animate().shimmer(duration: 1.seconds, curve: Curves.easeInOut),
+            const Text("Préparation de la piste...", style: TextStyle(color: Colors.white54, fontSize: 16)).animate().shimmer(duration: 1.seconds, curve: Curves.easeInOut),
           ],
         ),
       );
@@ -487,7 +499,7 @@ class _QuizScreenState extends State<QuizScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("Question ${_currentQuestionIndex + 1}/10", style: const TextStyle(color: Colors.black54, fontSize: 16, fontWeight: FontWeight.bold)),
+              Text("Question ${_currentQuestionIndex + 1}/10", style: const TextStyle(color: Colors.white54, fontSize: 16, fontWeight: FontWeight.bold)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
@@ -523,7 +535,7 @@ class _QuizScreenState extends State<QuizScreen> {
             child: Text(
               "00:${_timeLeft.toString().padLeft(2, '0')}",
               style: TextStyle(
-                color: _timeLeft <= 5 ? Colors.red : Colors.black87,
+                color: _timeLeft <= 5 ? Colors.red : Colors.white,
                 fontSize: 36,
                 fontWeight: FontWeight.bold,
               ),
@@ -535,7 +547,7 @@ class _QuizScreenState extends State<QuizScreen> {
           Text(
             _askForArtist ? "Quel est le nom de cet artiste ?" : "Quel est le titre de ce morceau ?",
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.black87, fontSize: 22, fontWeight: FontWeight.bold),
+            style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
           ).animate().fadeIn(delay: 300.ms),
 
           const SizedBox(height: 40),
@@ -549,18 +561,18 @@ class _QuizScreenState extends State<QuizScreen> {
                 final isSelected = _selectedOption == option;
                 final isCorrect = option == _correctAnswer;
 
-                Color buttonColor = Colors.grey.shade100;
-                Color textColor = Colors.black87;
-                Color borderColor = Colors.grey.shade300;
+                Color buttonColor = Colors.white.withOpacity(0.08);
+                Color textColor = Colors.white;
+                Color borderColor = Colors.white.withOpacity(0.2);
 
                 if (_isAnswered) {
                   if (isCorrect) {
-                    buttonColor = Colors.green.shade100;
-                    textColor = Colors.green.shade700;
+                    buttonColor = Colors.green.withOpacity(0.2);
+                    textColor = Colors.green.shade300;
                     borderColor = Colors.green;
                   } else if (isSelected && !isCorrect) {
-                    buttonColor = Colors.red.shade100;
-                    textColor = Colors.red.shade700;
+                    buttonColor = Colors.red.withOpacity(0.2);
+                    textColor = Colors.red.shade300;
                     borderColor = Colors.red;
                   }
                 } else if (isSelected) {
@@ -603,7 +615,7 @@ class _QuizScreenState extends State<QuizScreen> {
             const SizedBox(height: 24),
             const Text(
               "Fin de la partie !",
-              style: TextStyle(color: Colors.black87, fontSize: 32, fontWeight: FontWeight.bold),
+              style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
             ).animate().fadeIn(delay: 400.ms),
             const SizedBox(height: 16),
             Text(
@@ -625,7 +637,7 @@ class _QuizScreenState extends State<QuizScreen> {
             const SizedBox(height: 16),
             TextButton(
               onPressed: () => context.pop(),
-              child: const Text("Retour à l'accueil", style: TextStyle(color: Colors.black54, fontSize: 16)),
+              child: const Text("Retour à l'accueil", style: TextStyle(color: Colors.white54, fontSize: 16)),
             ).animate().fadeIn(delay: 900.ms),
           ],
         ),

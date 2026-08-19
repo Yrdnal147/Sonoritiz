@@ -6,7 +6,7 @@ import '../../features/player/data/models/track_model.dart';
 
 class ShareUtils {
   static Future<void> shareTrack(TrackModel track) async {
-    final text = "Écoute '\${track.title}' de \${track.artistName} sur Sonoritiz !";
+    final text = "🎵 Écoute '${track.title}' de ${track.artistName} sur Sonoritiz !\n\nRejoins-nous et découvre toute ta musique préférée : https://sonoritiz.app";
     
     if (track.coverUrl.isEmpty) {
       // Pas de pochette, partage du texte simple
@@ -25,7 +25,7 @@ class ShareUtils {
         ext = 'jpg';
       }
 
-      final localPath = '\${tempDir.path}/share_\${track.id}.$ext';
+      final localPath = '${tempDir.path}/share_${track.id}.$ext';
       final file = File(localPath);
 
       // Ne pas retélécharger si déjà présent dans le cache temp

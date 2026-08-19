@@ -3,11 +3,13 @@ import 'package:go_router/go_router.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
-import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_dimensions.dart';
+import '../../../core/theme/app_animations.dart';
 import '../../../core/storage/storage_service.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'stats_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -64,17 +66,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _logout() {
+    final colorScheme = Theme.of(context).colorScheme;
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text("Se déconnecter", style: TextStyle(color: Colors.white)),
-        content: const Text("Es-tu sûr de vouloir te déconnecter ?", style: TextStyle(color: AppColors.textSecondary)),
+        backgroundColor: colorScheme.surface,
+        title: const Text("Se déconnecter"),
+        content: const Text("Es-tu sûr de vouloir te déconnecter ?"),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text("Annuler", style: TextStyle(color: AppColors.textSecondary)),
+            child: Text("Annuler", style: TextStyle(color: colorScheme.onSurfaceVariant)),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -86,7 +90,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 context.go('/login');
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            style: ElevatedButton.styleFrom(backgroundColor: colorScheme.error, foregroundColor: colorScheme.onError),
             child: const Text("Déconnexion"),
           ),
         ],
@@ -95,15 +99,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _showCcLicenseInfo(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Row(
+        backgroundColor: colorScheme.surface,
+        title: Row(
           children: [
-            Icon(Icons.info_outline, color: AppColors.primary),
-            SizedBox(width: 8),
-            Expanded(child: Text("Licence Creative Commons", style: TextStyle(color: Colors.white, fontSize: 16))),
+            Icon(Icons.info_outline_rounded, color: colorScheme.primary),
+            const SizedBox(width: AppDimensions.spacingSm),
+            const Expanded(child: Text("Licence Creative Commons")),
           ],
         ),
         content: const Column(
@@ -112,14 +118,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             Text(
               "Sonoritiz utilise l'API de Jamendo. Les morceaux disponibles sur cette plateforme sont distribués sous licences Creative Commons, permettant aux artistes indépendants de partager leur musique librement tout en conservant certains droits.",
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("Fermer", style: TextStyle(color: AppColors.primary)),
+            child: const Text("Fermer"),
           ),
         ],
       ),
@@ -128,37 +133,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.transparent,
       body: !_loaded
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          ? const Center(child: CircularProgressIndicator())
           : CustomScrollView(
+              physics: const BouncingScrollPhysics(),
               slivers: [
-                // En-tête personnalisé (SliverAppBar)
                 SliverAppBar(
                   expandedHeight: 280,
                   pinned: true,
-                  backgroundColor: AppColors.background,
+                  backgroundColor: colorScheme.surface,
                   flexibleSpace: FlexibleSpaceBar(
                     background: Stack(
                       fit: StackFit.expand,
                       children: [
-                        // Bannière de fond floue avec dégradé
                         Container(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [
-                                AppColors.primary.withOpacity(0.4),
-                                AppColors.background,
+                                colorScheme.primaryContainer,
+                                colorScheme.surface,
                               ],
                             ),
                           ),
                         ),
-                        // Avatar et Infos
                         Positioned(
-                          bottom: 20,
+                          bottom: AppDimensions.spacingLg,
                           left: 0,
                           right: 0,
                           child: Column(
@@ -170,10 +176,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     Container(
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
-                                        border: Border.all(color: AppColors.primary, width: 3),
+                                        border: Border.all(color: colorScheme.primary, width: 3),
                                         boxShadow: [
                                           BoxShadow(
-                                            color: AppColors.primary.withOpacity(0.3),
+                                            color: colorScheme.primary.withOpacity(0.3),
                                             blurRadius: 20,
                                             spreadRadius: 2,
                                           )
@@ -181,14 +187,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       ),
                                       child: CircleAvatar(
                                         radius: 56,
-                                        backgroundColor: AppColors.surface,
+                                        backgroundColor: colorScheme.surfaceContainerHighest,
                                         backgroundImage: _profileImagePath != null && File(_profileImagePath!).existsSync()
                                             ? FileImage(File(_profileImagePath!))
                                             : null,
                                         child: _profileImagePath == null || !File(_profileImagePath!).existsSync()
                                             ? Text(
                                                 _username.isNotEmpty ? _username[0].toUpperCase() : '?',
-                                                style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: AppColors.primary),
+                                                style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: colorScheme.primary),
                                               )
                                             : null,
                                       ),
@@ -197,26 +203,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       bottom: 0,
                                       right: 0,
                                       child: Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: const BoxDecoration(
-                                          color: AppColors.primary,
+                                        padding: const EdgeInsets.all(AppDimensions.spacingSm),
+                                        decoration: BoxDecoration(
+                                          color: colorScheme.primary,
                                           shape: BoxShape.circle,
                                         ),
-                                        child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                                        child: Icon(Icons.camera_alt_rounded, color: colorScheme.onPrimary, size: AppDimensions.iconSm),
                                       ),
                                     ),
                                   ],
-                                ).animate().scale(delay: 200.ms, duration: 400.ms, curve: Curves.easeOutBack),
+                                ).animate().scale(delay: AppAnimations.normal, duration: AppAnimations.slow, curve: Curves.easeOutBack),
                               ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: AppDimensions.spacingMd),
                               Text(
                                 _username.isNotEmpty ? _username : 'Utilisateur',
-                                style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
+                                style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
                               ).animate().fadeIn(delay: 400.ms),
                               const SizedBox(height: 4),
                               Text(
                                 _email.isNotEmpty ? _email : 'email@example.com',
-                                style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
+                                style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
                               ).animate().fadeIn(delay: 500.ms),
                             ],
                           ),
@@ -225,85 +231,144 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                 ),
-                // Corps du profil
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingLg, vertical: AppDimensions.spacingXl),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Statistiques
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => const StatsScreen()));
+                          },
+                          child: Container(
+                            height: 100,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
+                              gradient: LinearGradient(
+                                colors: [colorScheme.primary, colorScheme.tertiary],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: colorScheme.primary.withOpacity(0.4),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                )
+                              ],
+                            ),
+                            child: Stack(
+                              children: [
+                                Positioned(
+                                  right: -20,
+                                  bottom: -20,
+                                  child: Icon(Icons.bar_chart_rounded, size: 100, color: colorScheme.onPrimary.withOpacity(0.2)),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.all(AppDimensions.spacingLg),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(AppDimensions.spacingSm),
+                                        decoration: BoxDecoration(
+                                          color: colorScheme.onPrimary.withOpacity(0.2),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(Icons.analytics_outlined, color: colorScheme.onPrimary, size: 28),
+                                      ),
+                                      const SizedBox(width: AppDimensions.spacingMd),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Text(
+                                              "Vos Statistiques",
+                                              style: textTheme.titleMedium?.copyWith(color: colorScheme.onPrimary, fontWeight: FontWeight.bold),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              "Découvrez votre Replay musical",
+                                              style: textTheme.bodySmall?.copyWith(color: colorScheme.onPrimary.withOpacity(0.8)),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Icon(Icons.arrow_forward_ios_rounded, color: colorScheme.onPrimary, size: AppDimensions.iconSm),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ).animate().fadeIn(delay: 600.ms).slideY(begin: 0.1, end: 0),
+                        ),
+                        const SizedBox(height: AppDimensions.spacingXxl),
+
+                        Text("PARAMÈTRES", style: textTheme.labelMedium?.copyWith(letterSpacing: 1.5, color: colorScheme.onSurfaceVariant)),
+                        const SizedBox(height: AppDimensions.spacingMd),
                         Row(
                           children: [
-                            _buildStatCard("Sons locaux", _localFilesCount.toString(), Icons.folder_open_sharp),
-                            const SizedBox(width: 16),
-                            _buildStatCard("Favoris", "-", Icons.favorite),
+                            _buildStatCard(context, "Sons locaux", _localFilesCount.toString(), Icons.folder_open_sharp),
+                            const SizedBox(width: AppDimensions.spacingMd),
+                            _buildStatCard(context, "Favoris", "-", Icons.favorite_rounded),
                           ],
                         ).animate().slideY(begin: 0.2, delay: 600.ms).fadeIn(),
 
-                        const SizedBox(height: 32),
+                        const SizedBox(height: AppDimensions.spacingXxl),
 
-                        // Section Paramètres
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text("Paramètres", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-                        ),
-                        const SizedBox(height: 16),
+                        Text("Paramètres", style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: AppDimensions.spacingMd),
                         Container(
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.05),
-                            borderRadius: BorderRadius.circular(16),
+                            color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
                           ),
                           child: Column(
                             children: [
-                              _buildSettingsTile(Icons.music_note, "Qualité audio", "Haute", isSwitch: false),
-                              const Divider(color: Colors.white12, height: 1),
-                              _buildSettingsTile(Icons.notifications_outlined, "Notifications push", "Activées", isSwitch: true),
-                              const Divider(color: Colors.white12, height: 1),
-                              _buildSettingsTile(Icons.dark_mode_outlined, "Mode Sombre", "Toujours actif", isSwitch: true, initialSwitchValue: true),
+                              _buildSettingsTile(context, Icons.music_note_rounded, "Qualité audio", "Haute", isSwitch: false),
+                              Divider(color: colorScheme.outline.withOpacity(0.2), height: 1),
+                              _buildSettingsTile(context, Icons.notifications_outlined, "Notifications push", "Activées", isSwitch: true),
+                              Divider(color: colorScheme.outline.withOpacity(0.2), height: 1),
+                              _buildSettingsTile(context, Icons.dark_mode_outlined, "Mode Sombre", "Toujours actif", isSwitch: true, initialSwitchValue: true),
                             ],
                           ),
                         ).animate().fadeIn(delay: 700.ms),
 
-                        const SizedBox(height: 32),
+                        const SizedBox(height: AppDimensions.spacingXxl),
                         
-                        // Section A propos
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text("À propos", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-                        ),
-                        const SizedBox(height: 16),
+                        Text("À propos", style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: AppDimensions.spacingMd),
                         Container(
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.05),
-                            borderRadius: BorderRadius.circular(16),
+                            color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
                           ),
                           child: Column(
                             children: [
-                              _buildSettingsTile(Icons.info_outline, "Version", "1.0.0", isSwitch: false, hasArrow: false),
-                              const Divider(color: Colors.white12, height: 1),
-                              _buildSettingsTile(Icons.description_outlined, "Licences CC", "Jamendo", onTap: () => _showCcLicenseInfo(context)),
+                              _buildSettingsTile(context, Icons.info_outline_rounded, "Version", "1.0.0", isSwitch: false, hasArrow: false),
+                              Divider(color: colorScheme.outline.withOpacity(0.2), height: 1),
+                              _buildSettingsTile(context, Icons.description_outlined, "Licences CC", "Jamendo", onTap: () => _showCcLicenseInfo(context)),
                             ],
                           ),
                         ).animate().fadeIn(delay: 800.ms),
 
-                        const SizedBox(height: 40),
+                        const SizedBox(height: AppDimensions.spacingXxl * 1.5),
 
-                        // Logout button
                         SizedBox(
                           width: double.infinity,
-                          height: 56,
+                          height: AppDimensions.buttonHeight,
                           child: OutlinedButton.icon(
                             onPressed: _logout,
-                            icon: const Icon(Icons.logout, color: AppColors.error),
-                            label: const Text("Se déconnecter", style: TextStyle(color: AppColors.error, fontSize: 16, fontWeight: FontWeight.bold)),
+                            icon: Icon(Icons.logout_rounded, color: colorScheme.error),
+                            label: Text("Se déconnecter", style: TextStyle(color: colorScheme.error, fontWeight: FontWeight.bold)),
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: AppColors.error, width: 1.5),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              side: BorderSide(color: colorScheme.error, width: 1.5),
                             ),
                           ),
                         ).animate().fadeIn(delay: 900.ms),
                         
-                        const SizedBox(height: 40),
+                        const SizedBox(height: AppDimensions.spacingXxl * 2),
                       ],
                     ),
                   ),
@@ -313,48 +378,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildStatCard(String label, String value, IconData icon) {
+  Widget _buildStatCard(BuildContext context, String label, String value, IconData icon) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 20),
+        padding: const EdgeInsets.symmetric(vertical: AppDimensions.spacingLg),
         decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
+          color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
         ),
         child: Column(
           children: [
-            Icon(icon, color: AppColors.primary, size: 28),
-            const SizedBox(height: 12),
-            Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
-            const SizedBox(height: 4),
-            Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+            Icon(icon, color: colorScheme.primary, size: 28),
+            const SizedBox(height: AppDimensions.spacingSm),
+            Text(value, style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 2),
+            Text(label, style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSettingsTile(IconData icon, String title, String subtitle, {VoidCallback? onTap, bool isSwitch = false, bool initialSwitchValue = false, bool hasArrow = true}) {
+  Widget _buildSettingsTile(BuildContext context, IconData icon, String title, String subtitle, {VoidCallback? onTap, bool isSwitch = false, bool initialSwitchValue = false, bool hasArrow = true}) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
     return ListTile(
       onTap: isSwitch ? null : onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      contentPadding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingMd, vertical: AppDimensions.spacingXs),
       leading: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.circular(10),
+          color: colorScheme.surface,
+          borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
         ),
-        child: Icon(icon, color: AppColors.primary, size: 22),
+        child: Icon(icon, color: colorScheme.primary, size: 22),
       ),
-      title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-      subtitle: Text(subtitle, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+      title: Text(title, style: textTheme.titleSmall),
+      subtitle: Text(subtitle, style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
       trailing: isSwitch 
           ? Switch(
               value: initialSwitchValue,
               onChanged: (val) {},
-              activeColor: AppColors.primary,
+              activeColor: colorScheme.primary,
             )
-          : hasArrow ? const Icon(Icons.chevron_right, color: AppColors.textSecondary) : null,
+          : hasArrow ? Icon(Icons.chevron_right_rounded, color: colorScheme.onSurfaceVariant) : null,
     );
   }
 }

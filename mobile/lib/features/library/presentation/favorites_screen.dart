@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_dimensions.dart';
+import '../../../core/theme/app_animations.dart';
 import '../../player/data/models/track_model.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
 import 'cubit/library_ui_cubit.dart';
@@ -14,29 +15,32 @@ class FavoritesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
     if (favorites.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(AppDimensions.spacingXl),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.05),
+                color: colorScheme.surfaceContainerHighest,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.favorite_border_rounded, size: 64, color: Colors.white54),
-            ).animate().scale(delay: 200.ms, duration: 400.ms, curve: Curves.easeOutBack),
-            const SizedBox(height: 24),
-            const Text(
+              child: Icon(Icons.favorite_border_rounded, size: 64, color: colorScheme.onSurfaceVariant),
+            ).animate().scale(delay: AppAnimations.normal, duration: AppAnimations.slow, curve: Curves.easeOutBack),
+            const SizedBox(height: AppDimensions.spacingXl),
+            Text(
               "Aucun favori pour l'instant",
-              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
-            ).animate().fadeIn(delay: 400.ms),
-            const SizedBox(height: 8),
+              style: textTheme.titleLarge,
+            ).animate().fadeIn(delay: AppAnimations.slow),
+            const SizedBox(height: AppDimensions.spacingSm),
             Text(
               "Explore l'Accueil pour en ajouter !",
-              style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 15),
-            ).animate().fadeIn(delay: 500.ms),
+              style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+            ).animate().fadeIn(delay: AppAnimations.slow),
           ],
         ),
       );
@@ -51,40 +55,32 @@ class FavoritesScreen extends StatelessWidget {
             slivers: [
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.all(24.0),
+                  padding: const EdgeInsets.all(AppDimensions.spacingXl),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         "Titres Likés",
-                        style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -1),
+                        style: textTheme.displaySmall?.copyWith(fontWeight: FontWeight.bold),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: AppDimensions.spacingXs),
                       Text(
                         "${favorites.length} titres • Tu adores ça",
-                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 15, fontWeight: FontWeight.w500),
+                        style: textTheme.titleSmall?.copyWith(color: colorScheme.onSurfaceVariant),
                       ),
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 56,
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            // Lecture aléatoire
-                            final shuffled = List<TrackModel>.from(favorites)..shuffle();
-                            context.read<PlayerCubit>().playTrack(shuffled.first, queue: shuffled);
-                          },
-                          icon: const Icon(Icons.shuffle_rounded, color: Colors.white),
-                          label: const Text("Lecture Aléatoire", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            elevation: 8,
-                            shadowColor: AppColors.primary.withOpacity(0.5),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-                          ),
+                      const SizedBox(height: AppDimensions.spacingXl),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          final shuffled = List<TrackModel>.from(favorites)..shuffle();
+                          context.read<PlayerCubit>().playTrack(shuffled.first, queue: shuffled);
+                        },
+                        icon: Icon(Icons.shuffle_rounded, color: colorScheme.onPrimary),
+                        label: Text("Lecture Aléatoire", style: TextStyle(color: colorScheme.onPrimary)),
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, AppDimensions.buttonHeight),
                         ),
-                      ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2),
-                      const SizedBox(height: 8),
+                      ).animate().fadeIn(delay: AppAnimations.normal).slideY(begin: 0.2),
+                      const SizedBox(height: AppDimensions.spacingSm),
                     ],
                   ),
                 ),

@@ -173,6 +173,17 @@ class CatalogRepository {
     
     return "Découvrez les meilleurs titres et les nouveautés de $artistName sur Sonoritiz. Retrouvez ses plus grands succès et ses dernières sorties.";
   }
+  // 7. Générateur de Playlists Intelligentes (Smart Playlists)
+  Future<List<TrackModel>> generateSmartPlaylist(String mood, {int limit = 20}) async {
+    try {
+      final searchResults = await yt.search.search('$mood music mix official');
+      final videos = searchResults.whereType<Video>().take(limit).toList();
+      return videos.map((v) => _mapVideoToTrack(v)).toList();
+    } catch (e) {
+      print('generateSmartPlaylist error: $e');
+      return [];
+    }
+  }
 
   TrackModel _mapVideoToTrack(Video video) {
     return TrackModel(

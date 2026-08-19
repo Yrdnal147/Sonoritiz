@@ -2,15 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:ui';
-import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_dimensions.dart';
+import '../../../core/theme/app_animations.dart';
 import '../../../core/widgets/artist_name_display.dart';
+import '../../../core/widgets/sonoritiz_track_tile.dart';
+import '../../../core/widgets/sonoritiz_icon_button.dart';
+import '../../../core/widgets/sonoritiz_artwork.dart';
 import '../../player/data/models/track_model.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
 import '../../../core/utils/responsive_utils.dart';
 import '../../../core/widgets/track_context_menu.dart';
 import 'cubit/search_cubit.dart';
 import 'cubit/search_state.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../../../core/widgets/festive_background.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({Key? key}) : super(key: key);
@@ -26,7 +32,6 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void initState() {
     super.initState();
-    // Ensures we start in initial state when returning
     context.read<SearchCubit>().resetSearch();
   }
 
@@ -48,43 +53,45 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildSearchBar(),
-            Expanded(
-              child: BlocBuilder<SearchCubit, SearchState>(
-                builder: (context, state) {
-                  if (state is SearchInitial) {
-                    return _buildInitialState(state.recentSearches);
-                  } else if (state is SearchLoading) {
-                    return const Center(
-                      child: CircularProgressIndicator(color: AppColors.primary),
-                    );
-                  } else if (state is SearchSuccess) {
-                    return _buildSearchResults(state.results, state.query);
-                  } else if (state is SearchError) {
-                    return Center(
-                      child: Text(state.message, style: const TextStyle(color: AppColors.error)),
-                    );
-                  }
-                  return const SizedBox();
-                },
+      backgroundColor: Colors.transparent,
+      body: FestiveBackground(
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildSearchBar(),
+              Expanded(
+                child: BlocBuilder<SearchCubit, SearchState>(
+                  builder: (context, state) {
+                    if (state is SearchInitial) {
+                      return _buildInitialState(state.recentSearches);
+                    } else if (state is SearchLoading) {
+                      return const Center(child: CircularProgressIndicator());
+                    } else if (state is SearchSuccess) {
+                      return _buildSearchResults(state.results, state.query);
+                    } else if (state is SearchError) {
+                      return Center(
+                        child: Text(state.message, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildSearchBar() {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+      margin: const EdgeInsets.fromLTRB(AppDimensions.spacingMd, AppDimensions.spacingLg, AppDimensions.spacingMd, AppDimensions.spacingMd),
       decoration: BoxDecoration(
-        color: AppColors.surfaceLight,
-        borderRadius: BorderRadius.circular(24),
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.2),
@@ -98,13 +105,11 @@ class _SearchScreenState extends State<SearchScreen> {
         focusNode: _focusNode,
         onChanged: _onSearchChanged,
         onSubmitted: _onSearchSubmitted,
-        style: const TextStyle(color: Colors.white, fontSize: 16),
         decoration: InputDecoration(
           hintText: "Que souhaitez-vous écouter ?",
-          hintStyle: const TextStyle(color: Colors.white54),
-          prefixIcon: const Icon(Icons.search_rounded, color: AppColors.primary),
+          prefixIcon: Icon(Icons.search_rounded, color: colorScheme.primary),
           suffixIcon: IconButton(
-            icon: const Icon(Icons.clear_rounded, color: Colors.white54),
+            icon: Icon(Icons.clear_rounded, color: colorScheme.onSurfaceVariant),
             onPressed: () {
               _searchController.clear();
               context.read<SearchCubit>().resetSearch();
@@ -112,15 +117,21 @@ class _SearchScreenState extends State<SearchScreen> {
             },
           ),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 16),
+          focusedBorder: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          filled: false,
+          contentPadding: const EdgeInsets.symmetric(vertical: AppDimensions.spacingMd),
         ),
       ),
     ).animate().fadeIn().slideY(begin: -0.2);
   }
 
   Widget _buildInitialState(List<String> recentSearches) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingMd),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -128,45 +139,49 @@ class _SearchScreenState extends State<SearchScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text("Recherches récentes", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                Text("Recherches récentes", style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
                 TextButton(
                   onPressed: () => context.read<SearchCubit>().clearHistory(),
-                  child: const Text("Effacer", style: TextStyle(color: Colors.white54)),
+                  child: Text("Effacer", style: TextStyle(color: colorScheme.onSurfaceVariant)),
                 )
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppDimensions.spacingSm),
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: AppDimensions.spacingSm,
+              runSpacing: AppDimensions.spacingSm,
               children: recentSearches.map((term) {
                 return InkWell(
                   onTap: () {
                     _searchController.text = term;
                     _onSearchSubmitted(term);
                   },
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(AppDimensions.radiusPill),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingMd, vertical: AppDimensions.spacingSm),
                     decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white12),
+                      color: colorScheme.surface,
+                      borderRadius: BorderRadius.circular(AppDimensions.radiusPill),
+                      border: Border.all(color: colorScheme.outline.withOpacity(0.2)),
                     ),
-                    child: Text(term, style: const TextStyle(color: Colors.white)),
+                    child: Text(term, style: textTheme.bodyMedium),
                   ),
                 );
               }).toList(),
             ).animate().fadeIn(),
-            const SizedBox(height: 32),
+            const SizedBox(height: AppDimensions.spacingXl),
           ],
-          const Text("Tout explorer", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
-          const SizedBox(height: 16),
+          Text("Viens à la découverte de nouvelles sonorités", style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: AppDimensions.spacingMd),
+          _buildDiscoveryCards(context),
+          const SizedBox(height: AppDimensions.spacingXl),
+          Text("Tout explorer", style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: AppDimensions.spacingMd),
           GridView.count(
             crossAxisCount: ResponsiveUtils.getGridCrossAxisCount(context),
             childAspectRatio: 1.6,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
+            crossAxisSpacing: AppDimensions.spacingMd,
+            mainAxisSpacing: AppDimensions.spacingMd,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             children: [
@@ -184,6 +199,81 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  Widget _buildDiscoveryCards(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      child: Row(
+        children: [
+          _buildDiscoveryCard(
+            context: context,
+            title: "Sonorités en audios",
+            icon: Icons.headphones_rounded,
+            colors: const [Color(0xFFFF5E5B), Color(0xFFFFAC93)],
+            routeType: 'audio',
+          ),
+          const SizedBox(width: AppDimensions.spacingMd),
+          _buildDiscoveryCard(
+            context: context,
+            title: "Sonorités vidéo",
+            icon: Icons.play_circle_filled_rounded,
+            colors: const [Color(0xFF8E2DE2), Color(0xFF4A00E0)],
+            routeType: 'video',
+          ),
+          const SizedBox(width: AppDimensions.spacingMd),
+          _buildDiscoveryCard(
+            context: context,
+            title: "Lyrics de sonorité",
+            icon: Icons.lyrics_rounded,
+            colors: const [Color(0xFF00C9FF), Color(0xFF92FE9D)],
+            routeType: 'lyrics',
+          ),
+        ],
+      ),
+    ).animate().fadeIn().slideX(begin: 0.1);
+  }
+
+  Widget _buildDiscoveryCard({
+    required BuildContext context,
+    required String title,
+    required IconData icon,
+    required List<Color> colors,
+    required String routeType,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        context.push('/discovery/$routeType');
+      },
+      child: Container(
+        width: 180,
+        height: 120,
+        padding: const EdgeInsets.all(AppDimensions.spacingMd),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight),
+          borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
+          boxShadow: [
+            BoxShadow(
+              color: colors.first.withOpacity(0.4),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Icon(icon, color: Colors.white, size: AppDimensions.iconXl),
+            Text(
+              title,
+              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSpotifyGenreCard(String name, List<Color> colors) {
     return GestureDetector(
       onTap: () {
@@ -193,7 +283,7 @@ class _SearchScreenState extends State<SearchScreen> {
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
           boxShadow: [
             BoxShadow(
               color: colors.last.withOpacity(0.4),
@@ -206,7 +296,7 @@ class _SearchScreenState extends State<SearchScreen> {
         child: Stack(
           children: [
             Padding(
-              padding: const EdgeInsets.all(12.0),
+              padding: const EdgeInsets.all(AppDimensions.spacingMd),
               child: Text(
                 name,
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
@@ -222,9 +312,9 @@ class _SearchScreenState extends State<SearchScreen> {
                   height: 70,
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
                   ),
-                  child: const Icon(Icons.music_note, color: Colors.white54, size: 40),
+                  child: const Icon(Icons.music_note_rounded, color: Colors.white54, size: 40),
                 ),
               ),
             ),
@@ -235,9 +325,12 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildSearchResults(List<TrackModel> results, String query) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+
     if (results.isEmpty) {
       return Center(
-        child: Text("Aucun résultat pour \"$query\"", style: const TextStyle(color: AppColors.textSecondary)),
+        child: Text("Aucun résultat pour \"$query\"", style: textTheme.bodyLarge?.copyWith(color: colorScheme.onSurfaceVariant)),
       );
     }
 
@@ -245,16 +338,16 @@ class _SearchScreenState extends State<SearchScreen> {
     final otherResults = results.length > 1 ? results.sublist(1) : <TrackModel>[];
 
     return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingMd),
       physics: const BouncingScrollPhysics(),
       children: [
-        const Text("Meilleur résultat", style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
+        Text("Meilleur résultat", style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+        const SizedBox(height: AppDimensions.spacingMd),
         _buildBestMatchCard(bestMatch, results),
         if (otherResults.isNotEmpty) ...[
-          const SizedBox(height: 24),
-          const Text("Titres", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppDimensions.spacingXl),
+          Text("Titres", style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: AppDimensions.spacingSm),
           ...otherResults.map((track) => _buildResultTile(track, results)).toList(),
         ],
         const SizedBox(height: 100),
@@ -263,41 +356,44 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildBestMatchCard(TrackModel track, List<TrackModel> queue) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+
     return GestureDetector(
       onTap: () => context.read<PlayerCubit>().playTrack(track, queue: queue),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppDimensions.spacingMd),
         decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
+          color: colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
         ),
         child: Row(
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: track.coverUrl.isNotEmpty
-                  ? CachedNetworkImage(imageUrl: track.coverUrl, width: 80, height: 80, fit: BoxFit.cover)
-                  : Container(width: 80, height: 80, color: AppColors.surfaceLight, child: const Icon(Icons.music_note)),
+            SonoritizArtwork(
+              imageUrl: track.coverUrl,
+              width: 80,
+              height: 80,
+              borderRadius: AppDimensions.radiusMd,
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: AppDimensions.spacingMd),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(track.title, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
+                  Text(track.title, style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 4),
                   Row(
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(4)),
-                        child: const Text("Titre", style: TextStyle(color: Colors.white, fontSize: 10)),
+                        decoration: BoxDecoration(color: colorScheme.onSurface.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                        child: Text("Titre", style: textTheme.labelSmall),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: AppDimensions.spacingSm),
                       Expanded(
                         child: ArtistNameDisplay(
                           artistName: track.artistName, 
-                          style: const TextStyle(color: AppColors.textSecondary, fontSize: 14), 
+                          style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant), 
                           maxLines: 1, 
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -307,10 +403,10 @@ class _SearchScreenState extends State<SearchScreen> {
                 ],
               ),
             ),
-            const CircleAvatar(
-              backgroundColor: AppColors.primary,
+            CircleAvatar(
+              backgroundColor: colorScheme.primary,
               radius: 24,
-              child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 32),
+              child: Icon(Icons.play_arrow_rounded, color: colorScheme.onPrimary, size: 32),
             ),
           ],
         ),
@@ -319,30 +415,19 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildResultTile(TrackModel track, List<TrackModel> queue) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: track.coverUrl.isNotEmpty
-            ? CachedNetworkImage(imageUrl: track.coverUrl, width: 50, height: 50, fit: BoxFit.cover)
-            : Container(width: 50, height: 50, color: AppColors.surface, child: const Icon(Icons.music_note, color: Colors.white70)),
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return SonoritizTrackTile(
+      imageUrl: track.coverUrl,
+      title: track.title,
+      subtitle: track.artistName,
+      onTap: () => context.read<PlayerCubit>().playTrack(track, queue: queue),
+      trailing: SonoritizIconButton(
+        icon: Icons.more_vert_rounded,
+        tooltip: "Options",
+        color: colorScheme.onSurfaceVariant,
+        onPressed: () => TrackContextMenu.show(context, track),
       ),
-      title: Text(track.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: ArtistNameDisplay(
-        artistName: track.artistName, 
-        style: const TextStyle(color: AppColors.textSecondary), 
-        maxLines: 1, 
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: IconButton(
-        icon: const Icon(Icons.more_vert, color: Colors.white54),
-        onPressed: () {
-          TrackContextMenu.show(context, track);
-        },
-      ),
-      onTap: () {
-        context.read<PlayerCubit>().playTrack(track, queue: queue);
-      },
     );
   }
 }

@@ -95,4 +95,25 @@ class LibraryCubit extends Cubit<LibraryState> {
     }
     return false;
   }
+
+  void addHistoryRecordLocal(TrackModel track) {
+    if (state is LibraryLoaded) {
+      final loadedState = state as LibraryLoaded;
+      
+      // Avoid immediate duplicates at the top of history
+      if (loadedState.history.isNotEmpty && loadedState.history.first.track?.id == track.id) {
+        return;
+      }
+
+      final newHistoryItem = HistoryModel(
+        id: DateTime.now().millisecondsSinceEpoch,
+        trackId: track.id,
+        playedAt: DateTime.now().toIso8601String(),
+        track: track,
+      );
+
+      final newHistory = List<HistoryModel>.from(loadedState.history)..insert(0, newHistoryItem);
+      emit(loadedState.copyWith(history: newHistory));
+    }
+  }
 }

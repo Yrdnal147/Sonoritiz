@@ -4,6 +4,8 @@ import '../storage/storage_service.dart';
 import '../../features/splash/presentation/splash_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/register_screen.dart';
+import '../../features/auth/presentation/forgot_password_screen.dart';
+import '../../features/auth/presentation/reset_password_screen.dart';
 import '../../features/navigation/presentation/main_shell_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/search/presentation/search_screen.dart';
@@ -18,6 +20,7 @@ import '../../features/artist/presentation/screens/artist_detail_screen.dart';
 import '../../features/quiz/presentation/quiz_screen.dart';
 import '../../features/podcast/presentation/podcast_screen.dart';
 import '../../features/podcast/presentation/podcast_player_screen.dart';
+import '../../features/discovery/presentation/screens/discovery_feed_screen.dart';
 import '../../features/player/data/models/track_model.dart';
 class AppRouter {
   static GoRouter createRouter(StorageService storageService) {
@@ -35,6 +38,17 @@ class AppRouter {
         GoRoute(
           path: '/register',
           builder: (context, state) => const RegisterScreen(),
+        ),
+        GoRoute(
+          path: '/forgot-password',
+          builder: (context, state) => const ForgotPasswordScreen(),
+        ),
+        GoRoute(
+          path: '/reset-password',
+          builder: (context, state) {
+            final token = state.uri.queryParameters['token'] ?? '';
+            return ResetPasswordScreen(token: token);
+          },
         ),
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
@@ -122,6 +136,13 @@ class AppRouter {
           builder: (context, state) {
             final track = state.extra as TrackModel;
             return PodcastPlayerScreen(track: track);
+          },
+        ),
+        GoRoute(
+          path: '/discovery/:type',
+          builder: (context, state) {
+            final type = state.pathParameters['type'] ?? 'audio';
+            return DiscoveryFeedScreen(feedType: type);
           },
         ),
       ],

@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'dart:io';
-import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_dimensions.dart';
+import '../../../core/theme/app_animations.dart';
 import '../../../core/storage/storage_service.dart';
 import '../../../core/widgets/track_grid_view.dart';
-import '../../../../core/widgets/artist_name_display.dart';
+import '../../../core/widgets/sonoritiz_track_tile.dart';
+import '../../../core/widgets/sonoritiz_icon_button.dart';
 import '../../player/data/models/track_model.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
 import 'cubit/library_ui_cubit.dart';
@@ -24,7 +26,6 @@ class LocalAudioScreen extends StatefulWidget {
 
 class _LocalAudioScreenState extends State<LocalAudioScreen> {
   List<TrackModel> _localTracks = [];
-
   String? _docDirPath;
 
   @override
@@ -58,10 +59,7 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
   }
 
   Future<TrackModel> _pathToTrackModel(String path) async {
-    // Generate a local ID
     final id = "local_${path.hashCode}";
-    
-    // Extract filename without extension
     final fileName = path.split('/').last;
     final nameWithoutExt = fileName.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '');
     
@@ -81,10 +79,9 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
         }
       }
     } catch (e) {
-      // Ignorer l'erreur et utiliser le nom du fichier
+      // Ignorer l'erreur
     }
     
-    // Fallback if still unknown artist
     if (artist == "Artiste inconnu" && nameWithoutExt.contains('-')) {
       final parts = nameWithoutExt.split('-');
       if (parts.length >= 2) {
@@ -106,8 +103,8 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
       title: title,
       artistName: artist,
       coverUrl: coverUrl,
-      audioUrl: "file://$path", // Prefix with file:// for just_audio
-      durationSeconds: 0, // Duration will be extracted by just_audio
+      audioUrl: "file://$path",
+      durationSeconds: 0,
     );
   }
 
@@ -124,13 +121,11 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
         
         for (var file in result.files) {
           if (file.path != null) {
-            // Check if already in persistent storage
             final fileName = file.path!.split('/').last;
             final persistentPath = '$_docDirPath/$fileName';
             
             if (!currentPaths.contains(persistentPath)) {
               try {
-                // Copy the file from the temporary cache to the persistent documents directory
                 final persistentFile = await File(file.path!).copy(persistentPath);
                 currentPaths.add(persistentFile.path);
                 addedNew = true;
@@ -144,24 +139,20 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
         if (addedNew) {
           await widget.storageService.saveLocalFiles(currentPaths);
           
-          // Show a temporary loading indicator
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Extraction des pochettes en cours...")));
           }
           
-          // Extract covers for all new files
           for (var file in result.files) {
             if (file.path != null) {
               try {
                 final persistentPath = '$_docDirPath/${file.path!.split('/').last}';
                 final persistentFile = File(persistentPath);
                 
-                // Read tags from the original file or the copied file
                 final tag = await AudioTags.read(persistentFile.existsSync() ? persistentPath : file.path!);
                 final picture = (tag?.pictures.isNotEmpty == true) ? tag?.pictures.first : null;
                 final albumArt = picture?.bytes;
                 if (albumArt != null && albumArt.isNotEmpty && _docDirPath != null) {
-                  // MUST use the persistent path's hashcode so it matches _pathToTrackModel
                   final coverPath = '$_docDirPath/cover_${persistentPath.hashCode}.jpg';
                   final coverFile = File(coverPath);
                   if (!coverFile.existsSync()) {
@@ -190,21 +181,22 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
   }
 
   void _showRemoveDialog(TrackModel track) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text("Retirer", style: TextStyle(color: Colors.white)),
-        content: Text("Retirer '${track.title}' de vos sons internes ?", style: const TextStyle(color: AppColors.textSecondary)),
+        backgroundColor: colorScheme.surface,
+        title: const Text("Retirer"),
+        content: Text("Retirer '${track.title}' de vos sons internes ?"),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text("Annuler", style: TextStyle(color: AppColors.textSecondary)),
+            child: Text("Annuler", style: TextStyle(color: colorScheme.onSurfaceVariant)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            style: ElevatedButton.styleFrom(backgroundColor: colorScheme.error, foregroundColor: colorScheme.onError),
             onPressed: () {
-              // Extract original path from file://...
               final path = track.audioUrl.replaceFirst("file://", "");
               _removeLocalTrack(path);
               Navigator.pop(ctx);
@@ -218,13 +210,17 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
     return Scaffold(
-      backgroundColor: Colors.transparent, // background de LibraryScreen
+      backgroundColor: Colors.transparent,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _pickAudioFiles,
-        backgroundColor: AppColors.primary,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text("Ajouter des sons", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
+        icon: const Icon(Icons.add_rounded),
+        label: const Text("Ajouter des sons"),
       ),
       body: _localTracks.isEmpty
           ? Center(
@@ -232,32 +228,28 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(AppDimensions.spacingXl),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.05),
+                      color: colorScheme.surfaceContainerHighest,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.audio_file_rounded, size: 64, color: Colors.white54),
-                  ).animate().scale(delay: 200.ms, duration: 400.ms, curve: Curves.easeOutBack),
-                  const SizedBox(height: 24),
-                  const Text(
+                    child: Icon(Icons.audio_file_rounded, size: 64, color: colorScheme.onSurfaceVariant),
+                  ).animate().scale(delay: AppAnimations.normal, duration: AppAnimations.slow, curve: Curves.easeOutBack),
+                  const SizedBox(height: AppDimensions.spacingXl),
+                  Text(
                     "Aucun son interne",
-                    style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
-                  ).animate().fadeIn(delay: 400.ms),
-                  const SizedBox(height: 8),
+                    style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                  ).animate().fadeIn(delay: AppAnimations.slow),
+                  const SizedBox(height: AppDimensions.spacingSm),
                   Text(
                     "Ajoute tes musiques depuis ton téléphone",
-                    style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 15),
-                  ).animate().fadeIn(delay: 500.ms),
-                  const SizedBox(height: 24),
+                    style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+                  ).animate().fadeIn(delay: AppAnimations.slow),
+                  const SizedBox(height: AppDimensions.spacingXl),
                   ElevatedButton.icon(
                     onPressed: _pickAudioFiles,
-                    icon: const Icon(Icons.add_circle_outline, color: Colors.white),
+                    icon: const Icon(Icons.add_circle_outline_rounded),
                     label: const Text("Importer des sons"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    ),
                   ).animate().fadeIn(delay: 600.ms).slideY(begin: 0.2),
                 ],
               ),
@@ -268,13 +260,13 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
                   physics: const BouncingScrollPhysics(),
                   slivers: [
                     SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+                      padding: const EdgeInsets.fromLTRB(AppDimensions.spacingLg, AppDimensions.spacingXl, AppDimensions.spacingLg, AppDimensions.spacingMd),
                       sliver: SliverToBoxAdapter(
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text("Sons internes", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                            Text("${_localTracks.length} titres", style: const TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+                            Text("Sons internes", style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                            Text("${_localTracks.length} titres", style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
                           ],
                         ).animate().fadeIn(),
                       ),
@@ -287,7 +279,6 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
                         ),
                       )
                     else
-                      // Let's use TrackGridView for grids
                       TrackGridView(
                         tracks: _localTracks,
                         viewMode: uiState.getViewModeFor('local'),
@@ -302,42 +293,19 @@ class _LocalAudioScreenState extends State<LocalAudioScreen> {
   }
 
   Widget _buildListItem(BuildContext context, TrackModel track, int index) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      leading: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: track.coverUrl.isNotEmpty && track.coverUrl.startsWith('file://')
-            ? Image.file(
-                File(track.coverUrl.replaceFirst('file://', '')),
-                width: 50,
-                height: 50,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  width: 50,
-                  height: 50,
-                  color: AppColors.surfaceLight,
-                  child: const Icon(Icons.music_note, color: AppColors.textSecondary),
-                ),
-              )
-            : Container(
-                width: 50,
-                height: 50,
-                color: AppColors.surfaceLight,
-                child: const Icon(Icons.music_note, color: AppColors.textSecondary),
-              ),
-      ),
-      title: Text(track.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: ArtistNameDisplay(
-        artistName: track.artistName,
-        style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: IconButton(
-        icon: const Icon(Icons.delete_outline, color: AppColors.error),
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return SonoritizTrackTile(
+      imageUrl: track.coverUrl,
+      title: track.title,
+      subtitle: track.artistName,
+      onTap: () => context.read<PlayerCubit>().playTrack(track, queue: _localTracks),
+      trailing: SonoritizIconButton(
+        icon: Icons.delete_outline_rounded,
+        tooltip: "Retirer",
+        color: colorScheme.error,
         onPressed: () => _showRemoveDialog(track),
       ),
-      onTap: () => context.read<PlayerCubit>().playTrack(track, queue: _localTracks),
     );
   }
 }

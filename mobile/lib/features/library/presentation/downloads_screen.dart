@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'dart:io';
 import 'package:flutter_animate/flutter_animate.dart';
-import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_dimensions.dart';
+import '../../../core/theme/app_animations.dart';
 import '../../offline/presentation/cubit/download_cubit.dart';
-import '../../player/presentation/cubit/player_cubit.dart';
+import '../../offline/presentation/cubit/download_state.dart';
 import '../../../core/widgets/track_grid_view.dart';
 import 'cubit/library_ui_cubit.dart';
 
@@ -14,10 +13,13 @@ class DownloadsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
     return BlocBuilder<DownloadCubit, DownloadState>(
       builder: (context, state) {
         if (state is! DownloadStateData) {
-          return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+          return const Center(child: CircularProgressIndicator());
         }
 
         final offlineTracks = state.offlineTracks;
@@ -28,26 +30,25 @@ class DownloadsScreen extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.download_done, size: 80, color: Colors.white.withOpacity(0.2)),
-                const SizedBox(height: 16),
+                Icon(Icons.download_done_rounded, size: 80, color: colorScheme.onSurfaceVariant.withOpacity(0.5)),
+                const SizedBox(height: AppDimensions.spacingMd),
                 Text(
                   "Aucun téléchargement",
-                  style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 18),
+                  style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurfaceVariant),
                 ),
               ],
-            ).animate().fadeIn().scale(),
+            ).animate().fadeIn().scale(duration: AppAnimations.normal),
           );
         }
 
         return CustomScrollView(
           physics: const BouncingScrollPhysics(),
           slivers: [
-            // Section 1: Téléchargements en cours
             if (downloading.isNotEmpty) ...[
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+                padding: const EdgeInsets.fromLTRB(AppDimensions.spacingLg, AppDimensions.spacingXl, AppDimensions.spacingLg, AppDimensions.spacingMd),
                 sliver: SliverToBoxAdapter(
-                  child: const Text("Téléchargements en cours", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))
+                  child: Text("Téléchargements en cours", style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold))
                       .animate().fadeIn(),
                 ),
               ),
@@ -56,29 +57,26 @@ class DownloadsScreen extends StatelessWidget {
                   (context, index) {
                     final trackId = downloading.keys.elementAt(index);
                     final progress = downloading[trackId] ?? 0.0;
-                    // On affiche juste un indicateur pour l'instant car on n'a pas le TrackModel complet dans downloadingProgress,
-                    // mais si on l'a (ce qui n'est pas le cas dans le Map<String, double>), on pourrait afficher le titre.
-                    // On va juste afficher l'ID en attendant ou "Téléchargement..."
                     return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingLg, vertical: AppDimensions.spacingSm),
                       leading: Container(
                         width: 50,
                         height: 50,
-                        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(8)),
-                        child: const Center(child: CircularProgressIndicator(color: AppColors.primary)),
+                        decoration: BoxDecoration(color: colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(AppDimensions.radiusMd)),
+                        child: const Center(child: CircularProgressIndicator()),
                       ),
-                      title: const Text("Téléchargement...", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                      title: Text("Téléchargement...", style: textTheme.titleSmall),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const SizedBox(height: 8),
+                          const SizedBox(height: AppDimensions.spacingSm),
                           LinearProgressIndicator(
                             value: progress,
-                            backgroundColor: Colors.white12,
-                            color: AppColors.primary,
+                            backgroundColor: colorScheme.surfaceContainerHighest,
+                            color: colorScheme.primary,
                           ),
                           const SizedBox(height: 4),
-                          Text("${(progress * 100).toStringAsFixed(0)}%", style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                          Text("${(progress * 100).toStringAsFixed(0)}%", style: textTheme.bodySmall),
                         ],
                       ),
                     ).animate().fadeIn();
@@ -88,16 +86,15 @@ class DownloadsScreen extends StatelessWidget {
               ),
             ],
 
-            // Section 2: Sons téléchargés
             if (offlineTracks.isNotEmpty) ...[
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+                padding: const EdgeInsets.fromLTRB(AppDimensions.spacingLg, AppDimensions.spacingXl, AppDimensions.spacingLg, AppDimensions.spacingMd),
                 sliver: SliverToBoxAdapter(
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text("Sons téléchargés", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                      Text("${offlineTracks.length} titres", style: const TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+                      Text("Sons téléchargés", style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                      Text("${offlineTracks.length} titres", style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
                     ],
                   ).animate().fadeIn(),
                 ),
@@ -116,7 +113,7 @@ class DownloadsScreen extends StatelessWidget {
                 },
               ),
             ],
-            const SliverToBoxAdapter(child: SizedBox(height: 100)), // Espace en bas
+            const SliverToBoxAdapter(child: SizedBox(height: 100)), 
           ],
         );
       },

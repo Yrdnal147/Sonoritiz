@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class StorageService {
   static final StorageService _instance = StorageService._internal();
@@ -16,21 +17,31 @@ class StorageService {
   static const String _keyProfileImagePath = 'profile_image_path';
 
   late SharedPreferences _prefs;
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+
+  // In-memory cache for synchronous access
+  String? _cachedAccessToken;
+  String? _cachedRefreshToken;
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+    // Pre-load tokens into memory
+    _cachedAccessToken = await _secureStorage.read(key: _keyAccessToken);
+    _cachedRefreshToken = await _secureStorage.read(key: _keyRefreshToken);
   }
 
   // Token management
   Future<void> saveTokens({required String accessToken, required String refreshToken}) async {
-    await _prefs.setString(_keyAccessToken, accessToken);
-    await _prefs.setString(_keyRefreshToken, refreshToken);
+    _cachedAccessToken = accessToken;
+    _cachedRefreshToken = refreshToken;
+    await _secureStorage.write(key: _keyAccessToken, value: accessToken);
+    await _secureStorage.write(key: _keyRefreshToken, value: refreshToken);
   }
 
-  String? get accessToken => _prefs.getString(_keyAccessToken);
-  String? get refreshToken => _prefs.getString(_keyRefreshToken);
+  String? get accessToken => _cachedAccessToken;
+  String? get refreshToken => _cachedRefreshToken;
 
-  bool get isAuthenticated => accessToken != null && accessToken!.isNotEmpty;
+  bool get isAuthenticated => _cachedAccessToken != null && _cachedAccessToken!.isNotEmpty;
 
   // Onboarding
   bool get hasSeenOnboarding => _prefs.getBool(_keyOnboardingSeen) ?? false;
@@ -128,8 +139,10 @@ class StorageService {
   }
 
   Future<void> clearSession() async {
-    await _prefs.remove(_keyAccessToken);
-    await _prefs.remove(_keyRefreshToken);
+    _cachedAccessToken = null;
+    _cachedRefreshToken = null;
+    await _secureStorage.delete(key: _keyAccessToken);
+    await _secureStorage.delete(key: _keyRefreshToken);
     await _prefs.remove(_keyUsername);
     await _prefs.remove(_keyEmail);
   }

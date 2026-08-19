@@ -7,17 +7,20 @@ import dj_database_url
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env(
-    DEBUG=(bool, True),
-    SECRET_KEY=(str, 'django-insecure-sonoritiz-super-secret-key-change-in-production'),
+    DEBUG=(bool, False),
+    SECRET_KEY=(str, ''),
     ALLOWED_HOSTS=(list, ['*']),
     JAMENDO_CLIENT_ID=(str, '567b5e40'),
     DB_ENGINE=(str, 'django.db.backends.sqlite3'),
-    REDIS_URL=(str, 'redis://127.0.0.1:6379/0')
+    REDIS_URL=(str, 'redis://127.0.0.1:6379/0'),
+    DATABASE_URL=(str, '')
 )
 
 environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 
-SECRET_KEY = env('SECRET_KEY', default='django-insecure-fallback-key-for-vercel')
+SECRET_KEY = env('SECRET_KEY')
+if not SECRET_KEY:
+    raise ValueError("SECRET_KEY must be set in the environment variables.")
 DEBUG = env('DEBUG')
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS')
 
@@ -79,8 +82,10 @@ TEMPLATES = [
 WSGI_APPLICATION = 'sonoritiz_backend.wsgi.application'
 ASGI_APPLICATION = 'sonoritiz_backend.asgi.application'
 
-#  configuration de base de données pour PostgreSQL avec dj_database_url
-DATABASE_URL = env('DATABASE_URL', default='postgresql://postgres.wynhitxsnpxkkyxthfbw:paWWhokmaD30bsq4@aws-0-eu-west-1.pooler.supabase.com:6543/postgres')
+# Configuration de base de données pour PostgreSQL avec dj_database_url
+DATABASE_URL = env('DATABASE_URL')
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL must be set in the environment variables.")
 
 DEBUG = False
 
@@ -124,7 +129,25 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',
     'PAGE_SIZE': 20,
     'EXCEPTION_HANDLER': 'sonoritiz_backend.exceptions.custom_exception_handler',
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle'
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/day',
+        'user': '1000/day',
+        'auth': '5/minute',    # Pour les endpoints sensibles (login, reset, google)
+    }
 }
+
+# Email Backend (Dev)
+EMAIL_BACKEND = env('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = env('EMAIL_HOST', default='smtp.gmail.com')
+EMAIL_PORT = env.int('EMAIL_PORT', default=587)
+EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
+EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
+DEFAULT_FROM_EMAIL = 'Sonoritiz <no-reply@sonoritiz.com>'
 
 # SimpleJWT Configuration
 SIMPLE_JWT = {
@@ -136,7 +159,8 @@ SIMPLE_JWT = {
 }
 
 # CORS Configuration
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = env.bool('CORS_ALLOW_ALL_ORIGINS', default=False)
+CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:3000', 'https://sonoritiz.com'])
 
 # Channel Layer (Redis for WebSockets Connect feature)
 CHANNEL_LAYERS = {

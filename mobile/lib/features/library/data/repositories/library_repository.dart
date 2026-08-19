@@ -93,6 +93,15 @@ class LibraryRepository {
     return [];
   }
 
+  Future<bool> isFavorite(String trackId) async {
+    try {
+      final favs = await getFavorites();
+      return favs.any((t) => t.id == trackId);
+    } catch (e) {
+      return false;
+    }
+  }
+
   Future<void> addFavorite(TrackModel track) async {
     await apiClient.post(ApiConstants.favorites, data: {
       'youtube_id': track.id,
@@ -159,5 +168,16 @@ class LibraryRepository {
       return results.map((h) => HistoryModel.fromJson(h)).toList();
     }
     return [];
+  }
+
+  Future<void> addToHistory(TrackModel track) async {
+    try {
+      await apiClient.post(ApiConstants.history, data: {
+        'jamendo_track_id': track.id, // backend expects jamendo_track_id
+        'track_data': track.toJson(),
+      });
+    } catch (e) {
+      print("Erreur lors de l'ajout à l'historique: $e");
+    }
   }
 }

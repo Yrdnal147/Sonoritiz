@@ -14,10 +14,13 @@ class ApiConstants {
   }
 
   // Endpoints Auth
-  static const String register = '/api/auth/register/';
-  static const String login = '/api/auth/login/';
-  static const String refresh = '/api/auth/refresh/';
-  static const String profile = '/api/auth/me/';
+  static const String register = '/api/accounts/register/';
+  static const String login = '/api/accounts/login/';
+  static const String refresh = '/api/accounts/refresh/';
+  static const String profile = '/api/accounts/me/';
+  static const String passwordReset = '/api/accounts/password-reset/';
+  static const String passwordResetConfirm = '/api/accounts/password-reset-confirm/';
+  static const String googleLogin = '/api/accounts/google-login/';
 
   // Endpoints Catalogue
   static const String trendingTracks = '/api/tracks/trending/';

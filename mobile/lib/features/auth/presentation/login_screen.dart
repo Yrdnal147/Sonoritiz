@@ -7,6 +7,7 @@ import '../../../core/constants/api_constants.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../library/presentation/cubit/library_cubit.dart';
 import '../../offline/presentation/cubit/download_cubit.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -76,6 +77,70 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       setState(() {
         _errorMessage = e.toString();
+      });
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _googleLogin() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // IMPORTANT : Il faut utiliser un Web Client ID (et non l'Android Client ID) 
+      // pour obtenir le idToken à envoyer au backend Django.
+      final googleSignIn = GoogleSignIn(
+        serverClientId: '332358147050-fj2huukn8hcf40dukiuta1hc393lmh5a.apps.googleusercontent.com',
+      );
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+      
+      if (googleUser == null) {
+        // User canceled login
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final String? idToken = googleAuth.idToken;
+
+      if (idToken == null) {
+        throw Exception("Impossible de récupérer le token Google.");
+      }
+
+      final storageService = StorageService();
+      await storageService.init();
+      final apiClient = ApiClient(storageService: storageService);
+
+      final response = await apiClient.post(ApiConstants.googleLogin, data: {
+        'id_token': idToken,
+      });
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        final tokens = data['tokens'] ?? {};
+        await storageService.saveTokens(
+          accessToken: tokens['access'] ?? '',
+          refreshToken: tokens['refresh'] ?? '',
+        );
+        if (data.containsKey('user')) {
+          await storageService.saveUserInfo(
+            username: data['user']['username'] ?? '',
+            email: data['user']['email'] ?? googleUser.email,
+          );
+        }
+
+        if (mounted) {
+          context.read<LibraryCubit>().loadLibraryData();
+          context.read<DownloadCubit>().loadDownloads();
+          context.go('/home');
+        }
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = "Erreur de connexion Google : ${e.toString()}";
       });
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -176,6 +241,19 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 32),
 
+                // Forgot Password link
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => context.push('/forgot-password'),
+                    child: const Text(
+                      "Mot de passe oublié ?",
+                      style: TextStyle(color: AppColors.primary, fontSize: 13),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
                 // Login button
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
@@ -190,6 +268,22 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: _isLoading
                         ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
                         : const Text("Se connecter", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Google Login button
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  height: 52,
+                  child: OutlinedButton.icon(
+                    onPressed: _isLoading ? null : _googleLogin,
+                    icon: const Icon(Icons.g_mobiledata, size: 32, color: Colors.white),
+                    label: const Text("Continuer avec Google", style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.white.withOpacity(0.3)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),

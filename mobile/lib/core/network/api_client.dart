@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../constants/api_constants.dart';
 import '../constants/app_strings.dart';
 import '../storage/storage_service.dart';
@@ -24,7 +25,9 @@ class ApiClient {
       InterceptorsWrapper(
         onRequest: (options, handler) {
           final token = storageService.accessToken;
-          print("=== API REQUEST: ${options.path} ===");
+          if (kDebugMode) {
+            debugPrint("=== API REQUEST: ${options.path} ===");
+          }
           if (token != null && token.isNotEmpty) {
             options.headers['Authorization'] = 'Bearer $token';
           }
@@ -134,13 +137,15 @@ class ApiClient {
   }
 
   String _handleError(DioException e) {
-    print('=== DIO EXCEPTION DETAILED ===');
-    print('Type: ${e.type}');
-    print('Message: ${e.message}');
-    print('Error: ${e.error}');
-    print('Response status: ${e.response?.statusCode}');
-    print('Response data: ${e.response?.data}');
-    print('Request URI: ${e.requestOptions.uri}');
+    if (kDebugMode) {
+      debugPrint('=== DIO EXCEPTION DETAILED ===');
+      debugPrint('Type: ${e.type}');
+      debugPrint('Message: ${e.message}');
+      debugPrint('Error: ${e.error}');
+      debugPrint('Response status: ${e.response?.statusCode}');
+      debugPrint('Response data: ${e.response?.data}');
+      debugPrint('Request URI: ${e.requestOptions.uri}');
+    }
     
     if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.receiveTimeout ||

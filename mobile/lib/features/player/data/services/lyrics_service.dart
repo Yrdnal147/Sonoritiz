@@ -7,14 +7,24 @@ class LyricsService {
 
   LyricsService() : _dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 15)));
 
+  String _cleanText(String input) {
+    String cleaned = input.replaceAll(RegExp(r'\s*-\s*topic\s*|\s*vevo\s*', caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'\(.*?(official|lyric|audio|video|visualizer|live).*?\)', caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'\[.*?(official|lyric|audio|video|visualizer|live).*?\]', caseSensitive: false), '');
+    return cleaned.trim();
+  }
+
   Future<LyricsModel?> getLyrics(String trackId, String artist, String title, int durationSeconds) async {
+    final cleanTitle = _cleanText(title);
+    final cleanArtist = _cleanText(artist);
+
     try {
       // 1. Essayer LRCLIB (meilleure API pour les paroles synchronisées)
       final response = await _dio.get(
         'https://lrclib.net/api/get',
         queryParameters: {
-          'track_name': title.trim(),
-          'artist_name': artist.trim(),
+          'track_name': cleanTitle,
+          'artist_name': cleanArtist,
           'duration': durationSeconds,
         },
       );
@@ -37,8 +47,8 @@ class LyricsService {
       final response = await _dio.get(
         'https://lrclib.net/api/search',
         queryParameters: {
-          'track_name': title.trim(),
-          'artist_name': artist.trim(),
+          'track_name': cleanTitle,
+          'artist_name': cleanArtist,
         },
       );
       
