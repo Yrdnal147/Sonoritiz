@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 
 class SonoritizPalette {
-  // Brand Colors (Coral Red base)
+  // Brand Colors (Warm Solar Triad: #FA7921, #FE9920, #FFB84D)
+  static const Color primaryBrand = Color(0xFFFA7921); // #FA7921 (Orange Solaire Énergique)
+  static const Color secondaryBrand = Color(0xFFFE9920); // #FE9920 (Orange Ambré Doré)
+  static const Color tertiaryBrand = Color(0xFFFFB84D); // #FFB84D (Ambre Doux)
+
+  // Legacy shades
+  static const Color electricIndigo = Color(0xFF5B3DF5);
+  static const Color softLilac = Color(0xFFE8DEFF);
   static const Color coral50 = Color(0xFFFFF0EE);
   static const Color coral100 = Color(0xFFFFD9D1);
   static const Color coral300 = Color(0xFFFFA18E);
-  static const Color coral500 = Color(0xFFFF5E5B); // Primary Brand
+  static const Color coral500 = Color(0xFFFF5E5B);
   static const Color coral700 = Color(0xFFD33D39);
   static const Color coral900 = Color(0xFF9C1F1C);
 
@@ -14,7 +21,7 @@ class SonoritizPalette {
   static const Color peach500 = Color(0xFFFFAC93);
 
   // Neutrals - Dark (Backgrounds)
-  static const Color grey900 = Color(0xFF0A0A0A); // Deep Background
+  static const Color grey900 = Color(0xFF0F0F0F); // Deep Background (#0F0F0F)
   static const Color grey850 = Color(0xFF141414); // Surface
   static const Color grey800 = Color(0xFF1F1F1F); // Surface Elevated
   static const Color grey700 = Color(0xFF2E2E2E); // Borders / Dividers
@@ -35,16 +42,17 @@ class SonoritizPalette {
   // Status
   static const Color success = Color(0xFF4CAF50);
   static const Color warning = Color(0xFFFFC107);
-  static const Color error = Color(0xFFE53935);
+  static const Color error = Color(0xFFFF3B5C);
 }
 
 class AppColors {
   // =========================================================================
   // LEGACY COLORS (Garder pour la rétrocompatibilité pendant la refonte)
-  // TODO: Les supprimer une fois tous les écrans migrés vers Theme.of(context).colorScheme
+  // Les supprimer une fois tous les écrans migrés vers Theme.of(context).colorScheme
   // =========================================================================
-  static const Color primary = SonoritizPalette.coral500;
-  static const Color secondary = SonoritizPalette.peach500;
+  static const Color primary = SonoritizPalette.primaryBrand;
+  static const Color secondary = SonoritizPalette.secondaryBrand;
+  static const Color tertiary = SonoritizPalette.tertiaryBrand;
   static const Color background = SonoritizPalette.grey900;
   static const Color surface = SonoritizPalette.grey850;
   static const Color surfaceLight = SonoritizPalette.grey800;
@@ -60,17 +68,21 @@ class AppColors {
   // =========================================================================
   static const ColorScheme darkColorScheme = ColorScheme(
     brightness: Brightness.dark,
-    primary: SonoritizPalette.coral500,
-    onPrimary: SonoritizPalette.white,
-    primaryContainer: SonoritizPalette.coral900,
-    onPrimaryContainer: SonoritizPalette.coral100,
-    secondary: SonoritizPalette.peach500,
-    onSecondary: SonoritizPalette.grey900,
-    secondaryContainer: SonoritizPalette.grey800,
-    onSecondaryContainer: SonoritizPalette.peach300,
+    primary: SonoritizPalette.primaryBrand,
+    onPrimary: Color(0xFF000000),
+    primaryContainer: Color(0xFF6B2F00),
+    onPrimaryContainer: Color(0xFFFFDBC9),
+    secondary: SonoritizPalette.secondaryBrand,
+    onSecondary: Color(0xFF211100),
+    secondaryContainer: Color(0xFF663D00),
+    onSecondaryContainer: Color(0xFFFFDDB8),
+    tertiary: SonoritizPalette.tertiaryBrand,
+    onTertiary: SonoritizPalette.grey900,
+    tertiaryContainer: Color(0xFF634100),
+    onTertiaryContainer: Color(0xFFFFDFB3),
     surface: SonoritizPalette.grey850,
     onSurface: SonoritizPalette.white,
-    surfaceContainerHighest: SonoritizPalette.grey800, // ex surfaceVariant
+    surfaceContainerHighest: SonoritizPalette.grey800,
     onSurfaceVariant: SonoritizPalette.white70,
     error: SonoritizPalette.error,
     onError: SonoritizPalette.white,
@@ -81,14 +93,18 @@ class AppColors {
 
   static const ColorScheme lightColorScheme = ColorScheme(
     brightness: Brightness.light,
-    primary: SonoritizPalette.coral500,
-    onPrimary: SonoritizPalette.white,
-    primaryContainer: SonoritizPalette.coral100,
-    onPrimaryContainer: SonoritizPalette.coral900,
-    secondary: SonoritizPalette.coral700,
-    onSecondary: SonoritizPalette.white,
-    secondaryContainer: SonoritizPalette.coral50,
-    onSecondaryContainer: SonoritizPalette.coral900,
+    primary: SonoritizPalette.primaryBrand,
+    onPrimary: Color(0xFF000000),
+    primaryContainer: Color(0xFFFFDBC9),
+    onPrimaryContainer: Color(0xFF331400),
+    secondary: SonoritizPalette.secondaryBrand,
+    onSecondary: Color(0xFF211100),
+    secondaryContainer: Color(0xFFFFDDB8),
+    onSecondaryContainer: Color(0xFF2E1900),
+    tertiary: SonoritizPalette.tertiaryBrand,
+    onTertiary: SonoritizPalette.grey900,
+    tertiaryContainer: Color(0xFFFFDFB3),
+    onTertiaryContainer: Color(0xFF2B1C00),
     surface: SonoritizPalette.grey50,
     onSurface: SonoritizPalette.black,
     surfaceContainerHighest: SonoritizPalette.grey100,

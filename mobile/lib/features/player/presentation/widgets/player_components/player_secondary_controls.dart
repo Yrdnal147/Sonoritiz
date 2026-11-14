@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../../core/theme/app_dimensions.dart';
-import '../../../../core/widgets/sonoritiz_icon_button.dart';
-import '../../../../features/offline/presentation/cubit/download_cubit.dart';
-import '../../../../features/offline/presentation/cubit/download_state.dart';
-import '../../data/models/track_model.dart';
+import '../../../../../core/theme/app_dimensions.dart';
+import '../../../../../core/widgets/sonoritiz_icon_button.dart';
+import '../../../../offline/presentation/cubit/download_cubit.dart';
+import '../../../data/models/track_model.dart';
+
 
 class PlayerSecondaryControls extends StatelessWidget {
   final TrackModel currentTrack;
   final VoidCallback onQueueTapped;
   final VoidCallback onLyricsTapped;
   final VoidCallback onDownloadTapped;
+  final VoidCallback? onKaraokeTapped;
 
   const PlayerSecondaryControls({
     Key? key,
@@ -18,6 +19,7 @@ class PlayerSecondaryControls extends StatelessWidget {
     required this.onQueueTapped,
     required this.onLyricsTapped,
     required this.onDownloadTapped,
+    this.onKaraokeTapped,
   }) : super(key: key);
 
   @override
@@ -32,13 +34,20 @@ class PlayerSecondaryControls extends StatelessWidget {
           SonoritizIconButton(
             icon: Icons.lyrics_outlined,
             tooltip: "Paroles",
-            color: colorScheme.onSurface,
+            color: Colors.white,
             onPressed: onLyricsTapped,
           ),
+          if (onKaraokeTapped != null)
+            SonoritizIconButton(
+              icon: Icons.celebration_rounded,
+              tooltip: "Mode Party / Karaoké",
+              color: Colors.white,
+              onPressed: onKaraokeTapped!,
+            ),
           SonoritizIconButton(
             icon: Icons.queue_music_rounded,
             tooltip: "File d'attente",
-            color: colorScheme.onSurface,
+            color: Colors.white,
             onPressed: onQueueTapped,
           ),
           BlocBuilder<DownloadCubit, DownloadState>(
@@ -73,7 +82,7 @@ class PlayerSecondaryControls extends StatelessWidget {
               return SonoritizIconButton(
                 icon: isDownloaded ? Icons.download_done : Icons.download_outlined,
                 tooltip: isDownloaded ? "Téléchargé" : "Télécharger",
-                color: isDownloaded ? colorScheme.primary : colorScheme.onSurface,
+                color: isDownloaded ? colorScheme.primary : Colors.white,
                 onPressed: () {
                   if (isDownloaded) {
                     context.read<DownloadCubit>().removeDownload(currentTrack.id);

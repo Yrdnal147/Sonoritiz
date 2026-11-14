@@ -1,11 +1,10 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
+import '../../../../core/widgets/sonoritiz_track_tile.dart';
 
 class QueueBottomSheet extends StatelessWidget {
   const QueueBottomSheet({Key? key}) : super(key: key);
@@ -14,18 +13,21 @@ class QueueBottomSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<PlayerCubit, PlayerState>(
       builder: (context, state) {
-        return ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 40.0, sigmaY: 40.0),
-            child: Container(
-              height: MediaQuery.of(context).size.height * 0.75,
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.55),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-                border: Border.all(color: Colors.white.withOpacity(0.1), width: 1),
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.75,
+          decoration: BoxDecoration(
+            color: const Color(0xF7161616),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+            border: Border.all(color: Colors.white.withOpacity(0.12), width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.5),
+                blurRadius: 20,
+                offset: const Offset(0, -4),
               ),
-              child: Column(
+            ],
+          ),
+          child: Column(
                 children: [
                   const SizedBox(height: 12),
                   // Drag handle
@@ -101,79 +103,53 @@ class QueueBottomSheet extends StatelessWidget {
                               final track = state.queue[index];
                               final isCurrent = index == state.currentIndex;
 
-                              return Container(
+                              return Column(
                                 key: ValueKey('${track.id}_${track.hashCode}'),
-                                margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-                                decoration: BoxDecoration(
-                                  color: isCurrent
-                                      ? AppColors.primary.withOpacity(0.15)
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: isCurrent
-                                      ? Border.all(color: AppColors.primary.withOpacity(0.5), width: 1)
-                                      : Border.all(color: Colors.transparent, width: 1),
-                                ),
-                                child: ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
-                                  leading: ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: track.coverUrl.isNotEmpty
-                                        ? CachedNetworkImage(
-                                            imageUrl: track.coverUrl,
-                                            width: 48,
-                                            height: 48,
-                                            fit: BoxFit.cover,
-                                          )
-                                        : Container(
-                                            width: 48,
-                                            height: 48,
-                                            color: Colors.white.withOpacity(0.1),
-                                            child: const Icon(Icons.music_note, color: Colors.white70),
-                                          ),
-                                  ),
-                                  title: Text(
-                                    track.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: isCurrent ? AppColors.primary : Colors.white,
-                                      fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w600,
-                                      fontSize: 15,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                                    decoration: BoxDecoration(
+                                      color: isCurrent
+                                          ? AppColors.primary.withOpacity(0.15)
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: isCurrent
+                                          ? Border.all(color: AppColors.primary.withOpacity(0.5), width: 1)
+                                          : Border.all(color: Colors.transparent, width: 1),
+                                    ),
+                                    child: SonoritizTrackTile(
+                                      track: track,
+                                      queue: state.queue,
+                                      trailing: isCurrent && state.isPlaying
+                                          ? const Icon(Icons.equalizer_rounded, color: AppColors.primary)
+                                              .animate(onPlay: (controller) => controller.repeat())
+                                              .shimmer(duration: 1000.ms)
+                                          : ReorderableDragStartListener(
+                                              index: index,
+                                              child: Icon(Icons.drag_handle_rounded, color: Colors.white.withOpacity(0.3)),
+                                            ),
+                                      onTap: () {
+                                        context.read<PlayerCubit>().skipToQueueItem(index);
+                                      },
                                     ),
                                   ),
-                                  subtitle: Padding(
-                                    padding: const EdgeInsets.only(top: 4.0),
-                                    child: Text(
-                                      track.artistName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: isCurrent ? AppColors.primary.withOpacity(0.8) : Colors.white.withOpacity(0.6),
-                                        fontSize: 13,
-                                      ),
-                                    ),
+                                  // Trait gris de séparation distinct entre les sons de haut en bas
+                                  Divider(
+                                    color: Colors.white.withOpacity(0.14),
+                                    height: 1,
+                                    thickness: 0.8,
+                                    indent: 16,
+                                    endIndent: 16,
                                   ),
-                                  trailing: isCurrent && state.isPlaying
-                                      ? const Icon(Icons.equalizer_rounded, color: AppColors.primary)
-                                          .animate(onPlay: (controller) => controller.repeat())
-                                          .shimmer(duration: 1000.ms)
-                                      : ReorderableDragStartListener(
-                                          index: index,
-                                          child: Icon(Icons.drag_handle_rounded, color: Colors.white.withOpacity(0.3)),
-                                        ),
-                                  onTap: () {
-                                    context.read<PlayerCubit>().skipToQueueItem(index);
-                                  },
-                                ),
+                                ],
                               );
                             },
                           ),
                   ),
                 ],
               ),
-            ),
-          ),
-        );
+            );
       },
     );
   }

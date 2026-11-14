@@ -50,3 +50,39 @@ class AuthEndpointsTestCase(TestCase):
         response = self.client.post(self.login_url, login_payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error"]["code"], "BAD_REQUEST")
+
+    def test_favorite_artists_isolated_per_user(self):
+        user_a = User.objects.create_user(
+            email="a@sonoritiz.com", username="user_a", password="Password123!"
+        )
+        user_b = User.objects.create_user(
+            email="b@sonoritiz.com", username="user_b", password="Password123!"
+        )
+        prefs_url = reverse('auth_preferences')
+
+        self.client.force_authenticate(user=user_a)
+        res_patch = self.client.patch(
+            prefs_url,
+            {"favorite_artists": ["Édith Piaf", "Charles Aznavour", "édith piaf", "Mozart"]},
+            format='json',
+        )
+        self.assertEqual(res_patch.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            res_patch.data["favorite_artists"],
+            ["Édith Piaf", "Charles Aznavour", "Mozart"],
+        )
+
+        # User B ne doit jamais recevoir les artistes de User A
+        self.client.force_authenticate(user=user_b)
+        res_b = self.client.get(prefs_url)
+        self.assertEqual(res_b.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_b.data["favorite_artists"], [])
+
+        # Reconnexion sur User A : données intactes
+        self.client.force_authenticate(user=user_a)
+        res_a = self.client.get(prefs_url)
+        self.assertEqual(res_a.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            res_a.data["favorite_artists"],
+            ["Édith Piaf", "Charles Aznavour", "Mozart"],
+        )

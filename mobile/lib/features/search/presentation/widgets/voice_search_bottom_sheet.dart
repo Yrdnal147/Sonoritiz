@@ -7,12 +7,15 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:string_similarity/string_similarity.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../player/data/models/track_model.dart';
+import '../../../home/data/repositories/catalog_repository.dart';
 import '../../../home/presentation/cubit/home_cubit.dart';
 import '../../../home/presentation/cubit/home_state.dart';
 import '../../../player/presentation/cubit/player_cubit.dart';
 
 class VoiceSearchBottomSheet extends StatefulWidget {
-  const VoiceSearchBottomSheet({super.key});
+  final ValueChanged<String>? onQueryRecognized;
+
+  const VoiceSearchBottomSheet({super.key, this.onQueryRecognized});
 
   @override
   State<VoiceSearchBottomSheet> createState() => _VoiceSearchBottomSheetState();
@@ -120,15 +123,25 @@ class _VoiceSearchBottomSheetState extends State<VoiceSearchBottomSheet> {
         'beyonce', 'eminem', 'kanye west', 'taylor swift', 'dua lipa', 'ed sheeran', 'justin bieber'
       ];
 
-      // On ajoute aussi les artistes favoris de l'utilisateur
-      final homeState = context.read<HomeCubit>().state;
-      if (homeState is HomeLoaded) {
-        for (var track in homeState.userFavorites) {
-          final favArtist = track.artistName.toLowerCase().trim();
-          if (!globalArtists.contains(favArtist)) {
-            globalArtists.add(favArtist);
+      CatalogRepository repository;
+      try {
+        final homeCubit = context.read<HomeCubit?>();
+        if (homeCubit != null) {
+          final homeState = homeCubit.state;
+          if (homeState is HomeLoaded) {
+            for (var track in homeState.userFavorites) {
+              final favArtist = track.artistName.toLowerCase().trim();
+              if (!globalArtists.contains(favArtist)) {
+                globalArtists.add(favArtist);
+              }
+            }
           }
+          repository = homeCubit.catalogRepository;
+        } else {
+          repository = CatalogRepository();
         }
+      } catch (_) {
+        repository = CatalogRepository();
       }
 
       // Utilisation de l'algorithme Dice Coefficient pour trouver la meilleure correspondance
@@ -138,7 +151,8 @@ class _VoiceSearchBottomSheetState extends State<VoiceSearchBottomSheet> {
         searchQuery = match.bestMatch.target!;
       }
 
-      final repository = context.read<HomeCubit>().catalogRepository;
+      widget.onQueryRecognized?.call(searchQuery);
+
       final results = await repository.searchTracks(query: searchQuery, limit: 1);
 
       if (results.isNotEmpty) {
@@ -216,7 +230,7 @@ class _VoiceSearchBottomSheetState extends State<VoiceSearchBottomSheet> {
             ),
             child: Icon(
               _isListening ? Icons.mic : Icons.mic_none,
-              color: Colors.white,
+              color: _isListening ? Colors.black : Colors.white,
               size: 40,
             ),
           ).animate(target: _isListening ? 1 : 0).scale(

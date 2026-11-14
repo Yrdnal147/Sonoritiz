@@ -21,12 +21,13 @@ class SearchLoading extends SearchState {}
 
 class SearchSuccess extends SearchState {
   final List<TrackModel> results;
+  final List<Map<String, dynamic>> artists;
   final String query;
 
-  const SearchSuccess({required this.results, required this.query});
+  const SearchSuccess({required this.results, required this.artists, required this.query});
 
   @override
-  List<Object?> get props => [results, query];
+  List<Object?> get props => [results, artists, query];
 }
 
 class SearchError extends SearchState {

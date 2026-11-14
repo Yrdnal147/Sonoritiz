@@ -7,8 +7,29 @@ User = get_user_model()
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('id', 'email', 'username', 'created_at')
+        fields = ('id', 'email', 'username', 'favorite_artists', 'created_at')
         read_only_fields = ('id', 'created_at')
+
+
+class UserPreferencesSerializer(serializers.Serializer):
+    favorite_artists = serializers.ListField(
+        child=serializers.CharField(max_length=120, trim_whitespace=True),
+        max_length=50,
+        required=True,
+    )
+
+    def validate_favorite_artists(self, value):
+        cleaned = []
+        seen = set()
+        for item in value:
+            name = item.strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key not in seen:
+                seen.add(key)
+                cleaned.append(name)
+        return cleaned
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)

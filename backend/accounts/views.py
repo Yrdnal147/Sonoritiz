@@ -3,13 +3,19 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.throttling import ScopedRateThrottle
+from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
 from django.contrib.auth import get_user_model
+from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.crypto import get_random_string
-from django.core.cache import cache
 import requests
 from .serializers import (
     RegisterSerializer, LoginSerializer, UserSerializer,
+    UserPreferencesSerializer,
     PasswordResetSerializer, PasswordResetConfirmSerializer,
     GoogleLoginSerializer
 )
@@ -65,11 +71,9 @@ class PasswordResetView(APIView):
             email = serializer.validated_data['email'].lower()
             try:
                 user = User.objects.get(email__iexact=email)
-                token = get_random_string(length=32)
-                # Store token in cache for 15 minutes (900 seconds)
-                cache.set(f"pwd_reset_{token}", user.id, timeout=900)
-                
-                reset_link = f"sonoritiz://reset-password?token={token}"
+                uid = urlsafe_base64_encode(force_bytes(user.pk))
+                token = default_token_generator.make_token(user)
+                reset_link = f"sonoritiz:///reset-password?token={uid}.{token}"
                 send_mail(
                     "Réinitialisation de votre mot de passe Sonoritiz",
                     f"Cliquez sur ce lien depuis votre téléphone pour réinitialiser votre mot de passe : {reset_link}\nCe lien expire dans 15 minutes.",
@@ -94,19 +98,24 @@ class PasswordResetConfirmView(APIView):
         
         token = serializer.validated_data['token']
         new_password = serializer.validated_data['new_password']
-        
-        user_id = cache.get(f"pwd_reset_{token}")
-        if not user_id:
-            return Response({"error": {"code": "INVALID_TOKEN", "message": "Ce lien a expiré ou est invalide."}}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         try:
-            user = User.objects.get(id=user_id)
-            user.set_password(new_password)
-            user.save()
-            cache.delete(f"pwd_reset_{token}")
-            return Response({"detail": "Mot de passe mis à jour avec succès."}, status=status.HTTP_200_OK)
+            uid, reset_token = token.split('.', 1)
+            user_id = force_str(urlsafe_base64_decode(uid))
+            user = User.objects.get(pk=user_id)
+            if not default_token_generator.check_token(user, reset_token):
+                raise ValueError('Expired or invalid reset token')
+            validate_password(new_password, user)
         except User.DoesNotExist:
-            return Response({"error": {"code": "USER_NOT_FOUND", "message": "Utilisateur introuvable."}}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": {"code": "INVALID_TOKEN", "message": "Ce lien a expiré ou est invalide."}}, status=status.HTTP_400_BAD_REQUEST)
+        except (ValueError, TypeError, DjangoValidationError) as error:
+            if isinstance(error, DjangoValidationError):
+                raise serializers.ValidationError({'new_password': error.messages})
+            return Response({"error": {"code": "INVALID_TOKEN", "message": "Ce lien a expiré ou est invalide."}}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save()
+        return Response({"detail": "Mot de passe mis à jour avec succès."}, status=status.HTTP_200_OK)
 
 class GoogleLoginView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -121,20 +130,38 @@ class GoogleLoginView(APIView):
         id_token = serializer.validated_data['id_token']
         
         # Verify token with Google
-        google_response = requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}")
+        try:
+            google_response = requests.get(
+                'https://oauth2.googleapis.com/tokeninfo',
+                params={'id_token': id_token},
+                timeout=10,
+            )
+        except requests.RequestException:
+            return Response(
+                {"error": {"code": "GOOGLE_VERIFICATION_UNAVAILABLE", "message": "La vérification Google est temporairement indisponible."}},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         if google_response.status_code != 200:
             return Response({"error": {"code": "INVALID_GOOGLE_TOKEN", "message": "Token Google invalide."}}, status=status.HTTP_400_BAD_REQUEST)
             
         user_data = google_response.json()
+        if not settings.GOOGLE_WEB_CLIENT_ID or user_data.get('aud') != settings.GOOGLE_WEB_CLIENT_ID:
+            return Response({"error": {"code": "INVALID_GOOGLE_AUDIENCE", "message": "Token Google destiné à une autre application."}}, status=status.HTTP_400_BAD_REQUEST)
+
+        if str(user_data.get('email_verified', '')).lower() != 'true':
+            return Response({"error": {"code": "UNVERIFIED_GOOGLE_EMAIL", "message": "L'adresse Google n'est pas vérifiée."}}, status=status.HTTP_400_BAD_REQUEST)
+
         email = user_data.get('email')
         
         if not email:
             return Response({"error": {"code": "NO_EMAIL", "message": "Email manquant dans le profil Google."}}, status=status.HTTP_400_BAD_REQUEST)
             
         # Get or create user
+        is_new_user = False
         try:
             user = User.objects.get(email__iexact=email)
         except User.DoesNotExist:
+            is_new_user = True
             username = email.split('@')[0]
             # Ensure unique username
             base_username = username
@@ -142,11 +169,12 @@ class GoogleLoginView(APIView):
             while User.objects.filter(username__iexact=username).exists():
                 username = f"{base_username}{counter}"
                 counter += 1
-            user = User.objects.create_user(email=email, username=username, password=get_random_string(32))
+            user = User.objects.create_user(email=email.lower(), username=username, password=get_random_string(32))
             
         refresh = RefreshToken.for_user(user)
         return Response({
             "user": UserSerializer(user).data,
+            "is_new_user": is_new_user,
             "tokens": {
                 "refresh": str(refresh),
                 "access": str(refresh.access_token),
@@ -159,4 +187,30 @@ class ProfileView(APIView):
     def get(self, request):
         serializer = UserSerializer(request.user)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class UserPreferencesView(APIView):
+    """Lit ou met à jour la liste d'artistes préférés propres à l'utilisateur connecté."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        artists = request.user.favorite_artists if isinstance(request.user.favorite_artists, list) else []
+        return Response({"favorite_artists": artists}, status=status.HTTP_200_OK)
+
+    def _update_preferences(self, request):
+        serializer = UserPreferencesSerializer(data=request.data)
+        if not serializer.is_valid():
+            raise serializers.ValidationError(serializer.errors)
+        request.user.favorite_artists = serializer.validated_data['favorite_artists']
+        request.user.save(update_fields=['favorite_artists', 'updated_at'])
+        return Response(
+            {"favorite_artists": request.user.favorite_artists},
+            status=status.HTTP_200_OK,
+        )
+
+    def put(self, request):
+        return self._update_preferences(request)
+
+    def patch(self, request):
+        return self._update_preferences(request)
 

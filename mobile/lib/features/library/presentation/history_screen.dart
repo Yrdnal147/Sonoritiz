@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../core/theme/app_dimensions.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_animations.dart';
 import '../data/repositories/library_repository.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
-import '../../../core/utils/share_utils.dart';
-import '../../../core/widgets/sonoritiz_track_tile.dart';
-import '../../../core/widgets/sonoritiz_icon_button.dart';
+import '../../player/data/models/track_model.dart';
+import 'cubit/library_ui_cubit.dart';
+import '../../../core/widgets/track_grid_view.dart';
+import 'package:go_router/go_router.dart';
 
 class HistoryScreen extends StatelessWidget {
   final List<HistoryModel> history;
@@ -19,60 +22,155 @@ class HistoryScreen extends StatelessWidget {
 
     if (history.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.history_rounded, size: 64, color: colorScheme.onSurfaceVariant),
-            const SizedBox(height: AppDimensions.spacingMd),
-            Text(
-              "Ton historique d'écoute apparaîtra ici",
-              style: textTheme.titleMedium,
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 90,
+                height: 90,
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.history_rounded, size: 46, color: colorScheme.primary.withOpacity(0.7)),
+              ).animate().scale(delay: AppAnimations.normal, duration: AppAnimations.slow, curve: Curves.easeOutBack),
+              const SizedBox(height: 20),
+              Text(
+                "Aucun historique",
+                style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              ).animate().fadeIn(delay: AppAnimations.slow),
+              const SizedBox(height: 8),
+              Text(
+                "Les titres que tu écoutes apparaîtront ici.",
+                textAlign: TextAlign.center,
+                style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+              ).animate().fadeIn(delay: AppAnimations.slow),
+              const SizedBox(height: 28),
+              FilledButton.icon(
+                onPressed: () => context.go('/home'),
+                icon: const Icon(Icons.explore_rounded),
+                label: const Text("Explorer la musique"),
+                style: FilledButton.styleFrom(
+                  shape: const StadiumBorder(),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                ),
+              ).animate().fadeIn(delay: AppAnimations.slow),
+            ],
+          ),
         ),
       );
     }
 
+    final validTracks = history.map((e) => e.track).whereType<TrackModel>().toList();
+
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: AppDimensions.spacingSm),
-        physics: const BouncingScrollPhysics(),
-        itemCount: history.length,
-        itemBuilder: (context, index) {
-          final item = history[index];
-          final track = item.track;
-          if (track == null) return const SizedBox.shrink();
-
-          return SonoritizTrackTile(
-            imageUrl: track.coverUrl,
-            title: track.title,
-            subtitle: track.artistName,
-            onTap: () {
-              context.read<PlayerCubit>().playTrack(track);
-            },
-            trailing: PopupMenuButton<String>(
-              icon: Icon(Icons.more_horiz_rounded, color: colorScheme.onSurfaceVariant),
-              color: colorScheme.surface,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimensions.radiusMd)),
-              onSelected: (value) {
-                if (value == 'share') {
-                  ShareUtils.shareTrack(track);
-                }
-              },
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'share',
-                  child: Row(
-                    children: [
-                      Icon(Icons.share_rounded, color: colorScheme.onSurface, size: AppDimensions.iconSm),
-                      const SizedBox(width: AppDimensions.spacingMd),
-                      Text("Partager", style: TextStyle(color: colorScheme.onSurface)),
-                    ],
+      body: BlocBuilder<LibraryUiCubit, LibraryUiState>(
+        builder: (context, uiState) {
+          return CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              if (validTracks.isNotEmpty) ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                    child: Row(
+                      children: [
+                        Text(
+                          '${validTracks.length} ${validTracks.length > 1 ? "écoutes récentes" : "écoute récente"}',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.55),
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Spacer(),
+                        GestureDetector(
+                          onTap: () {
+                            final shuffled = List<TrackModel>.from(validTracks)..shuffle();
+                            context.read<PlayerCubit>().playTrack(shuffled.first, queue: shuffled);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.16),
+                              ),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.shuffle_rounded, color: Colors.white, size: 19),
+                                SizedBox(width: 6),
+                                Text(
+                                  "Aléatoire",
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        GestureDetector(
+                          onTap: () {
+                            context.read<PlayerCubit>().playTrack(validTracks.first, queue: validTracks);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.play_arrow_rounded, color: Colors.black, size: 21),
+                                SizedBox(width: 4),
+                                Text(
+                                  "Lire",
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 8)),
+                SliverToBoxAdapter(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: CustomScrollView(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      slivers: [
+                        TrackGridView(
+                          key: ValueKey(uiState.getViewModeFor('history')),
+                          tracks: validTracks,
+                          viewMode: uiState.getViewModeFor('history'),
+                          sortMode: uiState.getSortModeFor('history'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
-            ),
+              const SliverToBoxAdapter(child: SizedBox(height: 120)),
+            ],
           );
         },
       ),

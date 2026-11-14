@@ -2,7 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../../../../core/storage/storage_service.dart';
 
-enum ViewMode { list, gridSmall, gridMedium, gridLarge }
+enum ViewMode { list, listCompact, gridSmall, gridMedium, gridLarge, cards }
 enum SortMode { alpha, recent }
 
 class LibraryUiState extends Equatable {
@@ -52,6 +52,10 @@ class LibraryUiCubit extends Cubit<LibraryUiState> {
 
   LibraryUiCubit({required this.storageService}) : super(_initialState(storageService));
 
+  void reloadForCurrentUser() {
+    emit(_initialState(storageService));
+  }
+
   static LibraryUiState _initialState(StorageService storageService) {
     Map<String, ViewMode> initialViewModes = {};
     Map<String, SortMode> initialSortModes = {};
@@ -74,8 +78,8 @@ class LibraryUiCubit extends Cubit<LibraryUiState> {
     }
   }
 
-  void setViewMode(ViewMode mode) {
-    final tabId = state.activeTabId;
+  void setViewMode(ViewMode mode, {String? tabKey}) {
+    final tabId = tabKey ?? state.activeTabId;
     storageService.saveViewMode(tabId, _viewModeToString(mode));
     
     final newViewModes = Map<String, ViewMode>.from(state.viewModes);
@@ -84,8 +88,8 @@ class LibraryUiCubit extends Cubit<LibraryUiState> {
     emit(state.copyWith(viewModes: newViewModes));
   }
 
-  void setSortMode(SortMode mode) {
-    final tabId = state.activeTabId;
+  void setSortMode(SortMode mode, {String? tabKey}) {
+    final tabId = tabKey ?? state.activeTabId;
     storageService.saveSortMode(tabId, _sortModeToString(mode));
     
     final newSortModes = Map<String, SortMode>.from(state.sortModes);
@@ -116,11 +120,29 @@ class LibraryUiCubit extends Cubit<LibraryUiState> {
     emit(state.copyWith(isSearchActive: false, searchQuery: ''));
   }
 
+  static String normalizeForSearch(String input) {
+    if (input.isEmpty) return '';
+    return input
+        .toLowerCase()
+        .replaceAll(RegExp(r'[àáâãäå]'), 'a')
+        .replaceAll(RegExp(r'[èéêë]'), 'e')
+        .replaceAll(RegExp(r'[ìíîï]'), 'i')
+        .replaceAll(RegExp(r'[òóôõö]'), 'o')
+        .replaceAll(RegExp(r'[ùúûü]'), 'u')
+        .replaceAll(RegExp(r'[ýÿ]'), 'y')
+        .replaceAll('ç', 'c')
+        .replaceAll('œ', 'oe')
+        .replaceAll('æ', 'ae')
+        .trim();
+  }
+
   static ViewMode _parseViewMode(String mode) {
     switch (mode) {
       case 'gridSmall': return ViewMode.gridSmall;
       case 'gridMedium': return ViewMode.gridMedium;
       case 'gridLarge': return ViewMode.gridLarge;
+      case 'listCompact': return ViewMode.listCompact;
+      case 'cards': return ViewMode.cards;
       case 'list':
       default:
         return ViewMode.list;
@@ -132,6 +154,8 @@ class LibraryUiCubit extends Cubit<LibraryUiState> {
       case ViewMode.gridSmall: return 'gridSmall';
       case ViewMode.gridMedium: return 'gridMedium';
       case ViewMode.gridLarge: return 'gridLarge';
+      case ViewMode.listCompact: return 'listCompact';
+      case ViewMode.cards: return 'cards';
       case ViewMode.list: return 'list';
     }
   }

@@ -53,18 +53,52 @@ class TrackModel extends Equatable {
   }
 
   MediaItem toMediaItem() {
+    Uri? parsedArtUri;
+    if (coverUrl.isNotEmpty) {
+      if (coverUrl.startsWith('file://')) {
+        parsedArtUri = Uri.file(coverUrl.replaceFirst('file://', ''));
+      } else if (coverUrl.startsWith('/') || RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(coverUrl)) {
+        parsedArtUri = Uri.file(coverUrl);
+      } else {
+        parsedArtUri = Uri.tryParse(coverUrl);
+      }
+    }
     return MediaItem(
       id: id,
       album: albumName.isNotEmpty ? albumName : 'Sonoritiz',
       title: title,
       artist: artistName,
       duration: Duration(seconds: durationSeconds),
-      artUri: coverUrl.isNotEmpty ? Uri.parse(coverUrl) : null,
+      artUri: parsedArtUri,
       extras: {
         'audio_url': audioUrl,
         'license_ccurl': licenseCcUrl,
         'genre': genre,
       },
+    );
+  }
+
+  TrackModel copyWith({
+    String? id,
+    String? title,
+    String? artistName,
+    String? albumName,
+    String? coverUrl,
+    int? durationSeconds,
+    String? audioUrl,
+    String? genre,
+    String? licenseCcUrl,
+  }) {
+    return TrackModel(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      artistName: artistName ?? this.artistName,
+      albumName: albumName ?? this.albumName,
+      coverUrl: coverUrl ?? this.coverUrl,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      audioUrl: audioUrl ?? this.audioUrl,
+      genre: genre ?? this.genre,
+      licenseCcUrl: licenseCcUrl ?? this.licenseCcUrl,
     );
   }
 

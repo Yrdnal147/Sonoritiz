@@ -1,0 +1,23 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+**/upload-keystore.jks
+mobile/assets/images/env.txt
+
+# Local databases and generated Python files
+*.sqlite3
+*.db
+__pycache__/
+*.py[cod]
+
+# Flutter and Android build output
+**/.dart_tool/
+**/build/
+**/.gradle/
+mobile/android/.gradle-home/
+mobile/android/build/
+mobile/assets/images/*.zip
+**/.flutter-plugins
+**/.packages
+

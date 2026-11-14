@@ -1,6 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'dart:io';
 import '../../../features/player/data/models/track_model.dart';
 import '../../../features/player/presentation/cubit/player_cubit.dart';
 import '../../../core/theme/app_dimensions.dart';
@@ -15,7 +15,11 @@ class TrackGridView extends StatelessWidget {
   final List<TrackModel> tracks;
   final ViewMode viewMode;
   final SortMode sortMode;
-  final Map<String, String>? localCoverPaths; // For downloaded tracks
+  final Map<String, String>? localCoverPaths;
+  final bool isSelectionMode;
+  final Set<String> selectedTrackIds;
+  final Function(String trackId, bool selected)? onSelectionChanged;
+  final String? playbackSource;
 
   const TrackGridView({
     Key? key,
@@ -23,21 +27,24 @@ class TrackGridView extends StatelessWidget {
     required this.viewMode,
     required this.sortMode,
     this.localCoverPaths,
+    this.isSelectionMode = false,
+    this.selectedTrackIds = const {},
+    this.onSelectionChanged,
+    this.playbackSource,
   }) : super(key: key);
 
-  List<TrackModel> _getSortedTracks() {
+  static List<TrackModel> sortTracks(List<TrackModel> tracks, SortMode sortMode) {
     if (sortMode == SortMode.recent) {
-      return List.from(tracks);
-    } else {
-      final sorted = List<TrackModel>.from(tracks);
-      sorted.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
-      return sorted;
+      return List<TrackModel>.from(tracks);
     }
+    final sorted = List<TrackModel>.from(tracks);
+    sorted.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+    return sorted;
   }
 
   @override
   Widget build(BuildContext context) {
-    final sortedTracks = _getSortedTracks();
+    final sortedTracks = sortTracks(tracks, sortMode);
 
     if (viewMode == ViewMode.list) {
       return SliverList(
@@ -45,19 +52,101 @@ class TrackGridView extends StatelessWidget {
           (context, index) {
             final track = sortedTracks[index];
             final localPath = localCoverPaths?[track.id];
-            final cover = (localPath != null && localPath.isNotEmpty && File(localPath).existsSync()) ? "file://$localPath" : track.coverUrl;
-            
+            final cover = (localPath != null &&
+                    localPath.isNotEmpty &&
+                    File(localPath).existsSync())
+                ? "file://$localPath"
+                : track.coverUrl;
+
             return SonoritizTrackTile(
-              imageUrl: cover,
-              title: track.title,
-              subtitle: track.artistName,
-              onTap: () => context.read<PlayerCubit>().playTrack(track, queue: sortedTracks),
-              trailing: SonoritizIconButton(
-                icon: Icons.more_horiz_rounded,
-                tooltip: "Options",
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                onPressed: () => TrackContextMenu.show(context, track),
+              track: track,
+              coverOverride: cover,
+              queue: sortedTracks,
+              playbackSource: playbackSource,
+              onTap: isSelectionMode
+                  ? null
+                  : () => context.read<PlayerCubit>().playTrack(
+                        track,
+                        queue: sortedTracks,
+                        source: playbackSource,
+                      ),
+              isSelectionMode: isSelectionMode,
+              isSelected: selectedTrackIds.contains(track.id),
+              onSelectionChanged: (selected) =>
+                  onSelectionChanged?.call(track.id, selected ?? false),
+              trailing: isSelectionMode
+                  ? null
+                  : SonoritizIconButton(
+                      icon: Icons.more_horiz_rounded,
+                      tooltip: "Options",
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      onPressed: () => TrackContextMenu.show(context, track),
+                    ),
+            );
+          },
+          childCount: sortedTracks.length,
+        ),
+      );
+    }
+
+    if (viewMode == ViewMode.listCompact) {
+      return SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            final track = sortedTracks[index];
+            final isSelected = selectedTrackIds.contains(track.id);
+
+            return ListTile(
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: AppDimensions.spacingLg),
+              leading: Text(
+                '${index + 1}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
               ),
+              title: Text(
+                track.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                track.artistName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              trailing: isSelectionMode
+                  ? Checkbox(
+                      value: isSelected,
+                      onChanged: (v) =>
+                          onSelectionChanged?.call(track.id, v ?? false),
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.more_vert_rounded, size: 20),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      onPressed: () => TrackContextMenu.show(context, track),
+                    ),
+              onTap: isSelectionMode
+                  ? () => onSelectionChanged?.call(track.id, !isSelected)
+                  : () => context.read<PlayerCubit>().playTrack(
+                        track,
+                        queue: sortedTracks,
+                        source: playbackSource,
+                      ),
+              onLongPress: isSelectionMode
+                  ? null
+                  : (onSelectionChanged != null
+                      ? () => onSelectionChanged!.call(track.id, true)
+                      : () => TrackContextMenu.show(context, track)),
             );
           },
           childCount: sortedTracks.length,
@@ -80,6 +169,10 @@ class TrackGridView extends StatelessWidget {
         crossAxisCount = 1;
         childAspectRatio = 1.0;
         break;
+      case ViewMode.cards:
+        crossAxisCount = 1;
+        childAspectRatio = 0.8;
+        break;
       default:
         crossAxisCount = 2;
         childAspectRatio = 0.8;
@@ -95,35 +188,76 @@ class TrackGridView extends StatelessWidget {
           mainAxisSpacing: AppDimensions.spacingMd,
         ),
         delegate: SliverChildBuilderDelegate(
-          (context, index) => _buildGridItem(context, sortedTracks[index], sortedTracks, viewMode),
+          (context, index) =>
+              _buildGridItem(context, sortedTracks[index], sortedTracks, viewMode),
           childCount: sortedTracks.length,
         ),
       ),
     );
   }
 
-  Widget _buildGridItem(BuildContext context, TrackModel track, List<TrackModel> queue, ViewMode mode) {
+  Widget _buildGridItem(
+    BuildContext context,
+    TrackModel track,
+    List<TrackModel> queue,
+    ViewMode mode,
+  ) {
     final localPath = localCoverPaths?[track.id];
-    final cover = (localPath != null && localPath.isNotEmpty && File(localPath).existsSync()) ? "file://$localPath" : track.coverUrl;
+    final cover = (localPath != null &&
+            localPath.isNotEmpty &&
+            File(localPath).existsSync())
+        ? "file://$localPath"
+        : track.coverUrl;
     final textTheme = Theme.of(context).textTheme;
+    final isSelected = selectedTrackIds.contains(track.id);
 
     return Semantics(
       button: true,
       label: "Jouer ${track.title}",
       child: GestureDetector(
-        onTap: () => context.read<PlayerCubit>().playTrack(track, queue: queue),
-        onLongPress: () => TrackContextMenu.show(context, track),
+        onTap: isSelectionMode
+            ? () => onSelectionChanged?.call(track.id, !isSelected)
+            : () => context
+                .read<PlayerCubit>()
+                .playTrack(track, queue: queue, source: playbackSource),
+        onLongPress: isSelectionMode
+            ? null
+            : (onSelectionChanged != null
+                ? () => onSelectionChanged!.call(track.id, true)
+                : () => TrackContextMenu.show(context, track)),
         child: Container(
           color: Colors.transparent,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
-                child: SonoritizArtwork(
-                  imageUrl: cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                  borderRadius: AppDimensions.radiusMd,
+                child: Stack(
+                  children: [
+                    SonoritizArtwork(
+                      imageUrl: cover,
+                      width: double.infinity,
+                      height: double.infinity,
+                      borderRadius: AppDimensions.radiusMd,
+                      cacheMaxDimension: 500,
+                    ),
+                    if (isSelectionMode)
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            color: Colors.black45,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Checkbox(
+                            value: isSelected,
+                            onChanged: (val) =>
+                                onSelectionChanged?.call(track.id, val ?? false),
+                            activeColor: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
               Padding(

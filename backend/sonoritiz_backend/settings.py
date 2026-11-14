@@ -25,6 +25,7 @@ DEBUG = env('DEBUG')
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS')
 
 JAMENDO_CLIENT_ID = env('JAMENDO_CLIENT_ID', default='default-client-id')
+GOOGLE_WEB_CLIENT_ID = env('GOOGLE_WEB_CLIENT_ID', default='')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -87,8 +88,6 @@ DATABASE_URL = env('DATABASE_URL')
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL must be set in the environment variables.")
 
-DEBUG = False
-
 DATABASES = {
     'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
 }
@@ -110,6 +109,8 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
+
+PASSWORD_RESET_TIMEOUT = 900
 
 LANGUAGE_CODE = 'fr-fr'
 TIME_ZONE = 'UTC'

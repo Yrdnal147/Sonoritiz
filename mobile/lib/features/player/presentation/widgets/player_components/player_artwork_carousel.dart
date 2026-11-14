@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:video_player/video_player.dart';
-import '../../../../core/theme/app_dimensions.dart';
-import '../../../../core/theme/app_decorations.dart';
-import '../../../../core/widgets/sonoritiz_artwork.dart';
+import '../../../../../core/theme/app_decorations.dart' show AppDecorations;
+import '../../../../../core/theme/app_dimensions.dart';
+import '../../../../../core/widgets/sonoritiz_artwork.dart';
 import '../../cubit/player_cubit.dart';
 import '../../cubit/player_state.dart';
+import '../../cubit/superlike_cubit.dart';
+import '../../cubit/superlike_state.dart';
+import '../../../../../core/widgets/superlike_torch_badge.dart';
 
 class PlayerArtworkCarousel extends StatelessWidget {
   final PageController pageController;
@@ -135,11 +138,29 @@ class PlayerArtworkCarousel extends StatelessWidget {
             ? AppDecorations.playerGlow(dominantColor ?? colorScheme.primary) 
             : AppDecorations.shadowLg(context),
         ),
-        child: SonoritizArtwork(
-          imageUrl: coverUrl,
-          width: coverSize - 16,
-          height: (coverSize - 16) * 1.05,
-          borderRadius: AppDimensions.radiusXl,
+        child: Stack(
+          children: [
+            SonoritizArtwork(
+              imageUrl: coverUrl,
+              width: coverSize - 16,
+              height: (coverSize - 16) * 1.05,
+              borderRadius: AppDimensions.radiusXl,
+            ),
+            BlocSelector<SuperlikeCubit, SuperlikeState, bool>(
+              selector: (state) => state.isSuperliked(trackId),
+              builder: (context, isSuper) {
+                if (!isSuper) return const SizedBox.shrink();
+                return const Positioned(
+                  top: 12,
+                  left: 12,
+                  child: SuperlikeTorchBadge(
+                    size: TorchBadgeSize.medium,
+                    showBackground: true,
+                  ),
+                );
+              },
+            ),
+          ],
         ),
       ),
     );

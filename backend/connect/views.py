@@ -1,6 +1,8 @@
 from rest_framework import status, permissions, serializers
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from .models import ConnectSession, ConnectParticipant
 from .serializers import ConnectSessionSerializer, ConnectJoinSerializer
 from playlists.models import Playlist
@@ -107,5 +109,15 @@ class ConnectSessionLeaveView(APIView):
         if session.host_user == request.user or session.participants.count() == 0:
             session.status = 'ended'
             session.save()
+            channel_layer = get_channel_layer()
+            if channel_layer is not None:
+                try:
+                    async_to_sync(channel_layer.group_send)(
+                        f'connect_{session.pk}',
+                        {'type': 'connect_event', 'event': 'session_ended'},
+                    )
+                except Exception:
+                    # Leaving the session must still succeed if Redis is unavailable.
+                    pass
 
         return Response({"message": "Vous avez quitté la session."}, status=status.HTTP_200_OK)

@@ -1,17 +1,25 @@
 import 'package:flutter/material.dart';
-import '../../../../core/theme/app_dimensions.dart';
+import 'package:sonoritiz/core/widgets/wavy_progress_bar.dart';
+import '../../cubit/player_cubit.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 class PlayerProgressBar extends StatelessWidget {
   final Duration position;
   final Duration duration;
   final ValueChanged<Duration> onSeek;
+  final Widget? trailing;
+  final bool? isPlaying;
+  final bool isSuperliked;
 
   const PlayerProgressBar({
-    Key? key,
+    super.key,
     required this.position,
     required this.duration,
     required this.onSeek,
-  }) : super(key: key);
+    this.trailing,
+    this.isPlaying,
+    this.isSuperliked = false,
+  });
 
   String _formatDuration(Duration d) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
@@ -22,44 +30,60 @@ class PlayerProgressBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final bool effectivePlaying = isPlaying ??
+        context.select<PlayerCubit, bool>((cubit) => cubit.state.isPlaying);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: colorScheme.primary,
-              inactiveTrackColor: colorScheme.surfaceContainerHighest,
-              thumbColor: colorScheme.onSurface,
-              trackHeight: 4,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-            ),
-            child: Slider(
-              value: duration.inMilliseconds > 0
-                  ? position.inMilliseconds.toDouble().clamp(0.0, duration.inMilliseconds.toDouble())
-                  : 0.0,
-              max: duration.inMilliseconds > 0 ? duration.inMilliseconds.toDouble() : 1.0,
-              onChanged: (val) {
-                onSeek(Duration(milliseconds: val.toInt()));
-              },
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                  child: WavyProgressBar(
+                    position: position,
+                    duration: duration,
+                    onSeek: onSeek,
+                    isPlaying: effectivePlaying,
+                    isSuperliked: isSuperliked,
+                    activeColor: Colors.white,
+                    inactiveColor: Colors.white.withValues(alpha: 0.22),
+                  ),
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: 6),
+                trailing!,
+              ],
+            ],
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingMd),
+            padding: EdgeInsets.only(
+              left: 10.0,
+              right: trailing != null ? 54.0 : 10.0,
+              top: 0.0,
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   _formatDuration(position),
-                  style: textTheme.labelMedium,
+                  style: textTheme.labelSmall?.copyWith(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
                 Text(
                   _formatDuration(duration),
-                  style: textTheme.labelMedium,
+                  style: textTheme.labelSmall?.copyWith(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             ),

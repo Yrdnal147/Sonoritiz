@@ -4,6 +4,8 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        maven(url = "https://maven.aliyun.com/repository/google")
+        maven(url = "https://maven.aliyun.com/repository/public")
     }
 }
 
@@ -39,6 +41,13 @@ subprojects {
                     val setTargetCompatibility = compileOptions.javaClass.getMethod("setTargetCompatibility", org.gradle.api.JavaVersion::class.java)
                     setSourceCompatibility.invoke(compileOptions, org.gradle.api.JavaVersion.VERSION_17)
                     setTargetCompatibility.invoke(compileOptions, org.gradle.api.JavaVersion.VERSION_17)
+
+                    val setNdkVersion = androidExt.javaClass.getMethod("setNdkVersion", String::class.java)
+                    setNdkVersion.invoke(androidExt, "27.0.12077973")
+
+                    val packagingOptions = androidExt.javaClass.getMethod("getPackagingOptions").invoke(androidExt)
+                    val doNotStrip = packagingOptions.javaClass.getMethod("doNotStrip", String::class.java)
+                    doNotStrip.invoke(packagingOptions, "**/*.so")
                 } catch (e: Exception) {
                     // Ignore
                 }

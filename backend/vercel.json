@@ -2,11 +2,10 @@
   "version": 2,
   "builds": [
     {
-      "src": "sonoritiz_backend/wsgi.py",
+      "src": "sonoritiz_backend/asgi.py",
       "use": "@vercel/python",
       "config": {
-        "maxLambdaSize": "15mb",
-        "runtime": "python3.9"
+        "runtime": "python3.12"
       }
     }
   ],
@@ -17,7 +16,7 @@
     },
     {
       "src": "/(.*)",
-      "dest": "sonoritiz_backend/wsgi.py"
+      "dest": "sonoritiz_backend/asgi.py"
     }
   ]
 }

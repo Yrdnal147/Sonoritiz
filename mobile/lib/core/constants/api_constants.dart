@@ -1,6 +1,3 @@
-import 'dart:io';
-import 'package:flutter/foundation.dart';
-
 class ApiConstants {
   // Base URLs
   static String get baseUrl {
@@ -14,13 +11,14 @@ class ApiConstants {
   }
 
   // Endpoints Auth
-  static const String register = '/api/accounts/register/';
-  static const String login = '/api/accounts/login/';
-  static const String refresh = '/api/accounts/refresh/';
-  static const String profile = '/api/accounts/me/';
-  static const String passwordReset = '/api/accounts/password-reset/';
-  static const String passwordResetConfirm = '/api/accounts/password-reset-confirm/';
-  static const String googleLogin = '/api/accounts/google-login/';
+  static const String register = '/api/auth/register/';
+  static const String login = '/api/auth/login/';
+  static const String refresh = '/api/auth/refresh/';
+  static const String profile = '/api/auth/me/';
+  static const String userPreferences = '/api/auth/preferences/';
+  static const String passwordReset = '/api/auth/password-reset/';
+  static const String passwordResetConfirm = '/api/auth/password-reset-confirm/';
+  static const String googleLogin = '/api/auth/google-login/';
 
   // Endpoints Catalogue
   static const String trendingTracks = '/api/tracks/trending/';

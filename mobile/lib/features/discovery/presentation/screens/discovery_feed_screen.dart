@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
+import '../../../../core/services/screen_wake_service.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/sonoritiz_page_title.dart';
 import '../../../../features/player/data/models/track_model.dart';
+import '../../../../features/player/presentation/cubit/player_cubit.dart';
 import '../cubit/discovery_cubit.dart';
 import '../cubit/discovery_state.dart';
 import '../widgets/audio_short_widget.dart';
 import '../widgets/video_short_widget.dart';
 import '../widgets/lyrics_short_widget.dart';
-import 'package:go_router/go_router.dart';
 
 class DiscoveryFeedScreen extends StatefulWidget {
   final String feedType; // 'audio', 'video', 'lyrics'
 
-  const DiscoveryFeedScreen({Key? key, required this.feedType}) : super(key: key);
+  const DiscoveryFeedScreen({Key? key, required this.feedType})
+      : super(key: key);
 
   @override
   State<DiscoveryFeedScreen> createState() => _DiscoveryFeedScreenState();
@@ -26,11 +30,20 @@ class _DiscoveryFeedScreenState extends State<DiscoveryFeedScreen> {
   @override
   void initState() {
     super.initState();
+    // Empêche l'extinction / verrouillage de l'écran pendant les Sonoritiz Shorts
+    ScreenWakeService.setKeepScreenOn(true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        // Mettre en pause le lecteur principal pour éviter toute superposition sonore
+        context.read<PlayerCubit>().pause();
+      }
+    });
     context.read<DiscoveryCubit>().loadDiscoveryFeeds();
   }
 
   @override
   void dispose() {
+    ScreenWakeService.setKeepScreenOn(false);
     _pageController.dispose();
     super.dispose();
   }
@@ -48,8 +61,11 @@ class _DiscoveryFeedScreenState extends State<DiscoveryFeedScreen> {
   }
 
   void _handleAutoScroll() {
-    if (_autoScrollEnabled && mounted) {
-      _pageController.nextPage(duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
+    if (_autoScrollEnabled && mounted && _pageController.hasClients) {
+      _pageController.nextPage(
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOut,
+      );
     }
   }
 
@@ -65,15 +81,18 @@ class _DiscoveryFeedScreenState extends State<DiscoveryFeedScreen> {
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
           onPressed: () => context.pop(),
         ),
-        title: Text(
-          _getTitle(),
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        title: SonoritizPageTitle(
+          title: _getTitle(),
+          fontSize: 20,
+          centered: true,
         ),
         centerTitle: true,
         actions: [
           IconButton(
             icon: Icon(
-              _autoScrollEnabled ? Icons.autorenew_rounded : Icons.sync_disabled_rounded, 
+              _autoScrollEnabled
+                  ? Icons.autorenew_rounded
+                  : Icons.sync_disabled_rounded,
               color: _autoScrollEnabled ? AppColors.primary : Colors.white,
             ),
             onPressed: () {
@@ -86,7 +105,10 @@ class _DiscoveryFeedScreenState extends State<DiscoveryFeedScreen> {
             builder: (context, state) {
               final isMuted = state is DiscoveryLoaded ? state.isMuted : false;
               return IconButton(
-                icon: Icon(isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded, color: Colors.white),
+                icon: Icon(
+                  isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                  color: Colors.white,
+                ),
                 onPressed: () {
                   context.read<DiscoveryCubit>().toggleMute();
                 },
@@ -98,9 +120,12 @@ class _DiscoveryFeedScreenState extends State<DiscoveryFeedScreen> {
       body: BlocBuilder<DiscoveryCubit, DiscoveryState>(
         builder: (context, state) {
           if (state is DiscoveryLoading || state is DiscoveryInitial) {
-            return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+            return const Center(
+                child: CircularProgressIndicator(color: AppColors.primary));
           } else if (state is DiscoveryError) {
-            return Center(child: Text(state.message, style: const TextStyle(color: AppColors.error)));
+            return Center(
+                child: Text(state.message,
+                    style: const TextStyle(color: AppColors.error)));
           } else if (state is DiscoveryLoaded) {
             List<TrackModel> tracks;
             switch (widget.feedType) {
@@ -117,13 +142,15 @@ class _DiscoveryFeedScreenState extends State<DiscoveryFeedScreen> {
             }
 
             if (tracks.isEmpty) {
-              return const Center(child: Text("Aucun contenu disponible", style: TextStyle(color: Colors.white)));
+              return const Center(
+                  child: Text("Aucun contenu disponible",
+                      style: TextStyle(color: Colors.white)));
             }
 
             return PageView.builder(
               controller: _pageController,
               scrollDirection: Axis.vertical,
-              allowImplicitScrolling: true,
+              allowImplicitScrolling: false,
               itemCount: tracks.length,
               onPageChanged: (index) {
                 setState(() {
@@ -134,20 +161,35 @@ class _DiscoveryFeedScreenState extends State<DiscoveryFeedScreen> {
                 final track = tracks[index];
                 final isMuted = state.isMuted;
                 final isActive = index == _currentIndex;
-                
+
                 switch (widget.feedType) {
                   case 'video':
-                    return VideoShortWidget(track: track, isMuted: isMuted, isActive: isActive, onAutoScrollTriggered: _handleAutoScroll);
+                    return VideoShortWidget(
+                      track: track,
+                      isMuted: isMuted,
+                      isActive: isActive,
+                      onAutoScrollTriggered: _handleAutoScroll,
+                    );
                   case 'lyrics':
-                    return LyricsShortWidget(track: track, isMuted: isMuted, isActive: isActive, onAutoScrollTriggered: _handleAutoScroll);
+                    return LyricsShortWidget(
+                      track: track,
+                      isMuted: isMuted,
+                      isActive: isActive,
+                      onAutoScrollTriggered: _handleAutoScroll,
+                    );
                   case 'audio':
                   default:
-                    return AudioShortWidget(track: track, isMuted: isMuted, isActive: isActive, onAutoScrollTriggered: _handleAutoScroll);
+                    return AudioShortWidget(
+                      track: track,
+                      isMuted: isMuted,
+                      isActive: isActive,
+                      onAutoScrollTriggered: _handleAutoScroll,
+                    );
                 }
               },
             );
           }
-          return const SizedBox();
+          return const SizedBox.shrink();
         },
       ),
     );

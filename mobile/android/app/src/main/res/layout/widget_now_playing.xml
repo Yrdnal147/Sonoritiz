@@ -1,127 +1,228 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_background"
-    android:orientation="vertical">
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="12dp">
 
-    <!-- Section Infos Haut -->
-    <RelativeLayout
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
+    <!-- Pochette à gauche (pleine hauteur, coins arrondis 16dp) -->
+    <ImageView
+        android:id="@+id/widget_cover"
+        android:layout_width="112dp"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:background="@drawable/widget_cover_bg"
+        android:src="@mipmap/launcher_icon" />
+
+    <!-- Panneau lecteur à droite -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
         android:layout_weight="1"
-        android:padding="16dp">
+        android:layout_marginStart="14dp"
+        android:orientation="vertical"
+        android:gravity="center_vertical">
 
-        <!-- Pochette -->
-        <ImageView
-            android:id="@+id/widget_cover"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:layout_centerVertical="true"
-            android:layout_alignParentStart="true"
-            android:scaleType="centerCrop"
-            android:background="@drawable/widget_cover_bg"
-            android:clipToOutline="true"
-            android:src="@mipmap/launcher_icon" />
+        <!-- Entête : Titre + Artiste(s) + Bouton Paroles en haut à droite -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
 
-        <!-- Infos -->
+            <ImageButton
+                android:id="@+id/btn_lyrics"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_alignParentEnd="true"
+                android:layout_alignParentTop="true"
+                android:background="@null"
+                android:src="@drawable/ic_widget_lyrics"
+                android:scaleType="fitCenter"
+                android:padding="2dp" />
+
+            <LinearLayout
+                android:id="@+id/widget_info_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_toStartOf="@id/btn_lyrics"
+                android:layout_marginEnd="6dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/widget_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Sonoritiz"
+                    android:textColor="#FFFFFF"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:id="@+id/widget_artist"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="1dp"
+                    android:text="En attente de musique..."
+                    android:textColor="#B3FFFFFF"
+                    android:textSize="12sp"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+            </LinearLayout>
+        </RelativeLayout>
+
+        <!-- Durées au-dessus + Jauge de progression (Style Lecteur Signature) -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp">
+
+            <TextView
+                android:id="@+id/widget_position"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentStart="true"
+                android:text="0:00"
+                android:textColor="#B3FFFFFF"
+                android:textSize="9.5sp"
+                android:fontFamily="sans-serif-medium" />
+
+            <TextView
+                android:id="@+id/widget_duration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:text="0:00"
+                android:textColor="#B3FFFFFF"
+                android:textSize="9.5sp"
+                android:fontFamily="sans-serif-medium" />
+        </RelativeLayout>
+
+        <!-- Jauge standard blanche -->
+        <ProgressBar
+            android:id="@+id/widget_progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="3.5dp"
+            android:layout_marginTop="2.5dp"
+            android:max="1000"
+            android:progress="0"
+            android:progressDrawable="@drawable/widget_progress_drawable" />
+
+        <!-- Jauge dorée Superlike (masquée par défaut) -->
+        <ProgressBar
+            android:id="@+id/widget_progress_superlike"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="3.5dp"
+            android:layout_marginTop="2.5dp"
+            android:max="1000"
+            android:progress="0"
+            android:visibility="gone"
+            android:progressDrawable="@drawable/widget_progress_drawable_gold" />
+
+        <!-- Contrôles du lecteur : Avatar Artiste | Précédent | Play/Pause Blanc | Suivant | Répéter -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:layout_marginTop="2dp">
+
+            <!-- Avatar rond de l'artiste principal (remplace le bouton favori) -->
+            <ImageButton
+                android:id="@+id/btn_artist_avatar"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:background="@drawable/widget_artist_avatar_bg"
+                android:src="@mipmap/launcher_icon"
+                android:scaleType="centerCrop"
+                android:padding="1dp" />
+
+            <!-- Bouton favori conservé en masqué pour compatibilité -->
+            <ImageButton
+                android:id="@+id/btn_favorite"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_centerInParent="true"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <ImageButton
+                    android:id="@+id/btn_prev"
+                    android:layout_width="30dp"
+                    android:layout_height="30dp"
+                    android:background="@null"
+                    android:src="@drawable/ic_widget_prev"
+                    android:scaleType="fitCenter"
+                    android:padding="4dp" />
+
+                <ImageButton
+                    android:id="@+id/btn_play_pause"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/widget_white_circle_bg"
+                    android:src="@drawable/ic_widget_play"
+                    android:scaleType="centerInside"
+                    android:padding="7dp" />
+
+                <ImageButton
+                    android:id="@+id/btn_next"
+                    android:layout_width="30dp"
+                    android:layout_height="30dp"
+                    android:background="@null"
+                    android:src="@drawable/ic_widget_next"
+                    android:scaleType="fitCenter"
+                    android:padding="4dp" />
+            </LinearLayout>
+
+            <ImageButton
+                android:id="@+id/btn_repeat"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:background="@null"
+                android:src="@drawable/ic_widget_repeat_inactive"
+                android:scaleType="fitCenter"
+                android:padding="4dp" />
+        </RelativeLayout>
+
+        <!-- Indicateur bas : À suivre (Up Next) -->
         <LinearLayout
+            android:id="@+id/btn_queue"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_toEndOf="@id/widget_cover"
-            android:layout_toStartOf="@id/widget_logo"
-            android:layout_centerVertical="true"
-            android:layout_marginStart="16dp"
-            android:layout_marginEnd="8dp">
+            android:gravity="center_horizontal"
+            android:layout_marginTop="1dp">
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="2dp"
+                android:src="@drawable/widget_up_next_pill" />
 
             <TextView
-                android:id="@+id/widget_title"
+                android:id="@+id/widget_up_next"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Sonoritiz"
-                android:textColor="#FFFFFF"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:letterSpacing="0.02" />
-
-            <TextView
-                android:id="@+id/widget_artist"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="En attente de musique..."
-                android:textColor="#999999"
-                android:textSize="13sp"
-                android:textAllCaps="true"
-                android:layout_marginTop="2dp"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:letterSpacing="0.05" />
+                android:layout_marginTop="1dp"
+                android:text="À suivre"
+                android:textColor="#99FFFFFF"
+                android:textSize="8sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- Logo App -->
-        <ImageView
-            android:id="@+id/widget_logo"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:layout_alignParentEnd="true"
-            android:layout_centerVertical="true"
-            android:src="@mipmap/launcher_icon"
-            android:alpha="0.5" />
-    </RelativeLayout>
-
-    <!-- Barre de contrôle Bas -->
-    <LinearLayout
-        android:id="@+id/widget_controls"
-        android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:background="@drawable/widget_control_bar_bg"
-        android:orientation="horizontal"
-        android:gravity="center">
-
-        <ImageButton
-            android:id="@+id/btn_favorite"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginEnd="8dp"
-            android:background="?android:selectableItemBackgroundBorderless"
-            android:src="@android:drawable/btn_star"
-            android:tint="#FFFFFF"
-            android:scaleType="center"
-            android:padding="8dp"/>
-
-        <ImageButton
-            android:id="@+id/btn_prev"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="?android:selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_media_previous"
-            android:tint="#E0E0E0"
-            android:scaleType="center"
-            android:padding="8dp"/>
-
-        <ImageButton
-            android:id="@+id/btn_play_pause"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="?android:selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_media_play"
-            android:tint="#FFFFFF"
-            android:scaleType="center"
-            android:padding="8dp"/>
-
-        <ImageButton
-            android:id="@+id/btn_next"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginStart="16dp"
-            android:background="?android:selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_media_next"
-            android:tint="#E0E0E0"
-            android:scaleType="center"
-            android:padding="8dp"/>
     </LinearLayout>
 
 </LinearLayout>

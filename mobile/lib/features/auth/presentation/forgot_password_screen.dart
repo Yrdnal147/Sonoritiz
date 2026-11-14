@@ -1,42 +1,68 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../../core/theme/app_colors.dart';
+import '../../../core/constants/api_constants.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/storage/storage_service.dart';
-import '../../../core/constants/api_constants.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/sonoritiz_brand_logo.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
-  const ForgotPasswordScreen({Key? key}) : super(key: key);
+  const ForgotPasswordScreen({super.key});
 
   @override
   State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
 }
 
-class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
+class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
+    with SingleTickerProviderStateMixin {
   final _emailController = TextEditingController();
   bool _isLoading = false;
-  String? _message;
-  bool _isError = false;
+  String? _errorMessage;
+  String? _successMessage;
+
+  late final AnimationController _animController;
+  late final Animation<double> _fadeIn;
+  late final Animation<Offset> _slideUp;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 560),
+    );
+    _fadeIn = CurvedAnimation(parent: _animController, curve: Curves.easeOut);
+    _slideUp = Tween<Offset>(
+      begin: const Offset(0, 0.06),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
+    );
+    _animController.forward();
+  }
 
   @override
   void dispose() {
+    _animController.dispose();
     _emailController.dispose();
     super.dispose();
   }
 
-  Future<void> _resetPassword() async {
+  Future<void> _sendResetLink() async {
     final email = _emailController.text.trim();
-    if (email.isEmpty) {
+    if (email.isEmpty || !email.contains('@')) {
       setState(() {
-        _message = "Veuillez entrer votre adresse e-mail.";
-        _isError = true;
+        _errorMessage = 'Veuillez saisir une adresse e-mail valide.';
+        _successMessage = null;
       });
       return;
     }
 
     setState(() {
       _isLoading = true;
-      _message = null;
+      _errorMessage = null;
+      _successMessage = null;
     });
 
     try {
@@ -47,107 +73,214 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         'email': email,
       });
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         setState(() {
-          _message = "Si ce compte existe, un e-mail de réinitialisation a été envoyé.";
-          _isError = false;
+          _successMessage =
+              'Un lien de réinitialisation vient d’être envoyé à $email. Vérifiez vos e-mails ou vos spams.';
         });
       }
     } catch (e) {
-      setState(() {
-        _message = e.toString();
-        _isError = true;
-      });
+      String msg = 'Impossible d’envoyer le lien pour le moment.';
+      if (e is DioException && e.response?.data is Map) {
+        final d = e.response!.data as Map;
+        if (d['email'] is List) msg = (d['email'] as List).join(' ');
+        if (d['detail'] != null) msg = d['detail'].toString();
+      }
+      setState(() => _errorMessage = msg);
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => context.pop(),
-        ),
-      ),
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 28.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 20),
-              const Center(
-                child: Text(
-                  "Mot de passe oublié",
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Center(
-                child: Text(
-                  "Entrez votre adresse e-mail. Si elle est associée à un compte, nous vous enverrons un lien pour réinitialiser votre mot de passe.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
-                ),
-              ),
-              const SizedBox(height: 48),
-
-              if (_message != null)
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  margin: const EdgeInsets.only(bottom: 16),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: _isError ? AppColors.error.withOpacity(0.15) : AppColors.success.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: _isError ? AppColors.error.withOpacity(0.3) : AppColors.success.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(_isError ? Icons.error_outline : Icons.check_circle_outline, 
-                           color: _isError ? AppColors.error : AppColors.success, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(_message!, style: TextStyle(color: _isError ? AppColors.error : AppColors.success, fontSize: 13)),
+          padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 16),
+          child: FadeTransition(
+            opacity: _fadeIn,
+            child: SlideTransition(
+              position: _slideUp,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: IconButton(
+                      onPressed: () {
+                        if (context.canPop()) {
+                          context.pop();
+                        } else {
+                          context.go('/login');
+                        }
+                      },
+                      icon: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        color: Colors.white70,
+                        size: 20,
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 12),
 
-              TextField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  labelText: "Email",
-                  labelStyle: TextStyle(color: AppColors.textSecondary),
-                  prefixIcon: Icon(Icons.email_outlined, color: AppColors.textSecondary),
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _resetPassword,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    disabledBackgroundColor: AppColors.primary.withOpacity(0.5),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  const Center(
+                    child: SonoritizVectorLogo(
+                      size: 66,
+                      variant: SonoritizLogoVariant.standard,
+                    ),
                   ),
-                  child: _isLoading
-                      ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                      : const Text("Envoyer le lien", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                ),
+                  const SizedBox(height: 22),
+
+                  const Text(
+                    'Mot de passe oublié',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 27,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.7,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Indiquez votre adresse e-mail pour recevoir votre lien de réinitialisation sécurisé.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.62),
+                      fontSize: 14.5,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+
+                  if (_errorMessage != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      margin: const EdgeInsets.only(bottom: 18),
+                      decoration: BoxDecoration(
+                        color: AppColors.error.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.error.withValues(alpha: 0.45)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 19),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _errorMessage!,
+                              style: const TextStyle(color: AppColors.error, fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  if (_successMessage != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                      margin: const EdgeInsets.only(bottom: 18),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.success.withValues(alpha: 0.45)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.mark_email_read_outlined, color: AppColors.success, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _successMessage!,
+                              style: const TextStyle(
+                                color: AppColors.success,
+                                fontSize: 13.5,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  TextField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    onSubmitted: (_) => _sendResetLink(),
+                    style: const TextStyle(color: Colors.white, fontSize: 15),
+                    decoration: InputDecoration(
+                      hintText: 'Adresse e-mail',
+                      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.42), fontSize: 15),
+                      prefixIcon: const Icon(Icons.mail_outline_rounded, color: Colors.white54, size: 20),
+                      filled: true,
+                      fillColor: const Color(0xFF141419),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(color: AppColors.primary, width: 1.4),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+
+                  // Bouton orange avec texte NOIR
+                  SizedBox(
+                    height: 54,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _sendResetLink,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.black,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Colors.black,
+                              ),
+                            )
+                          : const Text(
+                              'Envoyer le lien',
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 18),
+                  Center(
+                    child: TextButton(
+                      onPressed: () => context.go('/login'),
+                      child: const Text(
+                        'Retour à la connexion',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

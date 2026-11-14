@@ -28,7 +28,6 @@ class ListeningHistorySerializer(serializers.ModelSerializer):
         except TrackCache.DoesNotExist:
             return None
 
-class ListeningHistoryCreateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ListeningHistory
-        fields = ('youtube_id',)
+class ListeningHistoryCreateSerializer(serializers.Serializer):
+    youtube_id = serializers.CharField(max_length=64)
+    track_data = serializers.JSONField(required=False)

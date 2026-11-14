@@ -64,6 +64,9 @@ class PlaylistDetailView(APIView):
         playlist = serializer.save()
         return Response(PlaylistSerializer(playlist).data, status=status.HTTP_200_OK)
 
+    def patch(self, request, pk):
+        return self.put(request, pk)
+
     def delete(self, request, pk):
         playlist = self._get_playlist(request.user, pk)
         if not playlist:

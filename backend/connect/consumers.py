@@ -92,6 +92,45 @@ class ConnectConsumer(AsyncWebsocketConsumer):
         self.last_message_times.append(now)
         return True
 
+    def _safe_track_data(self, value):
+        """Keep shared track metadata small and never forward signed audio URLs."""
+        if not isinstance(value, dict):
+            return None
+
+        track_id = value.get('id')
+        title = value.get('title')
+        artist_name = value.get('artist_name')
+        if not all(isinstance(item, str) and item.strip() for item in (track_id, title, artist_name)):
+            return None
+        if len(track_id) > 64 or len(title) > 255 or len(artist_name) > 255:
+            return None
+
+        try:
+            duration = int(value.get('duration_seconds', 0))
+        except (TypeError, ValueError):
+            duration = 0
+
+        cover_url = value.get('cover_url', '')
+        if not isinstance(cover_url, str) or len(cover_url) > 500:
+            cover_url = ''
+        if not cover_url.startswith(('https://', 'http://')):
+            cover_url = ''
+
+        album_name = value.get('album_name', '')
+        genre = value.get('genre', '')
+        license_ccurl = value.get('license_ccurl', '')
+        return {
+            'id': track_id,
+            'title': title,
+            'artist_name': artist_name,
+            'album_name': album_name[:255] if isinstance(album_name, str) else '',
+            'cover_url': cover_url,
+            'duration_seconds': max(0, min(duration, 86400)),
+            'audio_url': '',
+            'genre': genre[:100] if isinstance(genre, str) else '',
+            'license_ccurl': license_ccurl[:500] if isinstance(license_ccurl, str) else '',
+        }
+
     async def receive(self, text_data):
         if not self._check_rate_limit():
             # Drop the message if rate limit exceeded (prevent spam)
@@ -137,6 +176,12 @@ class ConnectConsumer(AsyncWebsocketConsumer):
             if event_type == 'sync_state':
                 is_playing = data.get('is_playing', False)
                 payload['is_playing'] = bool(is_playing)
+                track_id = data.get('track_id')
+                if isinstance(track_id, str) and len(track_id) <= 64:
+                    payload['track_id'] = track_id
+                track = self._safe_track_data(data.get('track'))
+                if track is not None:
+                    payload['track'] = track
 
         elif event_type == 'track_changed':
             track_id = data.get('track_id')
@@ -145,6 +190,12 @@ class ConnectConsumer(AsyncWebsocketConsumer):
                 return
                 
             payload['track_id'] = track_id
+            position = data.get('position', 0)
+            payload['position'] = position if isinstance(position, (int, float)) else 0
+            payload['is_playing'] = bool(data.get('is_playing', False))
+            track = self._safe_track_data(data.get('track'))
+            if track is not None:
+                payload['track'] = track
             await self.update_session_track(track_id)
             
         else:

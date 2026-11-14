@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../../../core/theme/app_dimensions.dart';
-import '../../../../core/widgets/artist_name_display.dart';
+
+import '../../../../../core/theme/app_dimensions.dart';
+import '../../../../../core/widgets/artist_name_display.dart';
+
 
 class PlayerTrackInfo extends StatelessWidget {
   final String title;
@@ -25,7 +27,7 @@ class PlayerTrackInfo extends StatelessWidget {
             textAlign: TextAlign.center,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+            style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: Colors.white),
           ),
           const SizedBox(height: AppDimensions.spacingXxs),
           ArtistNameDisplay(
@@ -33,7 +35,7 @@ class PlayerTrackInfo extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: textTheme.titleMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              color: Colors.white70,
             ),
           ),
         ],

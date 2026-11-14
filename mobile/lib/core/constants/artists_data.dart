@@ -551,4 +551,215 @@ class ArtistsData {
     {'name': 'D\'banj', 'imageUrl': ''},
     {'name': '2Face Idibia', 'imageUrl': ''},
   ];
+
+  static const List<String> artistCategories = [
+    'Tous',
+    'Chanson & Variété',
+    'Classique & Instrumental',
+    'Jazz & Soul',
+    'Pop & Rock',
+    'R&B',
+    'Hip-Hop & Rap',
+    'Afro & Monde',
+    'Électro',
+  ];
+
+  static const Map<String, List<Map<String, String>>> categorizedArtists = {
+    'Chanson & Variété': [
+      {'name': 'Charles Aznavour', 'imageUrl': ''},
+      {'name': 'Édith Piaf', 'imageUrl': ''},
+      {'name': 'Jacques Brel', 'imageUrl': ''},
+      {'name': 'Céline Dion', 'imageUrl': ''},
+      {'name': 'Jean-Jacques Goldman', 'imageUrl': ''},
+      {'name': 'Georges Brassens', 'imageUrl': ''},
+      {'name': 'Johnny Hallyday', 'imageUrl': ''},
+      {'name': 'Serge Gainsbourg', 'imageUrl': ''},
+      {'name': 'Francis Cabrel', 'imageUrl': ''},
+      {'name': 'Dalida', 'imageUrl': ''},
+      {'name': 'Mylène Farmer', 'imageUrl': ''},
+      {'name': 'Florent Pagny', 'imageUrl': ''},
+      {'name': 'Patricia Kaas', 'imageUrl': ''},
+      {'name': 'Lara Fabian', 'imageUrl': ''},
+      {'name': 'Stromae', 'imageUrl': ''},
+      {'name': 'Zaz', 'imageUrl': ''},
+      {'name': 'Vianney', 'imageUrl': ''},
+      {'name': 'Clara Luciani', 'imageUrl': ''},
+      {'name': 'Angèle', 'imageUrl': ''},
+      {'name': 'Indila', 'imageUrl': ''},
+      {'name': 'Slimane', 'imageUrl': ''},
+    ],
+    'Classique & Instrumental': [
+      {'name': 'Ludovico Einaudi', 'imageUrl': ''},
+      {'name': 'Wolfgang Amadeus Mozart', 'imageUrl': ''},
+      {'name': 'Ludwig van Beethoven', 'imageUrl': ''},
+      {'name': 'Frédéric Chopin', 'imageUrl': ''},
+      {'name': 'Johann Sebastian Bach', 'imageUrl': ''},
+      {'name': 'Antonio Vivaldi', 'imageUrl': ''},
+      {'name': 'Claude Debussy', 'imageUrl': ''},
+      {'name': 'Erik Satie', 'imageUrl': ''},
+      {'name': 'Hans Zimmer', 'imageUrl': ''},
+      {'name': 'Yann Tiersen', 'imageUrl': ''},
+      {'name': 'Max Richter', 'imageUrl': ''},
+      {'name': 'Andrea Bocelli', 'imageUrl': ''},
+      {'name': 'Luciano Pavarotti', 'imageUrl': ''},
+      {'name': 'André Rieu', 'imageUrl': ''},
+      {'name': 'Ennio Morricone', 'imageUrl': ''},
+    ],
+    'Jazz & Soul': [
+      {'name': 'Nina Simone', 'imageUrl': ''},
+      {'name': 'Frank Sinatra', 'imageUrl': ''},
+      {'name': 'Ella Fitzgerald', 'imageUrl': ''},
+      {'name': 'Louis Armstrong', 'imageUrl': ''},
+      {'name': 'Miles Davis', 'imageUrl': ''},
+      {'name': 'Nat King Cole', 'imageUrl': ''},
+      {'name': 'Aretha Franklin', 'imageUrl': ''},
+      {'name': 'Ray Charles', 'imageUrl': ''},
+      {'name': 'Marvin Gaye', 'imageUrl': ''},
+      {'name': 'Stevie Wonder', 'imageUrl': ''},
+      {'name': 'Norah Jones', 'imageUrl': ''},
+      {'name': 'Michael Bublé', 'imageUrl': ''},
+      {'name': 'Gregory Porter', 'imageUrl': ''},
+      {'name': 'Sade', 'imageUrl': ''},
+      {'name': 'Amy Winehouse', 'imageUrl': ''},
+    ],
+    'Pop & Rock': [
+      {'name': 'Queen', 'imageUrl': ''},
+      {'name': 'The Beatles', 'imageUrl': ''},
+      {'name': 'Michael Jackson', 'imageUrl': ''},
+      {'name': 'Elton John', 'imageUrl': ''},
+      {'name': 'Coldplay', 'imageUrl': ''},
+      {'name': 'Adele', 'imageUrl': ''},
+      {'name': 'Ed Sheeran', 'imageUrl': ''},
+      {'name': 'Taylor Swift', 'imageUrl': ''},
+      {'name': 'The Weeknd', 'imageUrl': ''},
+      {'name': 'Bruno Mars', 'imageUrl': ''},
+      {'name': 'Dua Lipa', 'imageUrl': ''},
+      {'name': 'Billie Eilish', 'imageUrl': ''},
+      {'name': 'Imagine Dragons', 'imageUrl': ''},
+      {'name': 'Whitney Houston', 'imageUrl': ''},
+    ],
+    'R&B': [
+      {'name': 'Beyoncé', 'imageUrl': ''},
+      {'name': 'Rihanna', 'imageUrl': ''},
+      {'name': 'Alicia Keys', 'imageUrl': ''},
+      {'name': 'Usher', 'imageUrl': ''},
+      {'name': 'SZA', 'imageUrl': ''},
+      {'name': 'Frank Ocean', 'imageUrl': ''},
+      {'name': 'Chris Brown', 'imageUrl': ''},
+      {'name': 'Daniel Caesar', 'imageUrl': ''},
+      {'name': 'H.E.R.', 'imageUrl': ''},
+      {'name': 'Tayc', 'imageUrl': ''},
+      {'name': 'Dadju', 'imageUrl': ''},
+    ],
+    'Hip-Hop & Rap': [
+      {'name': 'Kendrick Lamar', 'imageUrl': ''},
+      {'name': 'Drake', 'imageUrl': ''},
+      {'name': 'Eminem', 'imageUrl': ''},
+      {'name': 'J. Cole', 'imageUrl': ''},
+      {'name': 'Travis Scott', 'imageUrl': ''},
+      {'name': 'Ninho', 'imageUrl': ''},
+      {'name': 'Damso', 'imageUrl': ''},
+      {'name': 'Orelsan', 'imageUrl': ''},
+      {'name': 'PNL', 'imageUrl': ''},
+      {'name': 'Booba', 'imageUrl': ''},
+    ],
+    'Afro & Monde': [
+      {'name': 'Burna Boy', 'imageUrl': ''},
+      {'name': 'Wizkid', 'imageUrl': ''},
+      {'name': 'Davido', 'imageUrl': ''},
+      {'name': 'Rema', 'imageUrl': ''},
+      {'name': 'Tems', 'imageUrl': ''},
+      {'name': 'Ayra Starr', 'imageUrl': ''},
+      {'name': 'Locko', 'imageUrl': ''},
+      {'name': 'Charlotte Dipanda', 'imageUrl': ''},
+      {'name': 'Manu Dibango', 'imageUrl': ''},
+      {'name': 'Richard Bona', 'imageUrl': ''},
+      {'name': 'Fally Ipupa', 'imageUrl': ''},
+      {'name': 'Youssou N\'Dour', 'imageUrl': ''},
+      {'name': 'Tyla', 'imageUrl': ''},
+    ],
+    'Électro': [
+      {'name': 'Daft Punk', 'imageUrl': ''},
+      {'name': 'David Guetta', 'imageUrl': ''},
+      {'name': 'Avicii', 'imageUrl': ''},
+      {'name': 'Calvin Harris', 'imageUrl': ''},
+      {'name': 'Kygo', 'imageUrl': ''},
+      {'name': 'DJ Snake', 'imageUrl': ''},
+      {'name': 'Petit Biscuit', 'imageUrl': ''},
+      {'name': 'Kungs', 'imageUrl': ''},
+    ],
+  };
+
+  /// Fusionne les artistes classés multi-générations avec le catalogue global.
+  static List<Map<String, String>> getArtistsForCategory(String category) {
+    if (category != 'Tous') {
+      final list = categorizedArtists[category] ?? const [];
+      return list.map(_hydrateCoverFromGlobal).toList();
+    }
+
+    final List<Map<String, String>> balanced = [];
+    final Set<String> seen = {};
+    // Alternance équilibrée entre toutes les catégories pour représenter tous les âges/styles
+    final categoryLists = categorizedArtists.values.toList();
+    final int maxLen = categoryLists.fold(
+      0,
+      (prev, l) => l.length > prev ? l.length : prev,
+    );
+    for (int i = 0; i < maxLen; i++) {
+      for (final catList in categoryLists) {
+        if (i < catList.length) {
+          final item = _hydrateCoverFromGlobal(catList[i]);
+          final norm = (item['name'] ?? '').trim().toLowerCase();
+          if (norm.isNotEmpty && seen.add(norm)) {
+            balanced.add(item);
+          }
+        }
+      }
+    }
+    for (final g in globalArtists) {
+      final norm = (g['name'] ?? '').trim().toLowerCase();
+      if (norm.isNotEmpty && seen.add(norm)) {
+        balanced.add(g);
+      }
+    }
+    return balanced;
+  }
+
+  static Map<String, String> _hydrateCoverFromGlobal(Map<String, String> artist) {
+    final name = (artist['name'] ?? '').trim();
+    if ((artist['imageUrl'] ?? '').isNotEmpty) return artist;
+    final lower = name.toLowerCase();
+    for (final g in globalArtists) {
+      if ((g['name'] ?? '').trim().toLowerCase() == lower &&
+          (g['imageUrl'] ?? '').isNotEmpty) {
+        return {'name': name, 'imageUrl': g['imageUrl']!};
+      }
+    }
+    return artist;
+  }
+
+  static String? inferTasteFamilyKey(String artistName) {
+    final norm = artistName.trim().toLowerCase();
+    if (norm.isEmpty) return null;
+
+    const categoryToKey = {
+      'Classique & Instrumental': 'classical',
+      'Chanson & Variété': 'chanson',
+      'Jazz & Soul': 'jazzSoul',
+      'Pop & Rock': 'popRock',
+      'R&B': 'rnb',
+      'Hip-Hop & Rap': 'hipHop',
+      'Afro & Monde': 'afro',
+      'Électro': 'electro',
+    };
+
+    for (final entry in categorizedArtists.entries) {
+      for (final artist in entry.value) {
+        if ((artist['name'] ?? '').trim().toLowerCase() == norm) {
+          return categoryToKey[entry.key];
+        }
+      }
+    }
+    return null;
+  }
 }

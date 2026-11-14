@@ -1,118 +1,283 @@
-import 'dart:ui';
 import 'dart:async';
-import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
+import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:palette_generator/palette_generator.dart';
+
 import '../../../../core/theme/app_colors.dart';
-import '../cubit/player_cubit.dart';
-import '../cubit/player_state.dart';
-import '../../data/models/track_model.dart';
+import '../../../../core/widgets/sonoritiz_artwork.dart';
 import '../../data/models/lyrics_model.dart';
 import '../../data/services/lyrics_service.dart';
-import 'package:flutter_animate/flutter_animate.dart';
+import '../cubit/player_cubit.dart';
+import '../cubit/player_state.dart';
+import '../widgets/player_components/immersive_player_widgets.dart';
+import '../widgets/vocal_remover_slider.dart';
+import 'karaoke_party_screen.dart';
 
 class LyricsScreen extends StatefulWidget {
-  const LyricsScreen({Key? key}) : super(key: key);
+  const LyricsScreen({super.key});
 
   @override
   State<LyricsScreen> createState() => _LyricsScreenState();
 }
 
 class _LyricsScreenState extends State<LyricsScreen> {
+  static final Map<String, ImmersivePalette> _paletteCache =
+      <String, ImmersivePalette>{};
+
   final LyricsService _lyricsService = LyricsService();
   Future<LyricsModel?>? _lyricsFuture;
   String? _currentTrackId;
+  String? _lastCoverUrl;
+  ImmersivePalette _palette = ImmersivePalette.fallback;
   int _syncOffsetMilliseconds = 0;
+
+  Future<void> _updatePaletteForCover(String coverUrl) async {
+    final trimmed = coverUrl.trim();
+    if (trimmed.isEmpty || _lastCoverUrl == trimmed) return;
+    _lastCoverUrl = trimmed;
+
+    final cached = _paletteCache[trimmed];
+    if (cached != null) {
+      if (mounted) {
+        setState(() => _palette = cached);
+      }
+      return;
+    }
+
+    try {
+      ImageProvider baseProvider;
+      if (trimmed.startsWith('file://')) {
+        final file = File(trimmed.replaceFirst('file://', ''));
+        if (!file.existsSync()) return;
+        baseProvider = FileImage(file);
+      } else if (trimmed.startsWith('http://') ||
+          trimmed.startsWith('https://')) {
+        baseProvider = CachedNetworkImageProvider(trimmed);
+      } else {
+        return;
+      }
+
+      final resized = ResizeImage(baseProvider, width: 48, height: 48);
+      final gen = await PaletteGenerator.fromImageProvider(
+        resized,
+        maximumColorCount: 8,
+      );
+      final extracted = ImmersivePalette.fromExtracted(
+        dominant: gen.dominantColor?.color,
+        vibrant: gen.vibrantColor?.color,
+        muted: gen.mutedColor?.color,
+        darkMuted: gen.darkMutedColor?.color,
+      );
+      if (_paletteCache.length >= 40) {
+        _paletteCache.remove(_paletteCache.keys.first);
+      }
+      _paletteCache[trimmed] = extracted;
+      if (mounted && _lastCoverUrl == trimmed) {
+        setState(() => _palette = extracted);
+      }
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: _palette.deepColor,
       body: BlocBuilder<PlayerCubit, PlayerState>(
+        buildWhen: (prev, cur) =>
+            prev.currentTrack != cur.currentTrack ||
+            prev.currentLyrics != cur.currentLyrics ||
+            prev.isFreeLyricsMode != cur.isFreeLyricsMode ||
+            prev.isPlaying != cur.isPlaying,
         builder: (context, state) {
           final track = state.currentTrack;
           if (track == null) {
             return const Center(
-              child: Text("Aucun morceau en cours", style: TextStyle(color: Colors.white)),
+              child: Text(
+                'Aucun morceau en cours',
+                style: TextStyle(color: Colors.white),
+              ),
             );
           }
 
-          // Fetch only if track changed
+          if (_lastCoverUrl != track.coverUrl) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _updatePaletteForCover(track.coverUrl);
+            });
+          }
+
+          // Réutiliser state.currentLyrics s'il est déjà chargé, sinon lancer la requête une seule fois par piste
           if (_currentTrackId != track.id) {
             _currentTrackId = track.id;
-            _lyricsFuture = _lyricsService.getLyrics(track.id, track.artistName, track.title, track.durationSeconds);
+            if (state.currentLyrics != null &&
+                (state.currentLyrics!.hasSynced ||
+                    state.currentLyrics!.hasPlain)) {
+              _lyricsFuture = Future.value(state.currentLyrics);
+            } else {
+              _lyricsFuture = _lyricsService.getLyrics(
+                track.id,
+                track.artistName,
+                track.title,
+                track.durationSeconds,
+              );
+            }
+          }
+
+          final view = View.of(context);
+          final viewMediaQuery = MediaQueryData.fromView(view);
+          double effectiveTopPadding = 38.0;
+          for (final v in [
+            MediaQuery.of(context).padding.top,
+            MediaQuery.of(context).viewPadding.top,
+            viewMediaQuery.padding.top,
+            viewMediaQuery.viewPadding.top,
+          ]) {
+            if (v > effectiveTopPadding) effectiveTopPadding = v;
           }
 
           return Stack(
             children: [
-              // Arrière-plan ambiant flouté (comme le lecteur)
+              // 1. Fond immersif à la couleur de la pochette (isolé par RepaintBoundary, 120px en VRAM)
               Positioned.fill(
-                child: track.coverUrl.isNotEmpty
-                    ? AnimatedBlurBackground(imageUrl: track.coverUrl)
-                    : Container(color: AppColors.background),
+                child: ImmersiveAtmosphereBackground(
+                  coverUrl: track.coverUrl,
+                  palette: _palette,
+                ),
+              ),
+              Positioned.fill(
+                child: ColoredBox(
+                  color: Colors.black.withValues(alpha: 0.28),
+                ),
               ),
 
-              // Contenu principal
+              // 2. Contenu principal
               SafeArea(
+                top: false,
                 child: Column(
                   children: [
-                    // AppBar
+                    SizedBox(height: effectiveTopPadding + 8),
+
+                    // En-tête « Signature Sonoritiz » avec mini-pochette + titre/artiste + toggle paroles libres
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0,
+                        vertical: 6.0,
+                      ),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          IconButton(
-                            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 36, color: Colors.white),
-                            onPressed: () => Navigator.pop(context),
-                          ),
-                          Expanded(
-                            child: Column(
-                              children: [
-                                Text(
-                                  track.title,
-                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                                  textAlign: TextAlign.center,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                Text(
-                                  track.artistName,
-                                  style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13),
-                                  textAlign: TextAlign.center,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
+                          ImmersiveGlassCircleButton(
+                            tooltip: 'Fermer',
+                            onTap: () => Navigator.pop(context),
+                            child: const Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              size: 24,
+                              color: Colors.white,
                             ),
                           ),
-                          BlocBuilder<PlayerCubit, PlayerState>(
-                            builder: (context, state) {
-                              return PopupMenuButton<String>(
-                                icon: const Icon(Icons.more_vert, color: Colors.white),
-                                color: AppColors.surfaceLight, // Assuming AppColors is imported, it is at line 9. Wait, let's use color: const Color(0xFF2E2E2E) or similar if AppColors is not available, but it is.
-                                onSelected: (value) {
-                                  if (value == 'free_lyrics') {
-                                    context.read<PlayerCubit>().toggleFreeLyricsMode();
-                                  }
-                                },
-                                itemBuilder: (context) => [
-                                  PopupMenuItem(
-                                    value: 'free_lyrics',
-                                    child: Row(
+                          Expanded(
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 10),
+                              padding: const EdgeInsets.fromLTRB(7, 6, 12, 6),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.34),
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.16),
+                                  width: 0.9,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  SonoritizArtwork(
+                                    imageUrl: track.coverUrl,
+                                    width: 34,
+                                    height: 34,
+                                    borderRadius: 10,
+                                    cacheMaxDimension: 120,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(
-                                          state.isFreeLyricsMode ? Icons.check_box : Icons.check_box_outline_blank,
-                                          color: Colors.white,
+                                        Text(
+                                          track.title,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 14.0,
+                                            height: 1.15,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
-                                        const SizedBox(width: 8),
-                                        const Text('Mode paroles libres', style: TextStyle(color: Colors.white)),
+                                        const SizedBox(height: 1),
+                                        Text(
+                                          track.artistName,
+                                          style: TextStyle(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.72),
+                                            fontSize: 12.0,
+                                            fontWeight: FontWeight.w600,
+                                            height: 1.15,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ],
                                     ),
                                   ),
                                 ],
+                              ),
+                            ),
+                          ),
+                          VocalRemoverCompactButton(
+                            accentColor: _palette.accentColor,
+                          ),
+                          const SizedBox(width: 8),
+                          ImmersiveGlassCircleButton(
+                            tooltip: 'Lancer le Mode Party / Karaoké',
+                            onTap: () {
+                              HapticFeedback.mediumImpact();
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => BlocProvider.value(
+                                    value: context.read<PlayerCubit>(),
+                                    child: const KaraokePartyScreen(),
+                                  ),
+                                ),
                               );
-                            }
+                            },
+                            child: const Icon(
+                              Icons.celebration_rounded,
+                              size: 19,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          ImmersiveGlassCircleButton(
+                            tooltip: state.isFreeLyricsMode
+                                ? 'Paroles sur lecteur : Activé'
+                                : 'Paroles sur lecteur : Désactivé',
+                            isHighlighted: state.isFreeLyricsMode,
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              context
+                                  .read<PlayerCubit>()
+                                  .toggleFreeLyricsMode();
+                            },
+                            child: Icon(
+                              state.isFreeLyricsMode
+                                  ? Icons.subtitles_rounded
+                                  : Icons.subtitles_off_outlined,
+                              size: 19,
+                              color: Colors.white,
+                            ),
                           ),
                         ],
                       ),
@@ -123,20 +288,51 @@ class _LyricsScreenState extends State<LyricsScreen> {
                       child: FutureBuilder<LyricsModel?>(
                         future: _lyricsFuture,
                         builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
-                            return const Center(
-                              child: CircularProgressIndicator(color: AppColors.primary),
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return Center(
+                              child: CircularProgressIndicator(
+                                color: _palette.accentColor,
+                              ),
                             );
                           }
 
-                          final lyricsModel = snapshot.data;
-                          if (lyricsModel == null || (!lyricsModel.hasSynced && !lyricsModel.hasPlain)) {
+                          final lyricsModel = snapshot.data ??
+                              ((state.currentLyrics != null &&
+                                      (state.currentLyrics!.hasSynced ||
+                                          state.currentLyrics!.hasPlain))
+                                  ? state.currentLyrics
+                                  : null);
+
+                          if (lyricsModel == null ||
+                              (!lyricsModel.hasSynced &&
+                                  !lyricsModel.hasPlain)) {
                             return Center(
-                              child: Text(
-                                "Paroles indisponibles pour ce titre.",
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.6),
-                                  fontSize: 18,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 32.0,
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.lyrics_outlined,
+                                      size: 56,
+                                      color:
+                                          Colors.white.withValues(alpha: 0.35),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'Paroles indisponibles pour ce titre.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.75),
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             );
@@ -145,47 +341,160 @@ class _LyricsScreenState extends State<LyricsScreen> {
                           if (lyricsModel.hasSynced) {
                             return Column(
                               children: [
-                                // Contrôles de synchronisation
+                                // Contrôle de synchronisation en pilule de verre + Raccourci Mode Party XXL
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 0.0),
+                                  padding:
+                                      const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.fast_rewind_rounded, color: Colors.white70),
-                                        tooltip: "Retarder les paroles",
-                                        onPressed: () {
-                                          setState(() { _syncOffsetMilliseconds -= 500; });
-                                        },
-                                      ),
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black45,
-                                          borderRadius: BorderRadius.circular(12),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
                                         ),
-                                        child: Text(
-                                          _syncOffsetMilliseconds == 0 
-                                              ? "Sync" 
-                                              : "${_syncOffsetMilliseconds > 0 ? '+' : ''}${(_syncOffsetMilliseconds / 1000.0).toStringAsFixed(1)}s",
-                                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                        decoration: BoxDecoration(
+                                          color:
+                                              Colors.black.withValues(alpha: 0.32),
+                                          borderRadius: BorderRadius.circular(20),
+                                          border: Border.all(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.14),
+                                            width: 0.8,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            GestureDetector(
+                                              onTap: () {
+                                                HapticFeedback.selectionClick();
+                                                setState(() {
+                                                  _syncOffsetMilliseconds -= 500;
+                                                });
+                                              },
+                                              behavior: HitTestBehavior.opaque,
+                                              child: const Padding(
+                                                padding: EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 4,
+                                                ),
+                                                child: Icon(
+                                                  Icons.remove_rounded,
+                                                  size: 16,
+                                                  color: Colors.white70,
+                                                ),
+                                              ),
+                                            ),
+                                            Padding(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                              ),
+                                              child: Text(
+                                                _syncOffsetMilliseconds == 0
+                                                    ? 'Sync 0.0s'
+                                                    : 'Sync ${_syncOffsetMilliseconds > 0 ? '+' : ''}${(_syncOffsetMilliseconds / 1000.0).toStringAsFixed(1)}s',
+                                                style: TextStyle(
+                                                  color: _syncOffsetMilliseconds == 0
+                                                      ? Colors.white
+                                                          .withValues(alpha: 0.85)
+                                                      : _palette.accentColor,
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 12.0,
+                                                ),
+                                              ),
+                                            ),
+                                            GestureDetector(
+                                              onTap: () {
+                                                HapticFeedback.selectionClick();
+                                                setState(() {
+                                                  _syncOffsetMilliseconds += 500;
+                                                });
+                                              },
+                                              behavior: HitTestBehavior.opaque,
+                                              child: const Padding(
+                                                padding: EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 4,
+                                                ),
+                                                child: Icon(
+                                                  Icons.add_rounded,
+                                                  size: 16,
+                                                  color: Colors.white70,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                      IconButton(
-                                        icon: const Icon(Icons.fast_forward_rounded, color: Colors.white70),
-                                        tooltip: "Avancer les paroles",
-                                        onPressed: () {
-                                          setState(() { _syncOffsetMilliseconds += 500; });
+                                      const SizedBox(width: 10),
+                                      GestureDetector(
+                                        onTap: () {
+                                          HapticFeedback.mediumImpact();
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => BlocProvider.value(
+                                                value: context.read<PlayerCubit>(),
+                                                child: const KaraokePartyScreen(),
+                                              ),
+                                            ),
+                                          );
                                         },
+                                        behavior: HitTestBehavior.opaque,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 5,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: _palette.accentColor
+                                                .withValues(alpha: 0.22),
+                                            borderRadius:
+                                                BorderRadius.circular(20),
+                                            border: Border.all(
+                                              color: _palette.accentColor
+                                                  .withValues(alpha: 0.55),
+                                              width: 0.9,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                Icons.celebration_rounded,
+                                                size: 13,
+                                                color: _palette.accentColor,
+                                              ),
+                                              const SizedBox(width: 5),
+                                              const Text(
+                                                'Mode Party XXL',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 11.0,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                       ),
                                     ],
                                   ),
                                 ),
                                 Expanded(
-                                  child: SyncedLyricsWidget(
-                                    lines: lyricsModel.parsedSyncedLyrics!,
-                                    currentPosition: state.position,
-                                    syncOffsetMilliseconds: _syncOffsetMilliseconds,
+                                  child: BlocSelector<PlayerCubit, PlayerState,
+                                      Duration>(
+                                    selector: (s) => s.position,
+                                    builder: (context, livePosition) {
+                                      return SyncedLyricsWidget(
+                                        lines: lyricsModel.parsedSyncedLyrics!,
+                                        currentPosition: livePosition,
+                                        syncOffsetMilliseconds:
+                                            _syncOffsetMilliseconds,
+                                        accentColor: _palette.accentColor,
+                                      );
+                                    },
                                   ),
                                 ),
                               ],
@@ -197,11 +506,12 @@ class _LyricsScreenState extends State<LyricsScreen> {
                               children: [
                                 Text(
                                   lyricsModel.plainLyrics!,
+                                  textAlign: TextAlign.center,
                                   style: TextStyle(
-                                    color: Colors.white.withOpacity(0.9),
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                    height: 1.5,
+                                    color: Colors.white.withValues(alpha: 0.92),
+                                    fontSize: 21,
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.65,
                                   ),
                                 ),
                               ],
@@ -221,75 +531,19 @@ class _LyricsScreenState extends State<LyricsScreen> {
   }
 }
 
-class AnimatedBlurBackground extends StatefulWidget {
-  final String imageUrl;
-  const AnimatedBlurBackground({Key? key, required this.imageUrl}) : super(key: key);
-
-  @override
-  State<AnimatedBlurBackground> createState() => _AnimatedBlurBackgroundState();
-}
-
-class _AnimatedBlurBackgroundState extends State<AnimatedBlurBackground> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 15))..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            Transform.scale(
-              scale: 1.2 + (_controller.value * 0.4),
-              child: Transform.translate(
-                offset: Offset(
-                  (_controller.value - 0.5) * 60,
-                  (1.0 - _controller.value - 0.5) * 60,
-                ),
-                child: CachedNetworkImage(
-                  imageUrl: widget.imageUrl,
-                  fit: BoxFit.cover,
-                  errorWidget: (context, url, error) => Container(color: AppColors.background),
-                ),
-              ),
-            ),
-            BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 70.0, sigmaY: 70.0),
-              child: Container(
-                color: Colors.black.withOpacity(0.4 + (_controller.value * 0.3)),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
 class SyncedLyricsWidget extends StatefulWidget {
   final List<LrcLine> lines;
   final Duration currentPosition;
   final int syncOffsetMilliseconds;
+  final Color accentColor;
 
   const SyncedLyricsWidget({
-    Key? key, 
-    required this.lines, 
+    super.key,
+    required this.lines,
     required this.currentPosition,
     this.syncOffsetMilliseconds = 0,
-  }) : super(key: key);
+    this.accentColor = AppColors.primary,
+  });
 
   @override
   State<SyncedLyricsWidget> createState() => _SyncedLyricsWidgetState();
@@ -310,11 +564,11 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> {
 
   void _scrollToActiveLine(int index) {
     if (_isManualScrolling || !_scrollController.hasClients) return;
-    
-    final offset = (index * 55.0) - (MediaQuery.of(context).size.height / 3);
+
+    final double targetOffset = index * 68.0;
     _scrollController.animateTo(
-      offset.clamp(0.0, _scrollController.position.maxScrollExtent),
-      duration: const Duration(milliseconds: 400),
+      targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 420),
       curve: Curves.easeOutCubic,
     );
   }
@@ -322,7 +576,8 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> {
   @override
   Widget build(BuildContext context) {
     int activeIndex = -1;
-    final adjustedPosition = widget.currentPosition.inMilliseconds + widget.syncOffsetMilliseconds;
+    final adjustedPosition =
+        widget.currentPosition.inMilliseconds + widget.syncOffsetMilliseconds;
 
     for (int i = 0; i < widget.lines.length; i++) {
       if (adjustedPosition >= widget.lines[i].time.inMilliseconds) {
@@ -341,7 +596,8 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> {
 
     return NotificationListener<ScrollNotification>(
       onNotification: (scrollNotification) {
-        if (scrollNotification is ScrollStartNotification && scrollNotification.dragDetails != null) {
+        if (scrollNotification is ScrollStartNotification &&
+            scrollNotification.dragDetails != null) {
           _isManualScrolling = true;
           _resumeScrollTimer?.cancel();
         } else if (scrollNotification is ScrollEndNotification) {
@@ -358,48 +614,76 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> {
         return false;
       },
       child: ListView.builder(
-      controller: _scrollController,
-      padding: EdgeInsets.only(
-        top: MediaQuery.of(context).size.height / 3,
-        bottom: MediaQuery.of(context).size.height / 2,
-        left: 24.0,
-        right: 24.0,
-      ),
-      physics: const BouncingScrollPhysics(),
-      itemCount: widget.lines.length,
-      itemBuilder: (context, index) {
-        final line = widget.lines[index];
-        final isActive = index == activeIndex;
-        
-        return GestureDetector(
-          onTap: () {
-            // Se positionner dans la musique au moment exact de cette parole
-            context.read<PlayerCubit>().seek(line.time);
-            _isManualScrolling = false;
-            _resumeScrollTimer?.cancel();
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12.0),
-            child: Text(
-              line.text.isEmpty ? "..." : line.text,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: isActive ? Colors.white : Colors.white.withOpacity(0.4),
-                fontSize: isActive ? 28 : 22,
-                fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
-                shadows: isActive
-                    ? [
-                        Shadow(
-                          color: AppColors.primary.withOpacity(0.6),
-                          blurRadius: 15,
-                        )
-                      ]
+        controller: _scrollController,
+        padding: EdgeInsets.only(
+          top: MediaQuery.of(context).size.height * 0.20,
+          bottom: MediaQuery.of(context).size.height * 0.42,
+          left: 18.0,
+          right: 18.0,
+        ),
+        physics: const BouncingScrollPhysics(),
+        itemCount: widget.lines.length,
+        itemBuilder: (context, index) {
+          final line = widget.lines[index];
+          final bool isActive = index == activeIndex;
+          final bool isPast = activeIndex != -1 && index < activeIndex;
+
+          return GestureDetector(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              context.read<PlayerCubit>().seek(line.time);
+              _isManualScrolling = false;
+              _resumeScrollTimer?.cancel();
+            },
+            behavior: HitTestBehavior.opaque,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+              margin: const EdgeInsets.symmetric(vertical: 4.0),
+              padding: EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: isActive ? 12.0 : 8.0,
+              ),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? widget.accentColor.withValues(alpha: 0.16)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(18),
+                border: isActive
+                    ? Border.all(
+                        color: widget.accentColor.withValues(alpha: 0.36),
+                        width: 1.0,
+                      )
                     : null,
               ),
-            ).animate(target: isActive ? 1 : 0).scaleXY(begin: 1.0, end: 1.05, duration: 300.ms),
-          ),
-        );
-      },
-    ));
+              child: AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeOutCubic,
+                style: TextStyle(
+                  color: isActive
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: isPast ? 0.30 : 0.48),
+                  fontSize: isActive ? 24.0 : 19.0,
+                  fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
+                  height: 1.32,
+                  shadows: isActive
+                      ? [
+                          Shadow(
+                            color: widget.accentColor.withValues(alpha: 0.55),
+                            blurRadius: 16,
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Text(
+                  line.text.isEmpty ? '♪' : line.text,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 }

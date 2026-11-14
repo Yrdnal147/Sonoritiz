@@ -17,6 +17,10 @@ class SearchCubit extends Cubit<SearchState> {
     emit(SearchInitial(recentSearches: storageService.getSearchHistory()));
   }
 
+  void resetSessionState() {
+    resetSearch();
+  }
+
   void search(String query, {bool isDebounced = true}) {
     if (query.trim().isEmpty) {
       resetSearch();
@@ -36,12 +40,16 @@ class SearchCubit extends Cubit<SearchState> {
   Future<void> _performSearch(String query) async {
     emit(SearchLoading());
     try {
-      final results = await repository.searchTracks(query: query);
+      final resultsFuture = repository.searchTracks(query: query);
+      final artistsFuture = repository.searchArtists(query);
+
+      final results = await resultsFuture;
+      final artists = await artistsFuture;
       
       if (!isClosed) {
         // Save to history only on successful actual search
         await storageService.addSearchQuery(query);
-        emit(SearchSuccess(results: results, query: query));
+        emit(SearchSuccess(results: results, artists: artists, query: query));
       }
     } catch (e) {
       if (!isClosed) {
@@ -53,7 +61,7 @@ class SearchCubit extends Cubit<SearchState> {
   Future<void> clearHistory() async {
     await storageService.clearSearchHistory();
     if (state is SearchInitial) {
-      emit(SearchInitial(recentSearches: []));
+      emit(const SearchInitial(recentSearches: []));
     }
   }
 

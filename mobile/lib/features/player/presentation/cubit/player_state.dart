@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 import 'package:just_audio/just_audio.dart' show LoopMode;
 import '../../data/models/track_model.dart';
 import '../../data/models/lyrics_model.dart';
+
 class PlayerState extends Equatable {
   final List<TrackModel> queue;
   final int currentIndex;
@@ -16,6 +17,8 @@ class PlayerState extends Equatable {
   final LyricsModel? currentLyrics;
   final Duration? sleepTimerRemaining;
   final bool isSleepTimerActive;
+  final String playbackSource;
+  final double vocalAttenuationLevel;
 
   const PlayerState({
     this.queue = const [],
@@ -31,6 +34,8 @@ class PlayerState extends Equatable {
     this.currentLyrics,
     this.sleepTimerRemaining,
     this.isSleepTimerActive = false,
+    this.playbackSource = '',
+    this.vocalAttenuationLevel = 0.0,
   });
 
   TrackModel? get currentTrack {
@@ -50,12 +55,15 @@ class PlayerState extends Equatable {
     Duration? position,
     Duration? duration,
     String? errorMessage,
+    bool clearError = false,
     bool? isShuffleModeEnabled,
     LoopMode? loopMode,
     bool? isFreeLyricsMode,
     LyricsModel? currentLyrics,
     Duration? sleepTimerRemaining,
     bool? isSleepTimerActive,
+    String? playbackSource,
+    double? vocalAttenuationLevel,
   }) {
     return PlayerState(
       queue: queue ?? this.queue,
@@ -64,13 +72,16 @@ class PlayerState extends Equatable {
       isBuffering: isBuffering ?? this.isBuffering,
       position: position ?? this.position,
       duration: duration ?? this.duration,
-      errorMessage: errorMessage,
+      errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
       isShuffleModeEnabled: isShuffleModeEnabled ?? this.isShuffleModeEnabled,
       loopMode: loopMode ?? this.loopMode,
       isFreeLyricsMode: isFreeLyricsMode ?? this.isFreeLyricsMode,
       currentLyrics: currentLyrics ?? this.currentLyrics,
       sleepTimerRemaining: sleepTimerRemaining ?? this.sleepTimerRemaining,
       isSleepTimerActive: isSleepTimerActive ?? this.isSleepTimerActive,
+      playbackSource: playbackSource ?? this.playbackSource,
+      vocalAttenuationLevel:
+          vocalAttenuationLevel ?? this.vocalAttenuationLevel,
     );
   }
 
@@ -89,5 +100,7 @@ class PlayerState extends Equatable {
         currentLyrics,
         sleepTimerRemaining,
         isSleepTimerActive,
+        playbackSource,
+        vocalAttenuationLevel,
       ];
 }

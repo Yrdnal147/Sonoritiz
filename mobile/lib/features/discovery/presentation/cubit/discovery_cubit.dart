@@ -3,7 +3,6 @@ import '../../../../core/storage/storage_service.dart';
 import '../../../home/data/repositories/catalog_repository.dart';
 import '../../../../features/player/data/models/track_model.dart';
 import 'discovery_state.dart';
-import 'dart:math';
 
 class DiscoveryCubit extends Cubit<DiscoveryState> {
   final StorageService _storageService;
@@ -15,6 +14,10 @@ class DiscoveryCubit extends Cubit<DiscoveryState> {
   })  : _storageService = storageService,
         _catalogRepository = catalogRepository,
         super(DiscoveryInitial());
+
+  void resetSessionState() {
+    emit(DiscoveryInitial());
+  }
 
   Future<void> loadDiscoveryFeeds() async {
     emit(DiscoveryLoading());

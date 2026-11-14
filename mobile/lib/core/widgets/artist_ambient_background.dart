@@ -37,21 +37,20 @@ class _ArtistAmbientBackgroundState extends State<ArtistAmbientBackground>
       children: [
         // Base sombre
         Container(color: AppColors.background),
-        // Halos lumineux
-        AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            return CustomPaint(
-              painter: AmbientBlobPainter(_controller.value),
-              size: Size.infinite,
-            );
-          },
+        // Halos lumineux fluides
+        RepaintBoundary(
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              return CustomPaint(
+                painter: AmbientBlobPainter(_controller.value),
+                size: Size.infinite,
+              );
+            },
+          ),
         ),
-        // Flou intense pour unifier l'ambiance
-        BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 80, sigmaY: 80),
-          child: Container(color: Colors.transparent),
-        ),
+        // Voile sombre pour unifier l'ambiance sans GPU stall
+        Container(color: Colors.black.withOpacity(0.35)),
         // Contenu de la page au dessus
         widget.child,
       ],

@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 import 'app_typography.dart';
 import 'app_dimensions.dart';
-import 'app_decorations.dart';
 
 class AppTheme {
   static ThemeData get lightTheme {
-    final colorScheme = AppColors.lightColorScheme;
+    const colorScheme = AppColors.lightColorScheme;
     final textTheme = AppTypography.getTextTheme(Brightness.light);
 
     return ThemeData(
@@ -52,15 +51,15 @@ class AppTheme {
           vertical: AppDimensions.spacingSm
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+          borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+          borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
           borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+          borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
           borderSide: BorderSide(color: colorScheme.error, width: 1.5),
         ),
       ),
@@ -68,14 +67,27 @@ class AppTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: colorScheme.primary,
-          foregroundColor: colorScheme.onPrimary,
+          foregroundColor: Colors.black,
           minimumSize: const Size(double.infinity, AppDimensions.buttonHeight),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+            borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
           ),
           textStyle: textTheme.labelLarge,
           elevation: 0,
         ),
+      ),
+
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: colorScheme.primary,
+          foregroundColor: Colors.black,
+          textStyle: textTheme.labelLarge,
+        ),
+      ),
+
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: colorScheme.primary,
+        foregroundColor: Colors.black,
       ),
 
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -84,7 +96,7 @@ class AppTheme {
           side: BorderSide(color: colorScheme.outline),
           minimumSize: const Size(double.infinity, AppDimensions.buttonHeight),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+            borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
           ),
           textStyle: textTheme.labelLarge,
         ),
@@ -109,7 +121,7 @@ class AppTheme {
   }
 
   static ThemeData get darkTheme {
-    final colorScheme = AppColors.darkColorScheme;
+    const colorScheme = AppColors.darkColorScheme;
     final textTheme = AppTypography.getTextTheme(Brightness.dark);
 
     return ThemeData(
@@ -142,7 +154,7 @@ class AppTheme {
         color: colorScheme.surfaceContainerHighest,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+          borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
         ),
       ),
 
@@ -155,15 +167,15 @@ class AppTheme {
           vertical: AppDimensions.spacingSm
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+          borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+          borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
           borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+          borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
           borderSide: BorderSide(color: colorScheme.error, width: 1.5),
         ),
       ),
@@ -171,14 +183,27 @@ class AppTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: colorScheme.primary,
-          foregroundColor: colorScheme.onPrimary,
+          foregroundColor: Colors.black,
           minimumSize: const Size(double.infinity, AppDimensions.buttonHeight),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+            borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
           ),
           textStyle: textTheme.labelLarge,
           elevation: 0,
         ),
+      ),
+
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: colorScheme.primary,
+          foregroundColor: Colors.black,
+          textStyle: textTheme.labelLarge,
+        ),
+      ),
+
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: colorScheme.primary,
+        foregroundColor: Colors.black,
       ),
 
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -187,7 +212,7 @@ class AppTheme {
           side: BorderSide(color: colorScheme.outline),
           minimumSize: const Size(double.infinity, AppDimensions.buttonHeight),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+            borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
           ),
           textStyle: textTheme.labelLarge,
         ),

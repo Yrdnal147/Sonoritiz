@@ -12,8 +12,8 @@ class ApiClient {
     _dio = Dio(
       BaseOptions(
         baseUrl: ApiConstants.baseUrl,
-        connectTimeout: const Duration(seconds: 30),
-        receiveTimeout: const Duration(seconds: 30),
+        connectTimeout: const Duration(seconds: 12),
+        receiveTimeout: const Duration(seconds: 20),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -67,6 +67,9 @@ class ApiClient {
         '${ApiConstants.baseUrl}${ApiConstants.refresh}',
         data: {'refresh': storageService.refreshToken},
         options: Options(
+          sendTimeout: const Duration(seconds: 8),
+          connectTimeout: const Duration(seconds: 8),
+          receiveTimeout: const Duration(seconds: 10),
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
@@ -79,9 +82,12 @@ class ApiClient {
         final newAccess = response.data['access'] as String?;
         if (newAccess != null && newAccess.isNotEmpty) {
           final currentRefresh = storageService.refreshToken ?? '';
+          final rotatedRefresh = response.data['refresh'] as String?;
           await storageService.saveTokens(
             accessToken: newAccess,
-            refreshToken: currentRefresh,
+            refreshToken: rotatedRefresh != null && rotatedRefresh.isNotEmpty
+                ? rotatedRefresh
+                : currentRefresh,
           );
           return true;
         }
@@ -153,16 +159,17 @@ class ApiClient {
       return AppStrings.networkError;
     }
 
-    if (e.response != null && e.response?.data is Map) {
-      final data = e.response?.data as Map;
-      if (data.containsKey('error') && data['error'] is Map) {
-        final msg = data['error']['message'];
-        if (msg != null && msg.toString().isNotEmpty) {
-          return msg.toString();
-        }
+    if (e.response != null) {
+      final data = e.response?.data;
+      if (data is Map) {
+        if (data.containsKey('detail')) return data['detail'].toString();
+        if (data.containsKey('error')) return data['error'].toString();
+        // Pour les erreurs de validation de formulaire Django (ex: {"email": ["Invalide"]})
+        return data.values.first.toString();
       }
+      return "Erreur serveur : ${e.response?.statusCode} - $data";
     }
 
-    return AppStrings.defaultError;
+    return "Erreur locale : ${e.message}";
   }
 }
