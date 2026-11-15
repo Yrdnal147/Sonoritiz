@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -54,25 +53,11 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
-  String _extractDioError(Object e, {String fallback = 'Erreur de connexion au serveur.'}) {
-    if (e is DioException && e.response?.data is Map) {
-      final errData = e.response!.data as Map;
-      if (errData['non_field_errors'] != null && errData['non_field_errors'] is List) {
-        return (errData['non_field_errors'] as List).join('\n');
-      }
-      if (errData['detail'] != null) return errData['detail'].toString();
-      if (errData['error'] != null) return errData['error'].toString();
-    } else if (e is DioException) {
-      if (e.type == DioExceptionType.connectionTimeout ||
-          e.type == DioExceptionType.receiveTimeout) {
-        return 'Le serveur met trop de temps à répondre. Veuillez réessayer.';
-      }
-      if (e.type == DioExceptionType.connectionError) {
-        return 'Impossible de se connecter au serveur. Vérifiez votre connexion.';
-      }
-    }
-    return fallback;
-  }
+  String _extractAuthError(
+    Object e, {
+    String fallback = 'Erreur de connexion au serveur.',
+  }) =>
+      ApiClient.formatAuthError(e, fallback: fallback);
 
   Future<void> _login() async {
     final email = _emailController.text.trim();
@@ -125,7 +110,7 @@ class _LoginScreenState extends State<LoginScreen>
       }
     } catch (e) {
       setState(() {
-        _errorMessage = _extractDioError(e);
+        _errorMessage = _extractAuthError(e);
       });
     } finally {
       if (mounted) {
@@ -145,7 +130,9 @@ class _LoginScreenState extends State<LoginScreen>
         serverClientId:
             '332358147050-fj2huukn8hcf40dukiuta1hc393lmh5a.apps.googleusercontent.com',
       );
-      await googleSignIn.signOut();
+      try {
+        await googleSignIn.signOut();
+      } catch (_) {}
       final googleUser = await googleSignIn.signIn();
 
       if (googleUser == null) {
@@ -199,7 +186,7 @@ class _LoginScreenState extends State<LoginScreen>
       }
     } catch (e) {
       setState(() {
-        _errorMessage = _extractDioError(
+        _errorMessage = _extractAuthError(
           e,
           fallback: 'Erreur lors de la connexion avec Google.',
         );

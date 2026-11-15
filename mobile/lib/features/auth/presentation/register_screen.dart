@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -59,29 +58,11 @@ class _RegisterScreenState extends State<RegisterScreen>
     super.dispose();
   }
 
-  String _extractDioError(Object e, {String fallback = "Erreur lors de l'inscription."}) {
-    if (e is DioException && e.response?.data is Map) {
-      final errData = e.response!.data as Map;
-      final errors = <String>[];
-      errData.forEach((_, value) {
-        if (value is List) {
-          errors.add(value.join(' '));
-        } else if (value != null) {
-          errors.add(value.toString());
-        }
-      });
-      if (errors.isNotEmpty) return errors.join('\n');
-    } else if (e is DioException) {
-      if (e.type == DioExceptionType.connectionTimeout ||
-          e.type == DioExceptionType.receiveTimeout) {
-        return 'Le serveur met trop de temps à répondre. Veuillez réessayer.';
-      }
-      if (e.type == DioExceptionType.connectionError) {
-        return 'Impossible de se connecter au serveur.';
-      }
-    }
-    return fallback;
-  }
+  String _extractAuthError(
+    Object e, {
+    String fallback = "Erreur lors de l'inscription.",
+  }) =>
+      ApiClient.formatAuthError(e, fallback: fallback);
 
   Future<void> _register() async {
     final username = _usernameController.text.trim();
@@ -155,7 +136,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         }
       }
     } catch (e) {
-      setState(() => _errorMessage = _extractDioError(e));
+      setState(() => _errorMessage = _extractAuthError(e));
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -174,7 +155,9 @@ class _RegisterScreenState extends State<RegisterScreen>
         serverClientId:
             '332358147050-fj2huukn8hcf40dukiuta1hc393lmh5a.apps.googleusercontent.com',
       );
-      await googleSignIn.signOut();
+      try {
+        await googleSignIn.signOut();
+      } catch (_) {}
       final googleUser = await googleSignIn.signIn();
 
       if (googleUser == null) {
@@ -228,7 +211,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       }
     } catch (e) {
       setState(() {
-        _errorMessage = _extractDioError(
+        _errorMessage = _extractAuthError(
           e,
           fallback: "Erreur lors de l'inscription avec Google.",
         );

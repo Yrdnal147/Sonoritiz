@@ -135,6 +135,22 @@ class StorageService {
       );
     }
 
+    for (final tabId in const ['favorites', 'playlists', 'history', 'downloads', 'local']) {
+      final viewGlobal = '${_keyViewMode}_$tabId';
+      final viewScoped = _scopedKey(viewGlobal);
+      if (!_prefs.containsKey(viewScoped) && _prefs.containsKey(viewGlobal)) {
+        final v = _prefs.getString(viewGlobal);
+        if (v != null) await _prefs.setString(viewScoped, v);
+      }
+
+      final sortGlobal = '${_keySortMode}_$tabId';
+      final sortScoped = _scopedKey(sortGlobal);
+      if (!_prefs.containsKey(sortScoped) && _prefs.containsKey(sortGlobal)) {
+        final s = _prefs.getString(sortGlobal);
+        if (s != null) await _prefs.setString(sortScoped, s);
+      }
+    }
+
     await _clearLegacyGlobalKeys();
     await _prefs.setBool(_keyLegacyMigrated, true);
   }
@@ -146,6 +162,10 @@ class StorageService {
     await _prefs.remove(_keySearchedArtists);
     await _prefs.remove(_keyLocalFiles);
     await _prefs.remove(_keyFreeLyricsMode);
+    for (final tabId in const ['favorites', 'playlists', 'history', 'downloads', 'local']) {
+      await _prefs.remove('${_keyViewMode}_$tabId');
+      await _prefs.remove('${_keySortMode}_$tabId');
+    }
   }
 
   /// Indique qu'une migration héritée ne doit plus s'appliquer à un tout nouveau compte.
@@ -262,7 +282,13 @@ class StorageService {
 
   // --- LIBRARY UI PREFERENCES (isolées par compte) ---
   String getViewMode(String tabId) {
-    return _prefs.getString(_scopedKey('${_keyViewMode}_$tabId')) ?? 'list';
+    final scoped = _prefs.getString(_scopedKey('${_keyViewMode}_$tabId'));
+    if (scoped != null) return scoped;
+    if (_prefs.getBool(_keyLegacyMigrated) != true) {
+      final legacy = _prefs.getString('${_keyViewMode}_$tabId');
+      if (legacy != null) return legacy;
+    }
+    return 'list';
   }
 
   Future<void> saveViewMode(String tabId, String mode) async {
@@ -270,7 +296,13 @@ class StorageService {
   }
 
   String getSortMode(String tabId) {
-    return _prefs.getString(_scopedKey('${_keySortMode}_$tabId')) ?? 'alpha';
+    final scoped = _prefs.getString(_scopedKey('${_keySortMode}_$tabId'));
+    if (scoped != null) return scoped;
+    if (_prefs.getBool(_keyLegacyMigrated) != true) {
+      final legacy = _prefs.getString('${_keySortMode}_$tabId');
+      if (legacy != null) return legacy;
+    }
+    return 'alpha';
   }
 
   Future<void> saveSortMode(String tabId, String mode) async {

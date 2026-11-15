@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/api_constants.dart';
@@ -80,13 +79,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
         });
       }
     } catch (e) {
-      String msg = 'Impossible d’envoyer le lien pour le moment.';
-      if (e is DioException && e.response?.data is Map) {
-        final d = e.response!.data as Map;
-        if (d['email'] is List) msg = (d['email'] as List).join(' ');
-        if (d['detail'] != null) msg = d['detail'].toString();
-      }
-      setState(() => _errorMessage = msg);
+      setState(() {
+        _errorMessage = ApiClient.formatAuthError(
+          e,
+          fallback: 'Impossible d’envoyer le lien pour le moment.',
+        );
+      });
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);

@@ -14,6 +14,14 @@ CODE_MAP = {
     500: "INTERNAL_SERVER_ERROR",
 }
 
+def _flatten_error_value(val):
+    if isinstance(val, list):
+        return " ".join(_flatten_error_value(item) for item in val)
+    if isinstance(val, dict):
+        return "; ".join(f"{k}: {_flatten_error_value(v)}" for k, v in val.items())
+    return str(val)
+
+
 def custom_exception_handler(exc, context):
     """
     Standardized DRF Exception Handler.
@@ -35,20 +43,16 @@ def custom_exception_handler(exc, context):
         detail = response.data
         if isinstance(detail, dict):
             if "detail" in detail:
-                msg = str(detail["detail"])
+                msg = _flatten_error_value(detail["detail"])
             elif "non_field_errors" in detail:
-                msg = " ".join([str(e) for e in detail["non_field_errors"]])
+                msg = _flatten_error_value(detail["non_field_errors"])
             else:
-                # Combine field error messages cleanly
                 messages = []
                 for field, errs in detail.items():
-                    if isinstance(errs, list):
-                        messages.append(f"{field}: {' '.join([str(e) for e in errs])}")
-                    else:
-                        messages.append(f"{field}: {errs}")
+                    messages.append(f"{field}: {_flatten_error_value(errs)}")
                 msg = "; ".join(messages)
         elif isinstance(detail, list):
-            msg = " ".join([str(e) for e in detail])
+            msg = _flatten_error_value(detail)
         else:
             msg = str(detail)
 

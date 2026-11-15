@@ -350,12 +350,16 @@ class _OnboardingSlideView extends StatelessWidget {
               children: [
                 Icon(slide.accentIcon, size: 14, color: AppColors.primary),
                 const SizedBox(width: 6),
-                Text(
-                  slide.badge,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                Flexible(
+                  child: Text(
+                    slide.badge,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
@@ -620,8 +624,10 @@ class _SlideSignatureCard extends StatelessWidget {
                     variant: SonoritizLogoVariant.standard,
                   ),
                   const SizedBox(height: 12),
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  const Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 12,
+                    runSpacing: 8,
                     children: [
                       _MiniFeatureChip(
                         icon: Icons.download_done_rounded,

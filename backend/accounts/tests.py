@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.test import TestCase
 from django.urls import reverse
 from django.contrib.auth import get_user_model
@@ -50,6 +51,11 @@ class AuthEndpointsTestCase(TestCase):
         response = self.client.post(self.login_url, login_payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error"]["code"], "BAD_REQUEST")
+        self.assertEqual(response.data["error"]["message"], "Identifiants invalides.")
+
+    def test_google_web_client_id_configured_by_default(self):
+        self.assertTrue(bool(settings.GOOGLE_WEB_CLIENT_ID))
+        self.assertIn(".apps.googleusercontent.com", settings.GOOGLE_WEB_CLIENT_ID)
 
     def test_favorite_artists_isolated_per_user(self):
         user_a = User.objects.create_user(

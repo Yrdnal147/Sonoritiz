@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/api_constants.dart';
@@ -99,13 +98,12 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
         }
       }
     } catch (e) {
-      String msg = 'Impossible de réinitialiser le mot de passe.';
-      if (e is DioException && e.response?.data is Map) {
-        final d = e.response!.data as Map;
-        if (d['detail'] != null) msg = d['detail'].toString();
-        if (d['error'] != null) msg = d['error'].toString();
-      }
-      setState(() => _errorMessage = msg);
+      setState(() {
+        _errorMessage = ApiClient.formatAuthError(
+          e,
+          fallback: 'Impossible de réinitialiser le mot de passe.',
+        );
+      });
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);

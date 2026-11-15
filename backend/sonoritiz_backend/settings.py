@@ -25,7 +25,10 @@ DEBUG = env('DEBUG')
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS')
 
 JAMENDO_CLIENT_ID = env('JAMENDO_CLIENT_ID', default='default-client-id')
-GOOGLE_WEB_CLIENT_ID = env('GOOGLE_WEB_CLIENT_ID', default='')
+GOOGLE_WEB_CLIENT_ID = env(
+    'GOOGLE_WEB_CLIENT_ID',
+    default='332358147050-fj2huukn8hcf40dukiuta1hc393lmh5a.apps.googleusercontent.com',
+)
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -137,7 +140,7 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/day',
         'user': '1000/day',
-        'auth': '5/minute',    # Pour les endpoints sensibles (login, reset, google)
+        'auth': '20/minute',    # Pour les endpoints sensibles (login, reset, google)
     }
 }
 

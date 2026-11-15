@@ -392,13 +392,18 @@ void main() {
 
       expect(find.text('Passer'), findsOneWidget);
       await tester.tap(find.byIcon(Icons.arrow_forward_rounded));
-      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
       await tester.tap(find.byIcon(Icons.arrow_forward_rounded));
-      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
 
       expect(find.text('Commencer'), findsOneWidget);
       await tester.tap(find.text('Commencer'));
-      await tester.pump(const Duration(milliseconds: 800));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
 
       expect(find.text('Évadez-vous\nsur Sonoritiz'), findsOneWidget);
       expect(find.text("S'inscrire"), findsOneWidget);
