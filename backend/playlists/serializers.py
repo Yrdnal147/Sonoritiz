@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import Playlist, PlaylistTrack
-from catalog.models import TrackCache
-from catalog.serializers import TrackSerializer
+from catalog.utils import serialize_track_cache_item
+
 
 class PlaylistTrackSerializer(serializers.ModelSerializer):
     track_details = serializers.SerializerMethodField()
@@ -11,21 +11,11 @@ class PlaylistTrackSerializer(serializers.ModelSerializer):
         fields = ('id', 'youtube_id', 'position', 'added_at', 'track_details')
 
     def get_track_details(self, obj):
-        try:
-            cached_track = TrackCache.objects.get(youtube_id=obj.youtube_id)
-            return TrackSerializer({
-                "youtube_id": cached_track.youtube_id,
-                "title": cached_track.title,
-                "artist_name": cached_track.artist_name,
-                "album_name": cached_track.album_name,
-                "cover_url": cached_track.cover_url,
-                "duration_seconds": cached_track.duration_seconds,
-                "audio_url": cached_track.audio_url,
-                "genre": cached_track.genre,
-                "license_ccurl": cached_track.license_ccurl,
-            }).data
-        except TrackCache.DoesNotExist:
-            return None
+        return serialize_track_cache_item(
+            obj.youtube_id,
+            self.context.get('track_cache_map'),
+        )
+
 
 class PlaylistSerializer(serializers.ModelSerializer):
     tracks = PlaylistTrackSerializer(many=True, read_only=True)
@@ -37,6 +27,9 @@ class PlaylistSerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'created_at', 'updated_at')
 
     def get_tracks_count(self, obj):
+        prefetched = getattr(obj, '_prefetched_objects_cache', None)
+        if prefetched and 'tracks' in prefetched:
+            return len(prefetched['tracks'])
         return obj.tracks.count()
 
 class PlaylistCreateUpdateSerializer(serializers.ModelSerializer):

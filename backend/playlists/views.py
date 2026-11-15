@@ -1,28 +1,51 @@
+from django.db.models import prefetch_related_objects
 from rest_framework import status, permissions, serializers
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.pagination import LimitOffsetPagination
 from .models import Playlist, PlaylistTrack
 from catalog.models import TrackCache
+from catalog.utils import build_track_cache_map
 from .serializers import (
     PlaylistSerializer,
     PlaylistCreateUpdateSerializer,
     PlaylistTrackAddSerializer,
-    PlaylistTrackSerializer
 )
+
+
+def _serialize_playlist_with_prefetched_tracks(playlist):
+    prefetch_related_objects([playlist], 'tracks')
+    track_cache_map = build_track_cache_map(
+        track.youtube_id for track in playlist.tracks.all()
+    )
+    return PlaylistSerializer(
+        playlist,
+        context={'track_cache_map': track_cache_map},
+    ).data
+
 
 class PlaylistsPagination(LimitOffsetPagination):
     default_limit = 20
     max_limit = 50
 
+
 class PlaylistsListCreateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        playlists = Playlist.objects.filter(user=request.user)
+        playlists = Playlist.objects.filter(user=request.user).prefetch_related('tracks')
         paginator = PlaylistsPagination()
         paginated_playlists = paginator.paginate_queryset(playlists, request, view=self)
-        serializer = PlaylistSerializer(paginated_playlists, many=True)
+        track_cache_map = build_track_cache_map(
+            track.youtube_id
+            for playlist in (paginated_playlists or [])
+            for track in playlist.tracks.all()
+        )
+        serializer = PlaylistSerializer(
+            paginated_playlists,
+            many=True,
+            context={'track_cache_map': track_cache_map},
+        )
         return paginator.get_paginated_response(serializer.data)
 
     def post(self, request):
@@ -31,14 +54,18 @@ class PlaylistsListCreateView(APIView):
             raise serializers.ValidationError(serializer.errors)
 
         playlist = serializer.save(user=request.user)
-        return Response(PlaylistSerializer(playlist).data, status=status.HTTP_201_CREATED)
+        return Response(
+            PlaylistSerializer(playlist, context={'track_cache_map': {}}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
 
 class PlaylistDetailView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def _get_playlist(self, user, pk):
         try:
-            return Playlist.objects.get(user=user, pk=pk)
+            return Playlist.objects.prefetch_related('tracks').get(user=user, pk=pk)
         except Playlist.DoesNotExist:
             return None
 
@@ -49,7 +76,7 @@ class PlaylistDetailView(APIView):
                 {"error": {"code": "NOT_FOUND", "message": "Playlist introuvable."}},
                 status=status.HTTP_404_NOT_FOUND
             )
-        return Response(PlaylistSerializer(playlist).data, status=status.HTTP_200_OK)
+        return Response(_serialize_playlist_with_prefetched_tracks(playlist), status=status.HTTP_200_OK)
 
     def put(self, request, pk):
         playlist = self._get_playlist(request.user, pk)
@@ -62,7 +89,7 @@ class PlaylistDetailView(APIView):
         if not serializer.is_valid():
             raise serializers.ValidationError(serializer.errors)
         playlist = serializer.save()
-        return Response(PlaylistSerializer(playlist).data, status=status.HTTP_200_OK)
+        return Response(_serialize_playlist_with_prefetched_tracks(playlist), status=status.HTTP_200_OK)
 
     def patch(self, request, pk):
         return self.put(request, pk)
@@ -126,7 +153,7 @@ class PlaylistTracksAddView(APIView):
             track_item.position = position
             track_item.save()
 
-        return Response(PlaylistSerializer(playlist).data, status=status.HTTP_200_OK)
+        return Response(_serialize_playlist_with_prefetched_tracks(playlist), status=status.HTTP_200_OK)
 
 class PlaylistTrackDeleteView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -136,7 +163,7 @@ class PlaylistTrackDeleteView(APIView):
             playlist = Playlist.objects.get(user=request.user, pk=pk)
             track_item = PlaylistTrack.objects.get(playlist=playlist, youtube_id=str(track_id))
             track_item.delete()
-            return Response(PlaylistSerializer(playlist).data, status=status.HTTP_200_OK)
+            return Response(_serialize_playlist_with_prefetched_tracks(playlist), status=status.HTTP_200_OK)
         except (Playlist.DoesNotExist, PlaylistTrack.DoesNotExist):
             return Response(
                 {"error": {"code": "NOT_FOUND", "message": "Élément introuvable."}},

@@ -94,6 +94,12 @@ class _LoginScreenState extends State<LoginScreen>
         final serverArtists = user['favorite_artists'] is List
             ? user['favorite_artists'] as List
             : null;
+        final serverSuperlikes = user['superliked_tracks'] is List
+            ? user['superliked_tracks'] as List
+            : null;
+        final serverFavoriteAlbums = user['favorite_albums'] is List
+            ? user['favorite_albums'] as List
+            : null;
 
         if (!mounted) return;
         final nextRoute = await SessionCoordinator.handleAuthenticatedUser(
@@ -102,6 +108,8 @@ class _LoginScreenState extends State<LoginScreen>
           email: (user['email'] ?? email).toString(),
           isNewAccount: false,
           serverFavoriteArtists: serverArtists,
+          serverSuperlikes: serverSuperlikes,
+          serverFavoriteAlbums: serverFavoriteAlbums,
         );
 
         if (mounted) {
@@ -165,6 +173,12 @@ class _LoginScreenState extends State<LoginScreen>
         final serverArtists = user['favorite_artists'] is List
             ? user['favorite_artists'] as List
             : null;
+        final serverSuperlikes = user['superliked_tracks'] is List
+            ? user['superliked_tracks'] as List
+            : null;
+        final serverFavoriteAlbums = user['favorite_albums'] is List
+            ? user['favorite_albums'] as List
+            : null;
 
         await storageService.saveTokens(
           accessToken: (tokens['access'] ?? '').toString(),
@@ -178,6 +192,8 @@ class _LoginScreenState extends State<LoginScreen>
           email: userEmail,
           isNewAccount: isNewUser,
           serverFavoriteArtists: serverArtists,
+          serverSuperlikes: serverSuperlikes,
+          serverFavoriteAlbums: serverFavoriteAlbums,
         );
 
         if (mounted) {

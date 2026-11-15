@@ -5,6 +5,7 @@ from rest_framework.pagination import LimitOffsetPagination
 from .models import ListeningHistory
 from .serializers import ListeningHistorySerializer, ListeningHistoryCreateSerializer
 from catalog.models import TrackCache
+from catalog.utils import build_track_cache_map
 
 class HistoryPagination(LimitOffsetPagination):
     default_limit = 20
@@ -17,7 +18,14 @@ class HistoryListCreateView(APIView):
         history = ListeningHistory.objects.filter(user=request.user)
         paginator = HistoryPagination()
         paginated_history = paginator.paginate_queryset(history, request, view=self)
-        serializer = ListeningHistorySerializer(paginated_history, many=True)
+        track_cache_map = build_track_cache_map(
+            item.youtube_id for item in (paginated_history or [])
+        )
+        serializer = ListeningHistorySerializer(
+            paginated_history,
+            many=True,
+            context={'track_cache_map': track_cache_map},
+        )
         return paginator.get_paginated_response(serializer.data)
 
     def post(self, request):

@@ -116,6 +116,8 @@ class _RegisterScreenState extends State<RegisterScreen>
             email: (user['email'] ?? email).toString(),
             isNewAccount: true,
             serverFavoriteArtists: const [],
+            serverSuperlikes: const [],
+            serverFavoriteAlbums: const [],
           );
           if (mounted) {
             context.go(nextRoute);
@@ -190,6 +192,12 @@ class _RegisterScreenState extends State<RegisterScreen>
         final serverArtists = user['favorite_artists'] is List
             ? user['favorite_artists'] as List
             : null;
+        final serverSuperlikes = user['superliked_tracks'] is List
+            ? user['superliked_tracks'] as List
+            : null;
+        final serverFavoriteAlbums = user['favorite_albums'] is List
+            ? user['favorite_albums'] as List
+            : null;
 
         await storageService.saveTokens(
           accessToken: (tokens['access'] ?? '').toString(),
@@ -203,6 +211,8 @@ class _RegisterScreenState extends State<RegisterScreen>
           email: userEmail,
           isNewAccount: isNewUser,
           serverFavoriteArtists: serverArtists,
+          serverSuperlikes: serverSuperlikes,
+          serverFavoriteAlbums: serverFavoriteAlbums,
         );
 
         if (mounted) {

@@ -4,6 +4,8 @@ from django.contrib.auth.models import AbstractUser
 class User(AbstractUser):
     email = models.EmailField(unique=True, blank=False, null=False)
     favorite_artists = models.JSONField(default=list, blank=True)
+    superliked_tracks = models.JSONField(default=list, blank=True)
+    favorite_albums = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

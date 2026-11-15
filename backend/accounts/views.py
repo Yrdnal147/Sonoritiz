@@ -190,21 +190,36 @@ class ProfileView(APIView):
 
 
 class UserPreferencesView(APIView):
-    """Lit ou met à jour la liste d'artistes préférés propres à l'utilisateur connecté."""
+    """Lit ou met à jour les préférences (artistes, superlikes, albums favoris) de l'utilisateur connecté."""
     permission_classes = [permissions.IsAuthenticated]
 
+    def _build_preferences_payload(self, user):
+        return {
+            "favorite_artists": user.favorite_artists if isinstance(user.favorite_artists, list) else [],
+            "superliked_tracks": user.superliked_tracks if isinstance(user.superliked_tracks, list) else [],
+            "favorite_albums": user.favorite_albums if isinstance(user.favorite_albums, list) else [],
+        }
+
     def get(self, request):
-        artists = request.user.favorite_artists if isinstance(request.user.favorite_artists, list) else []
-        return Response({"favorite_artists": artists}, status=status.HTTP_200_OK)
+        return Response(self._build_preferences_payload(request.user), status=status.HTTP_200_OK)
 
     def _update_preferences(self, request):
         serializer = UserPreferencesSerializer(data=request.data)
         if not serializer.is_valid():
             raise serializers.ValidationError(serializer.errors)
-        request.user.favorite_artists = serializer.validated_data['favorite_artists']
-        request.user.save(update_fields=['favorite_artists', 'updated_at'])
+
+        update_fields = []
+        for field_name in ('favorite_artists', 'superliked_tracks', 'favorite_albums'):
+            if field_name in serializer.validated_data:
+                setattr(request.user, field_name, serializer.validated_data[field_name])
+                update_fields.append(field_name)
+
+        if update_fields:
+            update_fields.append('updated_at')
+            request.user.save(update_fields=update_fields)
+
         return Response(
-            {"favorite_artists": request.user.favorite_artists},
+            self._build_preferences_payload(request.user),
             status=status.HTTP_200_OK,
         )
 

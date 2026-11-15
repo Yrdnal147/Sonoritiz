@@ -67,6 +67,10 @@ void main() async {
   await storageService.init();
   StorageService.onFavoriteArtistsSaved =
       (artists) => FavoriteArtistsSyncService().pushFavoriteArtists(artists);
+  StorageService.onSuperlikesSaved =
+      (tracks) => FavoriteArtistsSyncService().pushSuperlikes(tracks);
+  StorageService.onFavoriteAlbumsSaved =
+      (albums) => FavoriteArtistsSyncService().pushFavoriteAlbums(albums);
 
   // Initialize Offline Repository FIRST
   final offlineRepository = OfflineRepository();

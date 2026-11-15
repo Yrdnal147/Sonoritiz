@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.pagination import LimitOffsetPagination
 from .models import Favorite
 from catalog.models import TrackCache
+from catalog.utils import build_track_cache_map
 from .serializers import FavoriteSerializer, FavoriteCreateSerializer
 
 class FavoritesPagination(LimitOffsetPagination):
@@ -17,7 +18,14 @@ class FavoritesListCreateView(APIView):
         favorites = Favorite.objects.filter(user=request.user)
         paginator = FavoritesPagination()
         paginated_favorites = paginator.paginate_queryset(favorites, request, view=self)
-        serializer = FavoriteSerializer(paginated_favorites, many=True)
+        track_cache_map = build_track_cache_map(
+            fav.youtube_id for fav in (paginated_favorites or [])
+        )
+        serializer = FavoriteSerializer(
+            paginated_favorites,
+            many=True,
+            context={'track_cache_map': track_cache_map},
+        )
         return paginator.get_paginated_response(serializer.data)
 
     def post(self, request):

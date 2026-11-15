@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import ListeningHistory
-from catalog.models import TrackCache
-from catalog.serializers import TrackSerializer
+from catalog.utils import serialize_track_cache_item
+
 
 class ListeningHistorySerializer(serializers.ModelSerializer):
     track_details = serializers.SerializerMethodField()
@@ -12,21 +12,10 @@ class ListeningHistorySerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'played_at', 'track_details')
 
     def get_track_details(self, obj):
-        try:
-            cached_track = TrackCache.objects.get(youtube_id=obj.youtube_id)
-            return TrackSerializer({
-                "youtube_id": cached_track.youtube_id,
-                "title": cached_track.title,
-                "artist_name": cached_track.artist_name,
-                "album_name": cached_track.album_name,
-                "cover_url": cached_track.cover_url,
-                "duration_seconds": cached_track.duration_seconds,
-                "audio_url": cached_track.audio_url,
-                "genre": cached_track.genre,
-                "license_ccurl": cached_track.license_ccurl,
-            }).data
-        except TrackCache.DoesNotExist:
-            return None
+        return serialize_track_cache_item(
+            obj.youtube_id,
+            self.context.get('track_cache_map'),
+        )
 
 class ListeningHistoryCreateSerializer(serializers.Serializer):
     youtube_id = serializers.CharField(max_length=64)

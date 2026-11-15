@@ -92,3 +92,56 @@ class AuthEndpointsTestCase(TestCase):
             res_a.data["favorite_artists"],
             ["Édith Piaf", "Charles Aznavour", "Mozart"],
         )
+
+    def test_superlikes_and_favorite_albums_synced_partial_and_isolated(self):
+        user_a = User.objects.create_user(
+            email="supera@sonoritiz.com", username="supera", password="Password123!"
+        )
+        user_b = User.objects.create_user(
+            email="superb@sonoritiz.com", username="superb", password="Password123!"
+        )
+        prefs_url = reverse('auth_preferences')
+
+        self.client.force_authenticate(user=user_a)
+        # 1) Save favorite_artists
+        res1 = self.client.patch(prefs_url, {"favorite_artists": ["Tiakola"]}, format='json')
+        self.assertEqual(res1.status_code, status.HTTP_200_OK)
+
+        # 2) Partial PATCH superliked_tracks (with duplicate & max-20 check)
+        tracks_payload = [
+            {"id": f"vid_{i}", "title": f"Track {i}", "artist_name": "Tiakola"}
+            for i in range(25)
+        ]
+        tracks_payload.insert(1, {"youtube_id": "vid_0", "title": "Dup"})
+        res2 = self.client.patch(prefs_url, {"superliked_tracks": tracks_payload}, format='json')
+        self.assertEqual(res2.status_code, status.HTTP_200_OK)
+        self.assertEqual(res2.data["favorite_artists"], ["Tiakola"])
+        self.assertEqual(len(res2.data["superliked_tracks"]), 20)
+        self.assertEqual(res2.data["superliked_tracks"][0]["id"], "vid_0")
+
+        # 3) Partial PATCH favorite_albums preserves artists and superlikes
+        albums_payload = [
+            {"id": "101", "title": "Mélo", "artist_name": "Tiakola"},
+            {"id": "101", "title": "Mélo Duplicate", "artist_name": "Tiakola"},
+            {"id": "", "title": "BDLM Vol. 1", "artist_name": "Tiakola"},
+            {"id": "", "title": "bdlm vol. 1", "artist_name": "tiakola"},
+        ]
+        res3 = self.client.patch(prefs_url, {"favorite_albums": albums_payload}, format='json')
+        self.assertEqual(res3.status_code, status.HTTP_200_OK)
+        self.assertEqual(res3.data["favorite_artists"], ["Tiakola"])
+        self.assertEqual(len(res3.data["superliked_tracks"]), 20)
+        self.assertEqual(len(res3.data["favorite_albums"]), 2)
+
+        # 4) ProfileView (/api/auth/me/) returns full user preferences
+        res_me = self.client.get(self.profile_url)
+        self.assertEqual(res_me.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_me.data["favorite_artists"], ["Tiakola"])
+        self.assertEqual(len(res_me.data["superliked_tracks"]), 20)
+        self.assertEqual(len(res_me.data["favorite_albums"]), 2)
+
+        # 5) User B stays isolated
+        self.client.force_authenticate(user=user_b)
+        res_b = self.client.get(prefs_url)
+        self.assertEqual(res_b.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_b.data["superliked_tracks"], [])
+        self.assertEqual(res_b.data["favorite_albums"], [])

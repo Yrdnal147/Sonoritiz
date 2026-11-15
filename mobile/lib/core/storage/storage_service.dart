@@ -13,9 +13,11 @@ class StorageService {
   static final ValueNotifier<List<String>> favoriteArtistsNotifier =
       ValueNotifier<List<String>>(<String>[]);
 
-  /// Hook optionnel enregistré au démarrage de l'app pour synchroniser les artistes
-  /// préférés avec le backend Django sans coupler StorageService aux tests unitaires.
+  /// Hooks optionnels enregistrés au démarrage de l'app pour synchroniser les
+  /// préférences avec le backend Django sans coupler StorageService aux tests unitaires.
   static Future<void> Function(List<String> artists)? onFavoriteArtistsSaved;
+  static Future<void> Function(List<Map<String, dynamic>> tracks)? onSuperlikesSaved;
+  static Future<void> Function(List<Map<String, dynamic>> albums)? onFavoriteAlbumsSaved;
 
   static const String _keyAccessToken = 'access_token';
   static const String _keyRefreshToken = 'refresh_token';
@@ -31,6 +33,12 @@ class StorageService {
   static const String _keyFavoriteArtists = 'favorite_artists';
   static const String _keyFreeLyricsMode = 'is_free_lyrics_mode';
   static const String _keySearchedArtists = 'searched_artists_registry';
+  static const String _keySuperlikes = 'sonoritiz_superlikes';
+  static const String _keyFavoriteAlbums = 'sonoritiz_favorite_albums';
+  static const String _keyLifetimePlays = 'lifetime_plays';
+  static const String _keyWeeklyPlaylists = 'weekly_curated_playlists_v3';
+  static const String _keyWeeklyPlaylistsTs = 'weekly_curated_playlists_ts_v3';
+  static const String _keyUserBio = 'user_bio';
   static const String _keyLegacyMigrated = 'migrated_legacy_user_keys_v1';
 
   late SharedPreferences _prefs;
@@ -81,49 +89,52 @@ class StorageService {
     }
   }
 
+  Future<void> _migrateStringListKeyIfMissing(String baseKey) async {
+    final scoped = _scopedKey(baseKey);
+    if (_prefs.containsKey(scoped)) return;
+    final legacy = _prefs.getStringList(baseKey);
+    if (legacy != null && legacy.isNotEmpty) {
+      await _prefs.setStringList(scoped, legacy);
+    }
+  }
+
+  Future<void> _migrateStringKeyIfMissing(String baseKey) async {
+    final scoped = _scopedKey(baseKey);
+    if (_prefs.containsKey(scoped)) return;
+    final legacy = _prefs.getString(baseKey);
+    if (legacy != null && legacy.isNotEmpty) {
+      await _prefs.setString(scoped, legacy);
+    }
+  }
+
   /// Migre une seule fois d'éventuelles anciennes clés globales vers l'utilisateur déjà connecté,
   /// puis supprime les anciennes clés globales pour empêcher toute fuite vers d'autres comptes.
   Future<void> _migrateLegacyGlobalKeysIfNeeded() async {
     if (_prefs.getBool(_keyLegacyMigrated) == true) return;
     if (accountScope == 'guest') return;
 
-    final scopedArtistsKey = _scopedKey(_keyFavoriteArtists);
-    if (!_prefs.containsKey(scopedArtistsKey)) {
-      final oldArtists = _prefs.getStringList(_keyFavoriteArtists);
-      if (oldArtists != null && oldArtists.isNotEmpty) {
-        await _prefs.setStringList(scopedArtistsKey, oldArtists);
-      }
+    await _migrateStringListKeyIfMissing(_keyFavoriteArtists);
+    await _migrateStringListKeyIfMissing(_keySearchHistory);
+    await _migrateStringListKeyIfMissing(_keyLocalFiles);
+
+    for (final key in const [
+      _keyProfileImagePath,
+      _keySearchedArtists,
+      _keySuperlikes,
+      _keyFavoriteAlbums,
+      _keyLifetimePlays,
+      _keyWeeklyPlaylists,
+      _keyUserBio,
+    ]) {
+      await _migrateStringKeyIfMissing(key);
     }
 
-    final scopedHistoryKey = _scopedKey(_keySearchHistory);
-    if (!_prefs.containsKey(scopedHistoryKey)) {
-      final oldHistory = _prefs.getStringList(_keySearchHistory);
-      if (oldHistory != null && oldHistory.isNotEmpty) {
-        await _prefs.setStringList(scopedHistoryKey, oldHistory);
-      }
-    }
-
-    final scopedPhotoKey = _scopedKey(_keyProfileImagePath);
-    if (!_prefs.containsKey(scopedPhotoKey)) {
-      final oldPhoto = _prefs.getString(_keyProfileImagePath);
-      if (oldPhoto != null && oldPhoto.isNotEmpty) {
-        await _prefs.setString(scopedPhotoKey, oldPhoto);
-      }
-    }
-
-    final scopedSearchedKey = _scopedKey(_keySearchedArtists);
-    if (!_prefs.containsKey(scopedSearchedKey)) {
-      final oldSearched = _prefs.getString(_keySearchedArtists);
-      if (oldSearched != null && oldSearched.isNotEmpty) {
-        await _prefs.setString(scopedSearchedKey, oldSearched);
-      }
-    }
-
-    final scopedLocalKey = _scopedKey(_keyLocalFiles);
-    if (!_prefs.containsKey(scopedLocalKey)) {
-      final oldLocal = _prefs.getStringList(_keyLocalFiles);
-      if (oldLocal != null && oldLocal.isNotEmpty) {
-        await _prefs.setStringList(scopedLocalKey, oldLocal);
+    final scopedWeeklyTsKey = _scopedKey(_keyWeeklyPlaylistsTs);
+    if (!_prefs.containsKey(scopedWeeklyTsKey) &&
+        _prefs.containsKey(_keyWeeklyPlaylistsTs)) {
+      final ts = _prefs.getInt(_keyWeeklyPlaylistsTs);
+      if (ts != null) {
+        await _prefs.setInt(scopedWeeklyTsKey, ts);
       }
     }
 
@@ -136,19 +147,8 @@ class StorageService {
     }
 
     for (final tabId in const ['favorites', 'playlists', 'history', 'downloads', 'local']) {
-      final viewGlobal = '${_keyViewMode}_$tabId';
-      final viewScoped = _scopedKey(viewGlobal);
-      if (!_prefs.containsKey(viewScoped) && _prefs.containsKey(viewGlobal)) {
-        final v = _prefs.getString(viewGlobal);
-        if (v != null) await _prefs.setString(viewScoped, v);
-      }
-
-      final sortGlobal = '${_keySortMode}_$tabId';
-      final sortScoped = _scopedKey(sortGlobal);
-      if (!_prefs.containsKey(sortScoped) && _prefs.containsKey(sortGlobal)) {
-        final s = _prefs.getString(sortGlobal);
-        if (s != null) await _prefs.setString(sortScoped, s);
-      }
+      await _migrateStringKeyIfMissing('${_keyViewMode}_$tabId');
+      await _migrateStringKeyIfMissing('${_keySortMode}_$tabId');
     }
 
     await _clearLegacyGlobalKeys();
@@ -156,12 +156,22 @@ class StorageService {
   }
 
   Future<void> _clearLegacyGlobalKeys() async {
-    await _prefs.remove(_keyFavoriteArtists);
-    await _prefs.remove(_keySearchHistory);
-    await _prefs.remove(_keyProfileImagePath);
-    await _prefs.remove(_keySearchedArtists);
-    await _prefs.remove(_keyLocalFiles);
-    await _prefs.remove(_keyFreeLyricsMode);
+    for (final key in const [
+      _keyFavoriteArtists,
+      _keySearchHistory,
+      _keyProfileImagePath,
+      _keySearchedArtists,
+      _keyLocalFiles,
+      _keyFreeLyricsMode,
+      _keySuperlikes,
+      _keyFavoriteAlbums,
+      _keyLifetimePlays,
+      _keyWeeklyPlaylists,
+      _keyWeeklyPlaylistsTs,
+      _keyUserBio,
+    ]) {
+      await _prefs.remove(key);
+    }
     for (final tabId in const ['favorites', 'playlists', 'history', 'downloads', 'local']) {
       await _prefs.remove('${_keyViewMode}_$tabId');
       await _prefs.remove('${_keySortMode}_$tabId');
@@ -518,7 +528,7 @@ class StorageService {
   }
 
   // --- SONORITIZ SUPERLIKES (MAX 20, isolés par compte) ---
-  String get _superlikesKey => _scopedKey('sonoritiz_superlikes');
+  String get _superlikesKey => _scopedKey(_keySuperlikes);
 
   List<Map<String, dynamic>> getSuperlikesRaw() {
     final raw = _prefs.getString(_superlikesKey);
@@ -532,13 +542,24 @@ class StorageService {
     return [];
   }
 
-  Future<void> saveSuperlikesRaw(List<Map<String, dynamic>> list) async {
-    final clamped = list.take(20).toList();
+  Future<void> saveSuperlikesRaw(
+    List<Map<String, dynamic>> list, {
+    bool syncToServer = true,
+  }) async {
+    final clamped = list
+        .take(20)
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
     await _prefs.setString(_superlikesKey, jsonEncode(clamped));
+    if (syncToServer && onSuperlikesSaved != null && isAuthenticated) {
+      try {
+        await onSuperlikesSaved!(clamped);
+      } catch (_) {}
+    }
   }
 
   // --- ALBUMS FAVORIS (isolés par compte) ---
-  String get _favoriteAlbumsKey => _scopedKey('sonoritiz_favorite_albums');
+  String get _favoriteAlbumsKey => _scopedKey(_keyFavoriteAlbums);
 
   List<Map<String, dynamic>> getFavoriteAlbumsRaw() {
     final raw = _prefs.getString(_favoriteAlbumsKey);
@@ -552,8 +573,17 @@ class StorageService {
     return [];
   }
 
-  Future<void> saveFavoriteAlbumsRaw(List<Map<String, dynamic>> list) async {
-    await _prefs.setString(_favoriteAlbumsKey, jsonEncode(list));
+  Future<void> saveFavoriteAlbumsRaw(
+    List<Map<String, dynamic>> list, {
+    bool syncToServer = true,
+  }) async {
+    final normalized = list.map((e) => Map<String, dynamic>.from(e)).toList();
+    await _prefs.setString(_favoriteAlbumsKey, jsonEncode(normalized));
+    if (syncToServer && onFavoriteAlbumsSaved != null && isAuthenticated) {
+      try {
+        await onFavoriteAlbumsSaved!(normalized);
+      } catch (_) {}
+    }
   }
 
   // --- SUIVI DES ARTISTES RECHERCHÉS (historique par compte + sélection diverse neutre) ---

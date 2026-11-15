@@ -7,7 +7,15 @@ User = get_user_model()
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('id', 'email', 'username', 'favorite_artists', 'created_at')
+        fields = (
+            'id',
+            'email',
+            'username',
+            'favorite_artists',
+            'superliked_tracks',
+            'favorite_albums',
+            'created_at',
+        )
         read_only_fields = ('id', 'created_at')
 
 
@@ -15,7 +23,17 @@ class UserPreferencesSerializer(serializers.Serializer):
     favorite_artists = serializers.ListField(
         child=serializers.CharField(max_length=120, trim_whitespace=True),
         max_length=50,
-        required=True,
+        required=False,
+    )
+    superliked_tracks = serializers.ListField(
+        child=serializers.DictField(),
+        max_length=50,
+        required=False,
+    )
+    favorite_albums = serializers.ListField(
+        child=serializers.DictField(),
+        max_length=200,
+        required=False,
     )
 
     def validate_favorite_artists(self, value):
@@ -29,6 +47,46 @@ class UserPreferencesSerializer(serializers.Serializer):
             if key not in seen:
                 seen.add(key)
                 cleaned.append(name)
+        return cleaned
+
+    def validate_superliked_tracks(self, value):
+        cleaned = []
+        seen = set()
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            track_id = str(item.get('id') or item.get('youtube_id') or '').strip()
+            if not track_id or track_id in seen:
+                continue
+            seen.add(track_id)
+            normalized = dict(item)
+            normalized['id'] = track_id
+            cleaned.append(normalized)
+            if len(cleaned) >= 20:
+                break
+        return cleaned
+
+    def validate_favorite_albums(self, value):
+        cleaned = []
+        seen = set()
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            clean_id = str(item.get('id') or '').strip()
+            title = str(item.get('title') or '').strip()
+            artist_name = str(item.get('artist_name') or item.get('artistName') or '').strip()
+            if not clean_id and not title:
+                continue
+            if clean_id and clean_id != '0':
+                identity = f'id:{clean_id}'
+            else:
+                identity = f'meta:{title.lower()}__{artist_name.lower()}'
+            if identity in seen:
+                continue
+            seen.add(identity)
+            cleaned.append(dict(item))
+            if len(cleaned) >= 150:
+                break
         return cleaned
 
 class RegisterSerializer(serializers.ModelSerializer):

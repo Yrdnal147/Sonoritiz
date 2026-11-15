@@ -41,6 +41,8 @@ class SessionCoordinator {
     required String email,
     bool isNewAccount = false,
     List<dynamic>? serverFavoriteArtists,
+    List<dynamic>? serverSuperlikes,
+    List<dynamic>? serverFavoriteAlbums,
   }) async {
     final storage = StorageService();
     await storage.saveUserInfo(
@@ -55,6 +57,8 @@ class SessionCoordinator {
 
     await FavoriteArtistsSyncService().syncAfterAuth(
       serverArtists: serverFavoriteArtists,
+      serverSuperlikes: serverSuperlikes,
+      serverFavoriteAlbums: serverFavoriteAlbums,
     );
 
     final bool needsArtistOnboarding =

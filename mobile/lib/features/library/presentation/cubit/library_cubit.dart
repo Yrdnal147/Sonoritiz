@@ -100,9 +100,13 @@ class LibraryCubit extends Cubit<LibraryState> {
     }
   }
 
-  Future<void> _saveCache(LibraryLoaded s) async {
+  Future<void> _saveCache(
+    LibraryLoaded s, {
+    bool syncFavoriteAlbums = false,
+  }) async {
     await StorageService().saveFavoriteAlbumsRaw(
       s.favoriteAlbums.map((a) => a.toJson()).toList(),
+      syncToServer: syncFavoriteAlbums,
     );
     await JsonCache.write(_cacheKey, {
       'favorites': s.favorites.map((t) => t.toJson()).toList(),
@@ -129,10 +133,13 @@ class LibraryCubit extends Cubit<LibraryState> {
     });
   }
 
-  Future<void> _updateStateAndCache(LibraryLoaded newState) async {
+  Future<void> _updateStateAndCache(
+    LibraryLoaded newState, {
+    bool syncFavoriteAlbums = false,
+  }) async {
     if (isClosed) return;
     emit(newState);
-    await _saveCache(newState);
+    await _saveCache(newState, syncFavoriteAlbums: syncFavoriteAlbums);
   }
 
   Future<LibraryLoaded?> _readCache() async {
@@ -345,6 +352,9 @@ class LibraryCubit extends Cubit<LibraryState> {
     try {
       final previous = state is LibraryLoaded ? state as LibraryLoaded : null;
 
+      bool favoritesOk = false;
+      bool playlistsOk = false;
+      bool historyOk = false;
       List<TrackModel>? remoteFavorites;
       List<PlaylistModel>? remotePlaylists;
       List<HistoryModel>? remoteHistory;
@@ -353,16 +363,19 @@ class LibraryCubit extends Cubit<LibraryState> {
         () async {
           try {
             remoteFavorites = await repository.getFavorites();
+            favoritesOk = true;
           } catch (_) {}
         }(),
         () async {
           try {
             remotePlaylists = await repository.getPlaylists();
+            playlistsOk = true;
           } catch (_) {}
         }(),
         () async {
           try {
             remoteHistory = await repository.getHistory();
+            historyOk = true;
           } catch (_) {}
         }(),
       ]);
@@ -372,6 +385,15 @@ class LibraryCubit extends Cubit<LibraryState> {
       // Relire l'état le plus récent au moment de l'émission pour ne jamais écraser
       // une playlist créée ou modifiée pendant les requêtes réseau.
       final latestLoaded = state is LibraryLoaded ? state as LibraryLoaded : previous;
+
+      // Si toutes les requêtes distantes ont échoué et qu'aucun cache local n'existe,
+      // signaler l'erreur au lieu d'afficher une bibliothèque faussement vide.
+      if (!favoritesOk && !playlistsOk && !historyOk && latestLoaded == null) {
+        emit(const LibraryError(
+          "Impossible de charger votre bibliothèque pour le moment. Vérifiez votre connexion et réessayez.",
+        ));
+        return;
+      }
 
       final favorites = remoteFavorites ?? latestLoaded?.favorites ?? [];
       final history = _deduplicateHistory(
@@ -384,7 +406,7 @@ class LibraryCubit extends Cubit<LibraryState> {
       final playlists = _mergeLoadedPlaylists(
         remotePlaylists: remotePlaylists ?? const [],
         currentLocalPlaylists: latestLoaded?.playlists ?? const [],
-        remoteFetched: remotePlaylists != null,
+        remoteFetched: playlistsOk,
       );
 
       final loaded = LibraryLoaded(
@@ -396,8 +418,10 @@ class LibraryCubit extends Cubit<LibraryState> {
       emit(loaded);
       await _saveCache(loaded);
 
-      if (remotePlaylists != null) {
+      if (playlistsOk && favoritesOk) {
         _lastSuccessfulLoadAt = DateTime.now();
+      }
+      if (playlistsOk) {
         unawaited(_syncPendingLocalPlaylists(playlists));
       }
     } catch (e, stack) {
@@ -816,7 +840,10 @@ class LibraryCubit extends Cubit<LibraryState> {
                   ) !=
                   metaKey)
           .toList();
-      await _updateStateAndCache(loadedState.copyWith(favoriteAlbums: updatedAlbums));
+      await _updateStateAndCache(
+        loadedState.copyWith(favoriteAlbums: updatedAlbums),
+        syncFavoriteAlbums: true,
+      );
       return false;
     }
 
@@ -832,7 +859,10 @@ class LibraryCubit extends Cubit<LibraryState> {
     );
 
     final updatedAlbums = [newAlbum, ...loadedState.favoriteAlbums];
-    await _updateStateAndCache(loadedState.copyWith(favoriteAlbums: updatedAlbums));
+    await _updateStateAndCache(
+      loadedState.copyWith(favoriteAlbums: updatedAlbums),
+      syncFavoriteAlbums: true,
+    );
     unawaited(addFavoritesBatch(albumTracks));
     return true;
   }
