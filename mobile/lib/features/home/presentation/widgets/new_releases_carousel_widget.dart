@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/responsive_utils.dart';
 import '../../data/repositories/catalog_repository.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/storage/storage_service.dart';
@@ -259,6 +260,35 @@ class _NewReleasesCarouselWidgetState extends State<NewReleasesCarouselWidget> {
     super.dispose();
   }
 
+  static (double, double) _resolveCarouselSpec(double width) {
+    if (width < 365) return (0.78, 224.0);
+    if (width < 600) return (0.70, 240.0);
+    if (width < 900) return (0.44, 256.0);
+    if (width < 1260) return (0.33, 268.0);
+    return (0.26, 276.0);
+  }
+
+  void _ensurePageControllerForFraction(double targetFraction) {
+    if ((_pageController.viewportFraction - targetFraction).abs() <= 0.01) {
+      return;
+    }
+    final oldController = _pageController;
+    final initialPage = _currentPage.round().clamp(0, _kCarouselMaxAlbums - 1);
+    _pageController = PageController(
+      viewportFraction: targetFraction,
+      initialPage: initialPage,
+    );
+    _pageController.addListener(() {
+      if (!mounted) return;
+      setState(() {
+        _currentPage = _pageController.page ?? 0.0;
+      });
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      oldController.dispose();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -283,56 +313,62 @@ class _NewReleasesCarouselWidgetState extends State<NewReleasesCarouselWidget> {
 
     final carouselAlbums = _albums.take(_kCarouselMaxAlbums).toList();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 20.0, right: 8.0),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Albums à venir & Sorties",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: -0.4,
-                      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final (fraction, carouselHeight) =
+            _resolveCarouselSpec(constraints.maxWidth);
+        _ensurePageControllerForFraction(fraction);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 20.0, right: 8.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Albums à venir & Sorties",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: -0.4,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          "Nouveautés éditoriales & prochaines sorties",
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      "Nouveautés éditoriales & prochaines sorties",
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.6),
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w500,
-                      ),
+                  ),
+                  TextButton(
+                    onPressed: _openAllReleases,
+                    style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+                    child: Text(
+                      'Voir tout (${_albums.length})',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              TextButton(
-                onPressed: _openAllReleases,
-                style: TextButton.styleFrom(foregroundColor: AppColors.primary),
-                child: Text(
-                  'Voir tout (${_albums.length})',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 240,
-          child: PageView.builder(
-            controller: _pageController,
-            itemCount: carouselAlbums.length,
-            itemBuilder: (context, index) {
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: carouselHeight,
+              child: PageView.builder(
+                controller: _pageController,
+                itemCount: carouselAlbums.length,
+                itemBuilder: (context, index) {
               final album = carouselAlbums[index];
               final double value = (index - _currentPage).abs();
               final double scale = 1.0 - (value * 0.12).clamp(0.0, 0.25);
@@ -499,6 +535,8 @@ class _NewReleasesCarouselWidgetState extends State<NewReleasesCarouselWidget> {
         ),
       ],
     );
+      },
+    );
   }
 }
 
@@ -528,17 +566,27 @@ class _AllAlbumReleasesScreen extends StatelessWidget {
       body: SonoritizCoverAtmosphere(
         coverUrl: firstCover,
         child: SafeArea(
-          child: GridView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
-            physics: const BouncingScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 18,
-              crossAxisSpacing: 14,
-              childAspectRatio: 0.70,
-            ),
-            itemCount: albums.length,
-            itemBuilder: (context, index) {
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final cols = ResponsiveUtils.adaptiveGridColumns(
+                constraints.maxWidth,
+                narrow: 2,
+                mobile: 2,
+                medium: 3,
+                expanded: 4,
+                ultraWide: 5,
+              );
+              return GridView.builder(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+                physics: const BouncingScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: cols,
+                  mainAxisSpacing: 18,
+                  crossAxisSpacing: 14,
+                  childAspectRatio: 0.70,
+                ),
+                itemCount: albums.length,
+                itemBuilder: (context, index) {
               final album = albums[index];
               final badge = _releaseBadge(album);
               final dateLabel = _relativeReleaseLabel(album['release_date']);
@@ -609,6 +657,8 @@ class _AllAlbumReleasesScreen extends StatelessWidget {
                   ],
                 ),
               );
+            },
+          );
             },
           ),
         ),

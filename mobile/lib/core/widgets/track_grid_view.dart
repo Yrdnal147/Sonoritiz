@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../features/player/data/models/track_model.dart';
 import '../../../features/player/presentation/cubit/player_cubit.dart';
 import '../../../core/theme/app_dimensions.dart';
+import '../utils/responsive_utils.dart';
 import '../../../features/library/presentation/cubit/library_ui_cubit.dart';
 import 'track_context_menu.dart';
 import 'artist_name_display.dart';
@@ -154,27 +155,37 @@ class TrackGridView extends StatelessWidget {
       );
     }
 
+    final double width = MediaQuery.sizeOf(context).width;
+    final int baseCols = ResponsiveUtils.adaptiveGridColumns(
+      width,
+      narrow: 2,
+      mobile: 2,
+      medium: 3,
+      expanded: 4,
+      ultraWide: 5,
+    );
+
     int crossAxisCount;
     double childAspectRatio;
     switch (viewMode) {
       case ViewMode.gridSmall:
-        crossAxisCount = 3;
+        crossAxisCount = width < 350 ? 2 : (baseCols + 1);
         childAspectRatio = 0.75;
         break;
       case ViewMode.gridMedium:
-        crossAxisCount = 2;
+        crossAxisCount = baseCols;
         childAspectRatio = 0.8;
         break;
       case ViewMode.gridLarge:
-        crossAxisCount = 1;
+        crossAxisCount = width >= 900 ? 3 : (width >= 600 ? 2 : 1);
         childAspectRatio = 1.0;
         break;
       case ViewMode.cards:
-        crossAxisCount = 1;
-        childAspectRatio = 0.8;
+        crossAxisCount = width >= 900 ? 3 : (width >= 600 ? 2 : 1);
+        childAspectRatio = 0.85;
         break;
       default:
-        crossAxisCount = 2;
+        crossAxisCount = baseCols;
         childAspectRatio = 0.8;
     }
 

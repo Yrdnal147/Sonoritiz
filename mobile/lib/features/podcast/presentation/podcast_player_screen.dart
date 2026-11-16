@@ -129,7 +129,7 @@ class _PodcastPlayerScreenState extends State<PodcastPlayerScreen> {
     _controller?.removeListener(_playerListener);
     _controller?.dispose();
     _yt.close();
-    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    SystemChrome.setPreferredOrientations(const []);
     super.dispose();
   }
 
@@ -163,6 +163,7 @@ class _PodcastPlayerScreenState extends State<PodcastPlayerScreen> {
   }
 
   void _toggleFullScreen() {
+    final shortestSide = MediaQuery.sizeOf(context).shortestSide;
     setState(() {
       _isFullScreen = !_isFullScreen;
       if (_isFullScreen) {
@@ -171,6 +172,8 @@ class _PodcastPlayerScreenState extends State<PodcastPlayerScreen> {
           DeviceOrientation.landscapeRight,
           DeviceOrientation.portraitUp,
         ]);
+      } else if (shortestSide >= 600) {
+        SystemChrome.setPreferredOrientations(const []);
       } else {
         SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
       }

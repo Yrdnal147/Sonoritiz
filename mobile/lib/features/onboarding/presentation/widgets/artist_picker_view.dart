@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/artists_data.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/responsive_utils.dart';
 import '../../../../core/widgets/sonoritiz_page_title.dart';
 
 /// Vue réutilisable et multi-générationnelle de sélection d'artistes
@@ -406,16 +407,26 @@ class _SonoritizArtistPickerViewState extends State<SonoritizArtistPickerView>
 
               // Grille d'artistes animée
               Expanded(
-                child: GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(18, 6, 18, 108),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 0.78,
-                  ),
-                  itemCount: visibleArtists.length,
-                  itemBuilder: (context, idx) {
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final cols = ResponsiveUtils.adaptiveGridColumns(
+                      constraints.maxWidth,
+                      narrow: 2,
+                      mobile: 3,
+                      medium: 4,
+                      expanded: 5,
+                      ultraWide: 6,
+                    );
+                    return GridView.builder(
+                      padding: const EdgeInsets.fromLTRB(18, 6, 18, 108),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: cols,
+                        mainAxisSpacing: 16,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 0.78,
+                      ),
+                      itemCount: visibleArtists.length,
+                      itemBuilder: (context, idx) {
                     final item = visibleArtists[idx];
                     final name = (item['name'] ?? '').trim();
                     final imageUrl = _resolvedPictures[name.toLowerCase()] ??
@@ -501,6 +512,8 @@ class _SonoritizArtistPickerViewState extends State<SonoritizArtistPickerView>
                         ],
                       ),
                     );
+                  },
+                );
                   },
                 ),
               ),

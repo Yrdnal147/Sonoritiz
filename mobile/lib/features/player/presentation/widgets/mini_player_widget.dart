@@ -6,7 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:just_audio/just_audio.dart' show LoopMode;
 import '../../../../core/storage/storage_service.dart';
+import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_animations.dart';
 import '../../../../core/widgets/sonoritiz_artwork.dart';
@@ -18,6 +20,7 @@ import '../screens/fullscreen_player_screen.dart';
 import '../../data/models/track_model.dart';
 import 'player_components/immersive_player_widgets.dart';
 import 'player_components/player_favorite_button.dart';
+import 'queue_bottom_sheet.dart';
 
 class MiniPlayerWidget extends StatefulWidget {
   const MiniPlayerWidget({Key? key}) : super(key: key);
@@ -132,6 +135,13 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
             builder: (context, playerStyle, _) {
               final bool isVertical = playerStyle != 'default';
               final bool usesImmersiveMini = isVertical;
+              final bool isWideScreen = MediaQuery.sizeOf(context).width >= 720;
+
+              if (isWideScreen) {
+                return RepaintBoundary(
+                  child: _buildWidescreenPlayerBar(context, track),
+                );
+              }
 
               return RepaintBoundary(
                 child: GestureDetector(
@@ -700,6 +710,301 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  String _formatMmSs(Duration d) {
+    final total = d.inSeconds;
+    if (total <= 0) return '0:00';
+    final min = total ~/ 60;
+    final sec = (total % 60).toString().padLeft(2, '0');
+    return '$min:$sec';
+  }
+
+  /// Barre de lecture complète pour Tablette paysage, Galaxy Z Fold déplié large & PC (>= 720px).
+  Widget _buildWidescreenPlayerBar(BuildContext context, TrackModel track) {
+    final palette = _immersivePalette;
+    return Container(
+      key: const ValueKey('mini_player_widescreen'),
+      height: 82,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(
+          palette.deepColor.withValues(alpha: 0.55),
+          const Color(0xFF0E0E13),
+        ),
+        border: Border(
+          top: BorderSide(
+            color: Colors.white.withValues(alpha: 0.10),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          // 1. Gauche : Pochette + Titre/Artiste + Favori
+          ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 210, maxWidth: 310),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _openFullscreenPlayer(context),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SonoritizArtwork(
+                    imageUrl: track.coverUrl,
+                    width: 52,
+                    height: 52,
+                    borderRadius: 12,
+                    cacheMaxDimension: 180,
+                  ),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          track.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        ArtistNameDisplay(
+                          artistName: track.artistName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.70),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  PlayerFavoriteButton(
+                    track: track,
+                    size: 36,
+                    iconSize: 19,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(width: 20),
+
+          // 2. Centre : Transports complets + Barre de progression interactive
+          Expanded(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: BlocBuilder<PlayerCubit, PlayerState>(
+                  builder: (context, state) {
+                    final cubit = context.read<PlayerCubit>();
+                    final totalMs = state.duration.inMilliseconds;
+                    final posMs = state.position.inMilliseconds;
+                    final progress = totalMs > 0
+                        ? (posMs / totalMs).clamp(0.0, 1.0)
+                        : 0.0;
+
+                    return Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              tooltip: 'Aléatoire',
+                              icon: Icon(
+                                Icons.shuffle_rounded,
+                                size: 19,
+                                color: state.isShuffleModeEnabled
+                                    ? AppColors.primary
+                                    : Colors.white54,
+                              ),
+                              onPressed: cubit.toggleShuffle,
+                            ),
+                            const SizedBox(width: 6),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              tooltip: 'Précédent',
+                              icon: const Icon(
+                                Icons.skip_previous_rounded,
+                                size: 24,
+                                color: Colors.white,
+                              ),
+                              onPressed: cubit.playPrevious,
+                            ),
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: cubit.togglePlayPause,
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.white,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.35),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Center(
+                                  child: state.isBuffering
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2.2,
+                                            color: Colors.black,
+                                          ),
+                                        )
+                                      : Icon(
+                                          state.isPlaying
+                                              ? Icons.pause_rounded
+                                              : Icons.play_arrow_rounded,
+                                          color: Colors.black,
+                                          size: 24,
+                                        ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              tooltip: 'Suivant',
+                              icon: const Icon(
+                                Icons.skip_next_rounded,
+                                size: 24,
+                                color: Colors.white,
+                              ),
+                              onPressed: cubit.playNext,
+                            ),
+                            const SizedBox(width: 6),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              tooltip: 'Répéter',
+                              icon: Icon(
+                                state.loopMode == LoopMode.one
+                                    ? Icons.repeat_one_rounded
+                                    : Icons.repeat_rounded,
+                                size: 19,
+                                color: state.loopMode != LoopMode.off
+                                    ? AppColors.primary
+                                    : Colors.white54,
+                              ),
+                              onPressed: cubit.toggleRepeat,
+                            ),
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            Text(
+                              _formatMmSs(state.position),
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.58),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: SliderTheme(
+                                data: SliderTheme.of(context).copyWith(
+                                  trackHeight: 3.5,
+                                  thumbShape: const RoundSliderThumbShape(
+                                    enabledThumbRadius: 5.5,
+                                  ),
+                                  overlayShape: const RoundSliderOverlayShape(
+                                    overlayRadius: 11,
+                                  ),
+                                  activeTrackColor: AppColors.primary,
+                                  inactiveTrackColor:
+                                      Colors.white.withValues(alpha: 0.16),
+                                  thumbColor: Colors.white,
+                                ),
+                                child: Slider(
+                                  value: progress,
+                                  onChanged: totalMs > 0
+                                      ? (v) {
+                                          cubit.seek(Duration(
+                                            milliseconds: (v * totalMs).round(),
+                                          ));
+                                        }
+                                      : null,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              _formatMmSs(state.duration),
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.58),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(width: 20),
+
+          // 3. Droite : File d'attente & ouverture plein écran
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: "File d'attente",
+                icon: const Icon(
+                  Icons.queue_music_rounded,
+                  color: Colors.white70,
+                  size: 22,
+                ),
+                onPressed: () {
+                  showModalBottomSheet(
+                    context: context,
+                    backgroundColor: Colors.transparent,
+                    isScrollControlled: true,
+                    builder: (_) => BlocProvider.value(
+                      value: context.read<PlayerCubit>(),
+                      child: const QueueBottomSheet(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: 'Plein écran',
+                icon: const Icon(
+                  Icons.open_in_full_rounded,
+                  color: Colors.white70,
+                  size: 20,
+                ),
+                onPressed: () => _openFullscreenPlayer(context),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

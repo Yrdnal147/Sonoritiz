@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/responsive_utils.dart';
 import '../../../core/widgets/sonoritiz_artwork.dart';
 import '../../../core/widgets/sonoritiz_cover_atmosphere.dart';
 import '../../../core/widgets/sonoritiz_page_title.dart';
@@ -110,8 +111,15 @@ class FavoriteAlbumsScreen extends StatelessWidget {
                                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 130),
                                 sliver: SliverGrid(
                                   gridDelegate:
-                                      const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 2,
+                                      SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: ResponsiveUtils.adaptiveGridColumns(
+                                      MediaQuery.sizeOf(context).width,
+                                      narrow: 2,
+                                      mobile: 2,
+                                      medium: 3,
+                                      expanded: 4,
+                                      ultraWide: 5,
+                                    ),
                                     crossAxisSpacing: 14,
                                     mainAxisSpacing: 18,
                                     childAspectRatio: 0.72,

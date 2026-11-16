@@ -6,6 +6,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_dimensions.dart';
+import '../../../core/utils/responsive_utils.dart';
 import '../../../core/widgets/artist_name_display.dart';
 import '../../../core/widgets/sonoritiz_page_title.dart';
 import 'widgets/sonoritiz_moods_widget.dart';
@@ -568,13 +569,22 @@ class _SearchScreenState extends State<SearchScreen> {
       },
     ];
 
+    final int genreCols = ResponsiveUtils.adaptiveGridColumns(
+      MediaQuery.sizeOf(context).width,
+      narrow: 2,
+      mobile: 2,
+      medium: 3,
+      expanded: 4,
+      ultraWide: 5,
+    );
+
     if (_deezerGenres.isEmpty && _isLoadingGenres) {
       return GridView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        itemCount: 6,
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
+        itemCount: genreCols * 3,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: genreCols,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
           childAspectRatio: 1.55,
@@ -597,8 +607,8 @@ class _SearchScreenState extends State<SearchScreen> {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: genres.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: genreCols,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
         childAspectRatio: 1.55,

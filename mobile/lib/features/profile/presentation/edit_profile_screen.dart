@@ -140,11 +140,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           fontSize: 21,
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 48),
-        physics: const BouncingScrollPhysics(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 48),
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const SizedBox(height: 12),
 
@@ -357,6 +360,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
             ),
           ],
+        ),
+          ),
         ),
       ),
     );

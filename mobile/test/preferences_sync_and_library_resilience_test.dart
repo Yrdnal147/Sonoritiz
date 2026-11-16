@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show DisplayFeature, DisplayFeatureState, DisplayFeatureType;
 
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
@@ -10,6 +12,7 @@ import 'package:sonoritiz/core/constants/api_constants.dart';
 import 'package:sonoritiz/core/network/api_client.dart';
 import 'package:sonoritiz/core/services/favorite_artists_sync_service.dart';
 import 'package:sonoritiz/core/storage/storage_service.dart';
+import 'package:sonoritiz/core/utils/responsive_utils.dart';
 import 'package:sonoritiz/features/library/data/repositories/library_repository.dart';
 import 'package:sonoritiz/features/library/presentation/cubit/library_cubit.dart';
 import 'package:sonoritiz/features/library/presentation/cubit/library_state.dart';
@@ -372,6 +375,117 @@ void main() {
       expect(playlistCalls, 2);
       expect((cubit.state as LibraryLoaded).playlists.map((p) => p.name).toList(), ['Ma Playlist']);
       await cubit.close();
+    });
+  });
+
+  group('ResponsiveUtils, Galaxy Z Fold hinges & Desktop constraints', () {
+    test('adaptiveGridColumns and windowClassFromWidth scale across Z Fold cover, mobile, unfolded Fold/tablet, and PC', () {
+      expect(ResponsiveUtils.windowClassFromWidth(344), SonoritizWindowClass.compactNarrow);
+      expect(ResponsiveUtils.windowClassFromWidth(412), SonoritizWindowClass.compact);
+      expect(ResponsiveUtils.windowClassFromWidth(712), SonoritizWindowClass.medium);
+      expect(ResponsiveUtils.windowClassFromWidth(1366), SonoritizWindowClass.expanded);
+
+      expect(
+        ResponsiveUtils.adaptiveGridColumns(330, narrow: 2, mobile: 3, medium: 4, expanded: 5, ultraWide: 6),
+        2,
+      );
+      expect(
+        ResponsiveUtils.adaptiveGridColumns(412, narrow: 2, mobile: 3, medium: 4, expanded: 5, ultraWide: 6),
+        3,
+      );
+      expect(
+        ResponsiveUtils.adaptiveGridColumns(740, narrow: 2, mobile: 3, medium: 4, expanded: 5, ultraWide: 6),
+        4,
+      );
+      expect(
+        ResponsiveUtils.adaptiveGridColumns(1150, narrow: 2, mobile: 3, medium: 4, expanded: 5, ultraWide: 6),
+        5,
+      );
+      expect(
+        ResponsiveUtils.adaptiveGridColumns(1440, narrow: 2, mobile: 3, medium: 4, expanded: 5, ultraWide: 6),
+        6,
+      );
+    });
+
+    testWidgets('detects Galaxy Z Fold vertical book hinge and horizontal tabletop hinge, and constrains content width on PC', (tester) async {
+      Rect? detectedVerticalHinge;
+      Rect? detectedHorizontalHinge;
+      bool splitOnFold = false;
+
+      // 1) Unfolded Galaxy Z Fold with vertical hinge
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(
+            size: Size(748, 840),
+            displayFeatures: [
+              DisplayFeature(
+                bounds: Rect.fromLTWH(366, 0, 16, 840),
+                type: DisplayFeatureType.hinge,
+                state: DisplayFeatureState.postureFlat,
+              ),
+            ],
+          ),
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Builder(
+              builder: (context) {
+                detectedVerticalHinge = ResponsiveUtils.verticalHingeBounds(context);
+                splitOnFold = ResponsiveUtils.shouldUseSplitPlayer(context);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+      expect(detectedVerticalHinge, const Rect.fromLTWH(366, 0, 16, 840));
+      expect(splitOnFold, isTrue);
+
+      // 2) Half-opened Tabletop mode with horizontal hinge
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(
+            size: Size(748, 840),
+            displayFeatures: [
+              DisplayFeature(
+                bounds: Rect.fromLTWH(0, 412, 748, 16),
+                type: DisplayFeatureType.hinge,
+                state: DisplayFeatureState.postureHalfOpened,
+              ),
+            ],
+          ),
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Builder(
+              builder: (context) {
+                detectedHorizontalHinge = ResponsiveUtils.horizontalHingeBounds(context);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+      expect(detectedHorizontalHinge, const Rect.fromLTWH(0, 412, 748, 16));
+
+      // 3) ResponsiveContentConstraint caps width on a 1440px PC viewport
+      await tester.binding.setSurfaceSize(const Size(1440, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: ResponsiveContentConstraint(
+              maxWidth: 480,
+              child: SizedBox(
+                key: ValueKey('constrained_box_target'),
+                width: double.infinity,
+                height: 100,
+              ),
+            ),
+          ),
+        ),
+      );
+      final boxSize = tester.getSize(find.byKey(const ValueKey('constrained_box_target')));
+      expect(boxSize.width, 480.0);
     });
   });
 }

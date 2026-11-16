@@ -264,14 +264,17 @@ class _RegisterScreenState extends State<RegisterScreen>
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 14),
-          child: FadeTransition(
-            opacity: _fadeIn,
-            child: SlideTransition(
-              position: _slideUp,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 14),
+              child: FadeTransition(
+                opacity: _fadeIn,
+                child: SlideTransition(
+                  position: _slideUp,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Align(
                     alignment: Alignment.centerLeft,
@@ -529,6 +532,8 @@ class _RegisterScreenState extends State<RegisterScreen>
               ),
             ),
           ),
+        ),
+      ),
         ),
       ),
     );

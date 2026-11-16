@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/responsive_utils.dart';
 import '../../../core/storage/storage_service.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/widgets/sonoritiz_page_title.dart';
@@ -286,8 +287,15 @@ class _FollowedArtistsScreenState extends State<FollowedArtistsScreen> {
                         ? GridView.builder(
                             padding: const EdgeInsets.fromLTRB(20, 4, 20, 120),
                             physics: const BouncingScrollPhysics(),
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
+                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: ResponsiveUtils.adaptiveGridColumns(
+                                MediaQuery.sizeOf(context).width,
+                                narrow: 2,
+                                mobile: 2,
+                                medium: 3,
+                                expanded: 4,
+                                ultraWide: 5,
+                              ),
                               crossAxisSpacing: 14,
                               mainAxisSpacing: 14,
                               childAspectRatio: 0.82,

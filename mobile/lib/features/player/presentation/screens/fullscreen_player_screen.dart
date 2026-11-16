@@ -982,8 +982,42 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                             final TrackModel? nextTrack =
                                 context.read<PlayerCubit>().peekNextTrack;
 
+                            final Rect? horizontalHinge =
+                                ResponsiveUtils.horizontalHingeBounds(context);
+                            final Rect? verticalHinge =
+                                ResponsiveUtils.verticalHingeBounds(context);
+                            final bool useSplitPlayer =
+                                ResponsiveUtils.shouldUseSplitPlayer(context);
+
                             late final Widget activePlayerLayout;
-                            if (isVertical) {
+                            if (horizontalHinge != null) {
+                              activePlayerLayout = _buildTabletopFoldablePlayerLayout(
+                                context: context,
+                                state: state,
+                                track: track,
+                                isPlaying: isPlaying,
+                                duration: duration,
+                                screenWidth: screenWidth,
+                                statusBarHeight: statusBarHeight,
+                                sourceText: sourceText,
+                                sourceIcon: sourceIcon,
+                                hingeBounds: horizontalHinge,
+                              );
+                            } else if (useSplitPlayer) {
+                              activePlayerLayout = _buildWidescreenSplitPlayerLayout(
+                                context: context,
+                                state: state,
+                                track: track,
+                                isPlaying: isPlaying,
+                                duration: duration,
+                                screenHeight: screenHeight,
+                                screenWidth: screenWidth,
+                                statusBarHeight: statusBarHeight,
+                                sourceText: sourceText,
+                                sourceIcon: sourceIcon,
+                                verticalHinge: verticalHinge,
+                              );
+                            } else if (isVertical) {
                               activePlayerLayout = _buildVerticalPrismPlayerLayout(
                                 context: context,
                                 state: state,
@@ -1075,6 +1109,483 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
         ),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// ===========================================================================
+  /// LECTEUR GRAND ÉCRAN & PLIABLE LIVRE (Z Fold déplié, Tablette, PC >= 660dp)
+  /// Volet gauche : Pochette / Vidéo + Rail d'actions | Volet droit : Scène + Paroles + Contrôles + Similaires
+  /// ===========================================================================
+  Widget _buildWidescreenSplitPlayerLayout({
+    required BuildContext context,
+    required PlayerState state,
+    required TrackModel track,
+    required bool isPlaying,
+    required Duration duration,
+    required double screenHeight,
+    required double screenWidth,
+    required double statusBarHeight,
+    required String sourceText,
+    required IconData sourceIcon,
+    required Rect? verticalHinge,
+  }) {
+    final double leftPaneWidth = verticalHinge != null
+        ? verticalHinge.left.clamp(280.0, screenWidth * 0.55)
+        : (screenWidth * 0.46).clamp(310.0, 560.0);
+    final double hingeGap = verticalHinge != null
+        ? math.max(16.0, verticalHinge.width)
+        : 24.0;
+    final double artworkSide = math
+        .min(leftPaneWidth - 56.0, screenHeight - statusBarHeight - 130.0)
+        .clamp(220.0, 460.0);
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // VOLET GAUCHE : En-tête + Pochette/Vidéo + Rail d'actions
+            SizedBox(
+              width: leftPaneWidth,
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      ImmersiveGlassCircleButton(
+                        tooltip: 'Fermer',
+                        onTap: () => Navigator.pop(context),
+                        child: const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.34),
+                            borderRadius:
+                                BorderRadius.circular(AppDimensions.radiusPill),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.16),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                sourceIcon,
+                                size: 14,
+                                color: Colors.white.withValues(alpha: 0.92),
+                              ),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  sourceText,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      ImmersiveGlassCircleButton(
+                        tooltip: 'Options',
+                        onTap: () => _showMoreOptionsBottomSheet(context, track),
+                        child: const Icon(
+                          Icons.more_horiz_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Center(
+                          child: SizedBox(
+                            width: artworkSide,
+                            height: artworkSide,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(28),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _immersivePalette.dominantColor
+                                        .withValues(alpha: 0.45),
+                                    blurRadius: 36,
+                                    spreadRadius: 2,
+                                    offset: const Offset(0, 14),
+                                  ),
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(28),
+                                child: PageView.builder(
+                                  controller: _pageController,
+                                  physics: const BouncingScrollPhysics(),
+                                  onPageChanged: (index) {
+                                    if (_isProgrammaticPageChange) return;
+                                    context
+                                        .read<PlayerCubit>()
+                                        .skipToQueueItem(index);
+                                  },
+                                  itemCount: state.queue.length,
+                                  itemBuilder: (context, index) {
+                                    final qTrack = state.queue[index];
+                                    final isCurrent = index == state.currentIndex;
+                                    if (isCurrent &&
+                                        _isVideoMode &&
+                                        _videoController != null &&
+                                        _videoController!.value.isInitialized) {
+                                      return GestureDetector(
+                                        onDoubleTap: () {
+                                          setState(
+                                            () => _videoFitCover = !_videoFitCover,
+                                          );
+                                        },
+                                        child: ColoredBox(
+                                          color: Colors.black,
+                                          child: FittedBox(
+                                            fit: _videoFitCover
+                                                ? BoxFit.cover
+                                                : BoxFit.contain,
+                                            child: SizedBox(
+                                              width: _videoController!
+                                                          .value.size.width >
+                                                      0
+                                                  ? _videoController!
+                                                      .value.size.width
+                                                  : 1280,
+                                              height: _videoController!
+                                                          .value.size.height >
+                                                      0
+                                                  ? _videoController!
+                                                      .value.size.height
+                                                  : 720,
+                                              child:
+                                                  VideoPlayer(_videoController!),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    return GestureDetector(
+                                      onLongPressStart: (_) {
+                                        TrackDetailsContextModal.show(
+                                          context,
+                                          qTrack,
+                                          playbackSource: sourceText,
+                                        );
+                                      },
+                                      onDoubleTap: () {
+                                        if (isCurrent) {
+                                          _handleSuperlikeDoubleTap(qTrack);
+                                        }
+                                      },
+                                      child: SonoritizArtwork(
+                                        imageUrl: qTrack.coverUrl,
+                                        width: artworkSide,
+                                        height: artworkSide,
+                                        borderRadius: 0,
+                                        fit: BoxFit.cover,
+                                        cacheMaxDimension: 900,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 12,
+                          left: 12,
+                          child: BlocSelector<SuperlikeCubit, SuperlikeState, bool>(
+                            selector: (slState) => slState.isSuperliked(track.id),
+                            builder: (context, isSuper) {
+                              if (!isSuper) return const SizedBox.shrink();
+                              return const SuperlikeTorchBadge(
+                                size: TorchBadgeSize.medium,
+                                showBackground: true,
+                              );
+                            },
+                          ),
+                        ),
+                        Positioned(
+                          right: 0,
+                          child: SonoritizRightActionRail(
+                            currentTrack: track,
+                            palette: _immersivePalette,
+                            isVideoMode: _isVideoMode,
+                            isVideoLoading: _isVideoLoading,
+                            onToggleVideo: () =>
+                                _toggleVideoMode(_currentEffectivePosition()),
+                            onLyricsTapped: _openLyricsScreen,
+                            onQueueTapped: _openQueueSheet,
+                            onDownloadFeedback: () => _showDownloadSnackBar(track),
+                          ),
+                        ),
+                        IgnorePointer(
+                          child: SizedBox(
+                            width: artworkSide * 0.85,
+                            height: artworkSide * 0.85,
+                            child: SuperlikeBurstOverlay(key: _burstKey),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            SizedBox(width: hingeGap),
+
+            // VOLET DROIT : Scène Signature + Contrôles + Paroles + Titres similaires
+            Expanded(
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.only(top: 8, bottom: 32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    if (state.isFreeLyricsMode &&
+                        state.currentLyrics != null &&
+                        state.currentLyrics!.hasSynced)
+                      _buildLivePositionBuilder(
+                        builder: (context, livePos) {
+                          final line = _resolveSyncedLyricLine(state, livePos);
+                          if (line.isEmpty) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.60),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: _immersivePalette.accentColor
+                                      .withValues(alpha: 0.38),
+                                ),
+                              ),
+                              child: Text(
+                                line,
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    BlocSelector<SuperlikeCubit, SuperlikeState, bool>(
+                      selector: (slState) => slState.isSuperliked(track.id),
+                      builder: (context, isSuper) {
+                        return SonoritizCoverVibrationStage(
+                          track: track,
+                          isPlaying: isPlaying,
+                          isSuperliked: isSuper,
+                          palette: _immersivePalette,
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    BlocSelector<SuperlikeCubit, SuperlikeState, bool>(
+                      selector: (slState) => slState.isSuperliked(track.id),
+                      builder: (context, isSuper) {
+                        return _buildLivePositionBuilder(
+                          builder: (context, livePos) {
+                            return SonoritizCenteredScrubber(
+                              position: livePos,
+                              duration: duration,
+                              isSuperliked: isSuper,
+                              palette: _immersivePalette,
+                              onSeek: _seekTo,
+                            );
+                          },
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    SonoritizSignatureTransportRow(
+                      isPlaying: isPlaying,
+                      isBuffering: !_isVideoMode && state.isBuffering,
+                      isShuffleModeEnabled: state.isShuffleModeEnabled,
+                      loopMode: state.loopMode,
+                      palette: _immersivePalette,
+                      onPlayPause: _togglePlayPause,
+                      onPrevious: () => context.read<PlayerCubit>().playPrevious(),
+                      onNext: () => context.read<PlayerCubit>().playNext(),
+                      onShuffle: () => context.read<PlayerCubit>().toggleShuffle(),
+                      onRepeat: () => context.read<PlayerCubit>().toggleRepeat(),
+                    ),
+                    const SizedBox(height: 16),
+                    SonoritizTrackArtistsFrames(
+                      track: track,
+                      palette: _immersivePalette,
+                    ),
+                    const SizedBox(height: 20),
+                    _buildSimilarTracksSection(
+                      track,
+                      isSpecial: false,
+                      backgroundColor: Colors.transparent,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// ===========================================================================
+  /// MODE TABLETOP / FLEX (Galaxy Z Fold plié à 90° horizontalement)
+  /// Moitié haute (au-dessus du pli) : Vidéo / Pochette | Moitié basse : Contrôles
+  /// ===========================================================================
+  Widget _buildTabletopFoldablePlayerLayout({
+    required BuildContext context,
+    required PlayerState state,
+    required TrackModel track,
+    required bool isPlaying,
+    required Duration duration,
+    required double screenWidth,
+    required double statusBarHeight,
+    required String sourceText,
+    required IconData sourceIcon,
+    required Rect hingeBounds,
+  }) {
+    final double topPaneHeight =
+        (hingeBounds.top - statusBarHeight).clamp(180.0, 420.0);
+    final double hingeHeight = hingeBounds.height.clamp(8.0, 40.0);
+
+    return SafeArea(
+      child: Column(
+        children: [
+          SizedBox(
+            height: topPaneHeight,
+            width: screenWidth,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ImmersiveMeltingCoverMask(
+                  child: SonoritizArtwork(
+                    imageUrl: track.coverUrl,
+                    width: double.infinity,
+                    height: double.infinity,
+                    borderRadius: 0,
+                    fit: BoxFit.cover,
+                    cacheMaxDimension: 800,
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  left: 16,
+                  right: 16,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      ImmersiveGlassCircleButton(
+                        tooltip: 'Fermer',
+                        onTap: () => Navigator.pop(context),
+                        child: const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                      ImmersiveGlassCircleButton(
+                        tooltip: 'Options',
+                        onTap: () => _showMoreOptionsBottomSheet(context, track),
+                        child: const Icon(
+                          Icons.more_horiz_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: hingeHeight),
+          Expanded(
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Column(
+                children: [
+                  SonoritizCoverVibrationStage(
+                    track: track,
+                    isPlaying: isPlaying,
+                    isSuperliked:
+                        context.read<SuperlikeCubit>().isSuperliked(track.id),
+                    palette: _immersivePalette,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildLivePositionBuilder(
+                    builder: (context, livePos) {
+                      return SonoritizCenteredScrubber(
+                        position: livePos,
+                        duration: duration,
+                        isSuperliked: context
+                            .read<SuperlikeCubit>()
+                            .isSuperliked(track.id),
+                        palette: _immersivePalette,
+                        onSeek: _seekTo,
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  SonoritizSignatureTransportRow(
+                    isPlaying: isPlaying,
+                    isBuffering: !_isVideoMode && state.isBuffering,
+                    isShuffleModeEnabled: state.isShuffleModeEnabled,
+                    loopMode: state.loopMode,
+                    palette: _immersivePalette,
+                    onPlayPause: _togglePlayPause,
+                    onPrevious: () => context.read<PlayerCubit>().playPrevious(),
+                    onNext: () => context.read<PlayerCubit>().playNext(),
+                    onShuffle: () => context.read<PlayerCubit>().toggleShuffle(),
+                    onRepeat: () => context.read<PlayerCubit>().toggleRepeat(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

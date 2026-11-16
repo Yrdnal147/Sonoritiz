@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/theme/app_animations.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_dimensions.dart';
+import '../../../core/utils/responsive_utils.dart';
 import '../../../core/widgets/playlist_cover_mosaic.dart';
 import '../../../core/widgets/playlist_editor_sheet.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
@@ -326,22 +327,31 @@ class PlaylistsListScreen extends StatelessWidget {
                 }
 
                 final currentViewMode = uiState.getViewModeFor('playlists');
+                final double screenWidth = MediaQuery.sizeOf(context).width;
+                final int baseCols = ResponsiveUtils.adaptiveGridColumns(
+                  screenWidth,
+                  narrow: 2,
+                  mobile: 2,
+                  medium: 3,
+                  expanded: 4,
+                  ultraWide: 5,
+                );
 
                 int crossAxisCount;
                 double childAspectRatio;
                 switch (currentViewMode) {
                   case ViewMode.gridSmall:
-                    crossAxisCount = 3;
+                    crossAxisCount = screenWidth < 350 ? 2 : (baseCols + 1);
                     childAspectRatio = 0.66;
                     break;
                   case ViewMode.gridLarge:
                   case ViewMode.cards:
-                    crossAxisCount = 1;
+                    crossAxisCount = screenWidth >= 1024 ? 3 : (screenWidth >= 600 ? 2 : 1);
                     childAspectRatio = 2.2;
                     break;
                   case ViewMode.gridMedium:
                   default:
-                    crossAxisCount = 2;
+                    crossAxisCount = baseCols;
                     childAspectRatio = 0.74;
                 }
 

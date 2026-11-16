@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'dart:ui' show PlatformDispatcher;
+import 'dart:ui' show PlatformDispatcher, PointerDeviceKind;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -179,15 +180,91 @@ class _SonoritizAppState extends State<SonoritizApp> {
       ],
       child: _AppLifecycleAndWidgetBridge(
         router: _router,
-        child: MaterialApp.router(
-          title: AppStrings.appName,
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.darkTheme,
-          routeInformationProvider: _router.routeInformationProvider,
-          routeInformationParser: _router.routeInformationParser,
-          routerDelegate: _router.routerDelegate,
+        child: _DesktopKeyboardPlayerShortcuts(
+          child: MaterialApp.router(
+            title: AppStrings.appName,
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.darkTheme,
+            scrollBehavior: const _SonoritizScrollBehavior(),
+            routeInformationProvider: _router.routeInformationProvider,
+            routeInformationParser: _router.routeInformationParser,
+            routerDelegate: _router.routerDelegate,
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// Autorise le glisser-déposer des carrousels horizontaux et PageViews
+/// à la souris, au trackpad et au stylet (PC, Web, Tablettes, Samsung DeX).
+class _SonoritizScrollBehavior extends MaterialScrollBehavior {
+  const _SonoritizScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => const {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.invertedStylus,
+      };
+}
+
+/// Raccourcis clavier globaux sur PC / Tablette avec clavier physique
+/// (Espace : Play/Pause, Alt+Flèche Droite/Gauche : Suivant/Précédent),
+/// automatiquement désactivés lorsqu'un champ de texte a le focus.
+class _DesktopKeyboardPlayerShortcuts extends StatelessWidget {
+  final Widget child;
+
+  const _DesktopKeyboardPlayerShortcuts({required this.child});
+
+  bool _isTypingInTextField() {
+    final focus = FocusManager.instance.primaryFocus;
+    final ctx = focus?.context;
+    if (ctx == null) return false;
+    bool insideEditable = false;
+    if (ctx.widget is EditableText) return true;
+    ctx.visitAncestorElements((element) {
+      if (element.widget is EditableText) {
+        insideEditable = true;
+        return false;
+      }
+      return true;
+    });
+    return insideEditable;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      autofocus: false,
+      canRequestFocus: false,
+      onKeyEvent: (node, event) {
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        if (_isTypingInTextField()) return KeyEventResult.ignored;
+
+        final key = event.logicalKey;
+        if (key == LogicalKeyboardKey.space ||
+            key == LogicalKeyboardKey.mediaPlayPause) {
+          context.read<PlayerCubit>().togglePlayPause();
+          return KeyEventResult.handled;
+        }
+        if (key == LogicalKeyboardKey.mediaTrackNext ||
+            (HardwareKeyboard.instance.isAltPressed &&
+                key == LogicalKeyboardKey.arrowRight)) {
+          context.read<PlayerCubit>().playNext();
+          return KeyEventResult.handled;
+        }
+        if (key == LogicalKeyboardKey.mediaTrackPrevious ||
+            (HardwareKeyboard.instance.isAltPressed &&
+                key == LogicalKeyboardKey.arrowLeft)) {
+          context.read<PlayerCubit>().playPrevious();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: child,
     );
   }
 }

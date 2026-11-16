@@ -70,9 +70,9 @@ class _KaraokePartyScreenState extends State<KaraokePartyScreen>
     _resumeScrollTimer?.cancel();
     _scrollController.dispose();
     _pulseController.dispose();
-    // Restauration de l'affichage système standard et orientation portrait
+    // Restauration de l'affichage système standard et déverrouillage d'orientation
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    SystemChrome.setPreferredOrientations(const []);
     super.dispose();
   }
 
@@ -88,7 +88,12 @@ class _KaraokePartyScreenState extends State<KaraokePartyScreen>
         DeviceOrientation.landscapeRight,
       ]);
     } else {
-      SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+      final shortestSide = MediaQuery.sizeOf(context).shortestSide;
+      if (shortestSide >= 600) {
+        SystemChrome.setPreferredOrientations(const []);
+      } else {
+        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+      }
     }
   }
 

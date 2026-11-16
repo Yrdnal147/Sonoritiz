@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
+import '../../../core/utils/responsive_utils.dart';
 import '../../../../core/widgets/sonoritiz_dynamic_background.dart';
 import '../../../../core/widgets/sonoritiz_page_title.dart';
 import '../../home/data/repositories/catalog_repository.dart';
@@ -365,8 +366,15 @@ class _PodcastScreenState extends State<PodcastScreen> {
                                     ),
                                     sliver: SliverGrid(
                                       gridDelegate:
-                                          const SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount: 2,
+                                          SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: ResponsiveUtils.adaptiveGridColumns(
+                                          MediaQuery.sizeOf(context).width,
+                                          narrow: 2,
+                                          mobile: 2,
+                                          medium: 3,
+                                          expanded: 4,
+                                          ultraWide: 5,
+                                        ),
                                         childAspectRatio: 0.74,
                                         crossAxisSpacing: 14,
                                         mainAxisSpacing: 18,
