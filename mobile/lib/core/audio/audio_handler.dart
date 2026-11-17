@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:audio_service/audio_service.dart';
 import 'package:dio/dio.dart';
@@ -7,6 +8,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../../features/offline/data/repositories/offline_repository.dart';
+import '../constants/api_constants.dart';
 import '../storage/storage_service.dart';
 
 /// Lien de streaming résolu, avec sa date de résolution (les liens YouTube expirent).
@@ -443,17 +445,16 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
         return;
       }
 
-      // 3. Extraction directe (flux Muxed MP4 itag 18 sans blocage 403)
-      if (audioUrl.isEmpty && item.id.isNotEmpty) {
+      // 3. Extraction directe (flux Muxed MP4 itag 18 sans blocage 403 sur mobile, ou flux Web compatible CORS)
+      if (kIsWeb) {
+        audioUrl = await _resolveWebStreamUrl(
+          item,
+          rawExtraAudioUrl: rawExtraAudioUrl,
+        );
+      } else if (audioUrl.isEmpty && item.id.isNotEmpty) {
         audioUrl = await _resolveStreamUrl(item);
       }
       if (isStale()) return;
-
-      // Fallback Web : si le navigateur bloque l'extraction YouTube par CORS,
-      // utiliser l'extrait Deezer direct (`dzcdn.net` supporte la balise <audio> HTML5).
-      if (audioUrl.isEmpty && kIsWeb && rawExtraAudioUrl.startsWith('http')) {
-        audioUrl = rawExtraAudioUrl;
-      }
 
       if (audioUrl.isEmpty) {
         throw Exception("Impossible d'extraire le flux audio pour ${item.title}");
@@ -466,32 +467,45 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
               AudioSource.uri(Uri.parse(audioUrl)),
               initialPosition: resumePosition,
             )
-            .timeout(const Duration(seconds: 12));
+            .timeout(Duration(seconds: kIsWeb ? 7 : 12));
       } catch (directError) {
         if (isStale()) return;
-        if (kIsWeb) rethrow;
-        debugPrint('[playback] Direct ExoPlayer URI failed ($directError), using Dio local stream cache fallback...');
-        final tempDir = await getTemporaryDirectory();
-        final safeId = item.id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
-        final partFile = File('${tempDir.path}/stream_cache_$safeId.part');
-        final tempFile = File('${tempDir.path}/stream_cache_$safeId.mp4');
-        if (await partFile.exists()) {
-          try {
-            await partFile.delete();
-          } catch (_) {}
+        if (kIsWeb) {
+          final fallbackWebUrl = await _resolveWebItunesFallbackUrl(item);
+          if (fallbackWebUrl.isNotEmpty && fallbackWebUrl != audioUrl) {
+            await _player
+                .setAudioSource(
+                  AudioSource.uri(Uri.parse(fallbackWebUrl)),
+                  initialPosition: resumePosition,
+                )
+                .timeout(const Duration(seconds: 7));
+          } else {
+            rethrow;
+          }
+        } else {
+          debugPrint('[playback] Direct ExoPlayer URI failed ($directError), using Dio local stream cache fallback...');
+          final tempDir = await getTemporaryDirectory();
+          final safeId = item.id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+          final partFile = File('${tempDir.path}/stream_cache_$safeId.part');
+          final tempFile = File('${tempDir.path}/stream_cache_$safeId.mp4');
+          if (await partFile.exists()) {
+            try {
+              await partFile.delete();
+            } catch (_) {}
+          }
+          await _dio.download(audioUrl, partFile.path);
+          if (isStale()) return;
+          if (await tempFile.exists()) {
+            try {
+              await tempFile.delete();
+            } catch (_) {}
+          }
+          await partFile.rename(tempFile.path);
+          await _player.setAudioSource(
+            AudioSource.uri(Uri.file(tempFile.path)),
+            initialPosition: resumePosition,
+          );
         }
-        await _dio.download(audioUrl, partFile.path);
-        if (isStale()) return;
-        if (await tempFile.exists()) {
-          try {
-            await tempFile.delete();
-          } catch (_) {}
-        }
-        await partFile.rename(tempFile.path);
-        await _player.setAudioSource(
-          AudioSource.uri(Uri.file(tempFile.path)),
-          initialPosition: resumePosition,
-        );
       }
       if (isStale()) return;
 
@@ -516,10 +530,15 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Prépare à l'avance le lien du son suivant dans la file.
   Future<void> prefetch(MediaItem item) async {
     try {
-      if ((item.extras?['audio_url'] ?? '').toString().startsWith('file://')) return;
+      final rawUrl = (item.extras?['audio_url'] ?? '').toString();
+      if (rawUrl.startsWith('file://')) return;
       if (item.id.isEmpty || item.id.startsWith('local_')) return;
       if (offlineRepository?.getOfflineTrack(item.id) != null) return;
-      await _resolveStreamUrl(item);
+      if (kIsWeb) {
+        await _resolveWebStreamUrl(item, rawExtraAudioUrl: rawUrl);
+      } else {
+        await _resolveStreamUrl(item);
+      }
     } catch (_) {}
   }
 
@@ -620,38 +639,131 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
     return '';
   }
 
+  /// Vérifie si une URL de flux signée (`exp=...`) est encore valide.
+  bool _isSignedStreamUrlFresh(String url) {
+    final trimmed = url.trim();
+    if (!trimmed.startsWith('http')) return false;
+    final expMatch = RegExp(r'exp=(\d{9,12})').firstMatch(trimmed);
+    if (expMatch == null) return true;
+    final expSeconds = int.tryParse(expMatch.group(1) ?? '');
+    if (expSeconds == null) return true;
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    return expSeconds > (nowSeconds + 45);
+  }
+
+  /// Résolution audio spécifique au navigateur Web (Chrome / Edge) :
+  /// évite `YoutubeExplode` (bloqué par CORS sur `www.youtube.com`) et fournit
+  /// un flux audio direct compatible HTML5 `<audio>` en moins de 500 ms.
+  Future<String> _resolveWebStreamUrl(
+    MediaItem item, {
+    String? rawExtraAudioUrl,
+  }) async {
+    final cached = _streamUrlCache[item.id];
+    if (cached != null &&
+        DateTime.now().difference(cached.resolvedAt) < const Duration(minutes: 4) &&
+        _isSignedStreamUrlFresh(cached.url)) {
+      return cached.url;
+    }
+
+    final candidateExtra = (rawExtraAudioUrl ?? '').trim();
+    if (candidateExtra.isNotEmpty && _isSignedStreamUrlFresh(candidateExtra)) {
+      _streamUrlCache[item.id] = _CachedStreamUrl(candidateExtra);
+      return candidateExtra;
+    }
+
+    // 1. Si c'est un titre Deezer dont le jeton `exp=` a expiré en cache, rafraîchir via proxy
+    if (item.id.startsWith('deezer_') &&
+        !item.id.startsWith('deezer_book_') &&
+        !item.id.startsWith('deezer_pod_')) {
+      final dzId = item.id.replaceFirst('deezer_', '').trim();
+      final targetUrl = 'https://api.deezer.com/track/$dzId';
+      for (final proxyUrl in [
+        '${ApiConstants.baseUrl}/api/tracks/deezer-proxy/?url=${Uri.encodeComponent(targetUrl)}',
+        'https://api.codetabs.com/v1/proxy?quest=${Uri.encodeComponent(targetUrl)}',
+      ]) {
+        try {
+          final res = await _dio
+              .get(proxyUrl)
+              .timeout(const Duration(seconds: 4));
+          dynamic data = res.data;
+          if (data is String && data.isNotEmpty) {
+            data = jsonDecode(data);
+          }
+          if (data is Map) {
+            final freshPreview = (data['preview'] ?? '').toString().trim();
+            if (freshPreview.startsWith('http')) {
+              _streamUrlCache[item.id] = _CachedStreamUrl(freshPreview);
+              return freshPreview;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 2. Fallback universel CORS-natif (Apple iTunes AAC 256 kbps : `Access-Control-Allow-Origin: *`)
+    final itunesUrl = await _resolveWebItunesFallbackUrl(item);
+    if (itunesUrl.isNotEmpty) {
+      _streamUrlCache[item.id] = _CachedStreamUrl(itunesUrl);
+      return itunesUrl;
+    }
+
+    return candidateExtra;
+  }
+
+  Future<String> _resolveWebItunesFallbackUrl(MediaItem item) async {
+    try {
+      final cleanTitle = item.title
+          .replaceAll(
+            RegExp(r'\s*[\(\[][^\)\]]*(?:feat|ft|officiel|clip|video)[^\)\]]*[\)\]]',
+                caseSensitive: false),
+            '',
+          )
+          .trim();
+      final cleanArtist = (item.artist ?? '')
+          .split(RegExp(r',|&|feat\.|ft\.', caseSensitive: false))
+          .first
+          .trim();
+      final term = '$cleanArtist $cleanTitle'.trim();
+      if (term.isEmpty) return '';
+
+      final res = await _dio
+          .get(
+            'https://itunes.apple.com/search?term=${Uri.encodeComponent(term)}&media=music&entity=song&limit=3',
+          )
+          .timeout(const Duration(seconds: 5));
+      dynamic data = res.data;
+      if (data is String && data.isNotEmpty) {
+        data = jsonDecode(data);
+      }
+      if (data is Map && data['results'] is List) {
+        for (final entry in (data['results'] as List)) {
+          if (entry is Map) {
+            final preview = (entry['previewUrl'] ?? '').toString().trim();
+            if (preview.startsWith('http')) {
+              return preview;
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return '';
+  }
+
   /// Sélectionne le flux optimal selon le réglage de qualité/compression de l'utilisateur :
   /// - `economie` (~48-70 kbps) : flux audioOnly bas débit (Opus 249/250 ou AAC 139) -> ~5x moins de données
-  /// - `normale` (~128 kbps)    : flux audioOnly moyen débit (AAC 140 ou Opus ~128 kbps)
-  /// - `haute` / `hifi`         : flux audioOnly le plus haut débit disponible (Opus 251 ~160 kbps / AAC HQ)
-  /// Avec repli sur le flux progressif `itag 18` pour une compatibilité maximale.
+  /// - `normale` / `haute` / `hifi` : flux progressif `itag 18` prioritaire en streaming direct
+  ///   (évite le throttling/403 DASH YouTube sur ExoPlayer), avec repli sur `audioOnly` haut débit.
   String _selectStreamUrlFromManifest(StreamManifest manifest) {
     String quality = 'haute';
     try {
       quality = StorageService().streamingQuality;
     } catch (_) {}
 
-    if (manifest.audioOnly.isNotEmpty) {
+    if (quality == 'economie' && manifest.audioOnly.isNotEmpty) {
       final sortedAudio = manifest.audioOnly.toList()
         ..sort((a, b) =>
             a.bitrate.bitsPerSecond.compareTo(b.bitrate.bitsPerSecond));
-
-      if (quality == 'economie') {
-        return sortedAudio.first.url.toString();
-      }
-
-      if (quality == 'normale') {
-        final itag140 =
-            sortedAudio.where((s) => s.tag == 140).firstOrNull;
-        if (itag140 != null) return itag140.url.toString();
-        final medium = sortedAudio
-            .where((s) => s.bitrate.bitsPerSecond <= 140000)
-            .lastOrNull;
-        return (medium ?? sortedAudio.first).url.toString();
-      }
-
-      // 'haute' ou 'hifi' : meilleur débit audio pur disponible (sans piste vidéo inutile)
-      return sortedAudio.last.url.toString();
+      return sortedAudio.first.url.toString();
     }
 
     if (manifest.muxed.isNotEmpty) {
@@ -664,6 +776,18 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
       } catch (_) {
         return manifest.muxed.first.url.toString();
       }
+    }
+
+    if (manifest.audioOnly.isNotEmpty) {
+      final sortedAudio = manifest.audioOnly.toList()
+        ..sort((a, b) =>
+            a.bitrate.bitsPerSecond.compareTo(b.bitrate.bitsPerSecond));
+      if (quality == 'normale') {
+        final itag140 =
+            sortedAudio.where((s) => s.tag == 140).firstOrNull;
+        if (itag140 != null) return itag140.url.toString();
+      }
+      return sortedAudio.last.url.toString();
     }
 
     return '';

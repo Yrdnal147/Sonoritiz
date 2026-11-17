@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:palette_generator/palette_generator.dart';
 import '../../features/player/presentation/widgets/player_components/immersive_player_widgets.dart';
@@ -24,6 +25,29 @@ class PaletteService {
     final cached = _cache[trimmed];
     if (cached != null) {
       return cached;
+    }
+
+    // Sur navigateur Web (kIsWeb), la lecture directe des pixels d'une image externe
+    // déclenche un re-téléchargement CORS XHR par pochette et sature les connexions.
+    // On génère instantanément une palette harmonieuse déterministe (0 ms).
+    if (kIsWeb) {
+      final int hash = trimmed.codeUnits.fold<int>(0, (acc, c) => (acc * 31 + c) & 0x7fffffff);
+      final double hue = (hash % 360).toDouble();
+      final dominant = HSLColor.fromAHSL(1.0, hue, 0.62, 0.36).toColor();
+      final vibrant = HSLColor.fromAHSL(1.0, (hue + 18) % 360, 0.78, 0.52).toColor();
+      final muted = HSLColor.fromAHSL(1.0, hue, 0.38, 0.28).toColor();
+      final darkMuted = HSLColor.fromAHSL(1.0, hue, 0.42, 0.14).toColor();
+      final webPalette = ImmersivePalette.fromExtracted(
+        dominant: dominant,
+        vibrant: vibrant,
+        muted: muted,
+        darkMuted: darkMuted,
+      );
+      if (_cache.length >= 120) {
+        _cache.remove(_cache.keys.first);
+      }
+      _cache[trimmed] = webPalette;
+      return webPalette;
     }
 
     try {

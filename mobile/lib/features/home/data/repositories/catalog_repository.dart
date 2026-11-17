@@ -1,13 +1,24 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart' show Color;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:dio/dio.dart' as dio_pkg;
+import '../../../../core/constants/api_constants.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/storage/json_cache.dart';
 import '../../../../core/storage/storage_service.dart';
 import '../../../player/data/models/track_model.dart';
 import '../../domain/recommendation_engine.dart';
 
+class _CachedWebResponse {
+  final dynamic data;
+  final DateTime expiresAt;
+  const _CachedWebResponse(this.data, this.expiresAt);
+}
+
 class CatalogRepository {
+  static final Map<String, _CachedWebResponse> _webProxyCache = {};
+
   final ApiClient apiClient;
   final YoutubeExplode yt = YoutubeExplode();
   final dio_pkg.Dio _externalDio = dio_pkg.Dio(
@@ -19,7 +30,102 @@ class CatalogRepository {
   );
 
   CatalogRepository({ApiClient? apiClient})
-      : apiClient = apiClient ?? ApiClient(storageService: StorageService());
+      : apiClient = apiClient ?? ApiClient(storageService: StorageService()) {
+    if (kIsWeb) {
+      _installWebCorsProxyInterceptor();
+    }
+  }
+
+  void _installWebCorsProxyInterceptor() {
+    _externalDio.interceptors.add(
+      dio_pkg.InterceptorsWrapper(
+        onRequest: (options, handler) {
+          final rawUrl = options.uri.toString();
+          if (rawUrl.startsWith('https://api.deezer.com/') ||
+              rawUrl.startsWith('https://itunes.apple.com/')) {
+            final cached = _webProxyCache[rawUrl];
+            if (cached != null && DateTime.now().isBefore(cached.expiresAt)) {
+              return handler.resolve(
+                dio_pkg.Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: cached.data,
+                ),
+              );
+            }
+            options.extra['__original_external_url__'] = rawUrl;
+            final proxyUrl =
+                '${ApiConstants.baseUrl}/api/tracks/deezer-proxy/?url=${Uri.encodeComponent(rawUrl)}';
+            options.path = proxyUrl;
+            options.queryParameters = const {};
+          }
+          handler.next(options);
+        },
+        onResponse: (response, handler) {
+          final originalUrl =
+              response.requestOptions.extra['__original_external_url__'] as String?;
+          if (originalUrl != null && response.statusCode == 200) {
+            dynamic payload = response.data;
+            if (payload is String && payload.isNotEmpty) {
+              try {
+                payload = jsonDecode(payload);
+                response.data = payload;
+              } catch (_) {}
+            }
+            final ttl = originalUrl.contains('/track/')
+                ? const Duration(minutes: 4)
+                : const Duration(minutes: 10);
+            if (_webProxyCache.length > 200) {
+              _webProxyCache.remove(_webProxyCache.keys.first);
+            }
+            _webProxyCache[originalUrl] =
+                _CachedWebResponse(payload, DateTime.now().add(ttl));
+          }
+          handler.next(response);
+        },
+        onError: (err, handler) async {
+          final originalUrl =
+              err.requestOptions.extra['__original_external_url__'] as String?;
+          final alreadyRetried =
+              err.requestOptions.extra['__retried_fallback_proxy__'] == true;
+          if (originalUrl != null && !alreadyRetried) {
+            try {
+              final fallbackDio = dio_pkg.Dio(
+                dio_pkg.BaseOptions(
+                  connectTimeout: const Duration(seconds: 7),
+                  receiveTimeout: const Duration(seconds: 9),
+                ),
+              );
+              final fallbackRes = await fallbackDio.get(
+                'https://api.codetabs.com/v1/proxy?quest=${Uri.encodeComponent(originalUrl)}',
+              );
+              if (fallbackRes.statusCode == 200 && fallbackRes.data != null) {
+                dynamic payload = fallbackRes.data;
+                if (payload is String && payload.isNotEmpty) {
+                  try {
+                    payload = jsonDecode(payload);
+                  } catch (_) {}
+                }
+                final ttl = originalUrl.contains('/track/')
+                    ? const Duration(minutes: 4)
+                    : const Duration(minutes: 10);
+                _webProxyCache[originalUrl] =
+                    _CachedWebResponse(payload, DateTime.now().add(ttl));
+                return handler.resolve(
+                  dio_pkg.Response(
+                    requestOptions: err.requestOptions,
+                    statusCode: 200,
+                    data: payload,
+                  ),
+                );
+              }
+            } catch (_) {}
+          }
+          handler.next(err);
+        },
+      ),
+    );
+  }
 
   /// Extrait le nom complet de l'artiste principal + les artistes en featuring
   /// depuis le champ `contributors` de Deezer ou depuis le titre `(feat. ...)`.
@@ -1014,8 +1120,8 @@ class CatalogRepository {
         }
       }
 
-      // 3. Recherche directe YouTube en parallèle lorsqu'une requête est saisie (podcasts & livres audio complets)
-      if (cleanQuery.isNotEmpty && offset == 0) {
+      // 3. Recherche directe YouTube en parallèle lorsqu'une requête est saisie (hors navigateur Web où CORS bloque YouTube)
+      if (!kIsWeb && cleanQuery.isNotEmpty && offset == 0) {
         final String ytQuery = type == 'audiobook'
             ? '$cleanQuery livre audio complet français'
             : (type == 'podcast'
@@ -1056,8 +1162,8 @@ class CatalogRepository {
       print('getPodcasts API error: $e');
     }
 
-    // Fallback YouTube uniquement sur la première page si aucun résultat catalogue
-    if (offset > 0) return [];
+    // Fallback YouTube uniquement sur la première page si aucun résultat catalogue (hors Web)
+    if (kIsWeb || offset > 0) return [];
     try {
       final searchQuery = query.isEmpty ? 'podcast complet français officiel' : '$query podcast livre audio complet';
       final searchResults = await yt.search

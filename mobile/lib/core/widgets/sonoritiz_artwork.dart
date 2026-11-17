@@ -99,25 +99,48 @@ class SonoritizArtwork extends StatelessWidget {
         imageWidget = errorWidget;
       }
     } else if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
-      imageWidget = CachedNetworkImage(
-        imageUrl: trimmedUrl,
-        width: width,
-        height: height,
-        memCacheWidth: effectiveCacheWidth,
-        memCacheHeight: effectiveCacheHeight,
-        fit: fit,
-        alignment: alignment,
-        placeholder: (context, url) => Shimmer.fromColors(
-          baseColor: colorScheme.surfaceContainerHighest,
-          highlightColor: colorScheme.surface,
-          child: Container(
-            width: width,
-            height: height,
-            color: colorScheme.surfaceContainerHighest,
+      if (kIsWeb) {
+        final String webUrl = (finiteRef <= 280 && trimmedUrl.contains('/1000x1000-'))
+            ? trimmedUrl.replaceFirst('/1000x1000-', '/500x500-')
+            : trimmedUrl;
+        imageWidget = Image.network(
+          webUrl,
+          width: width,
+          height: height,
+          fit: fit,
+          alignment: alignment,
+          webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              width: width,
+              height: height,
+              color: colorScheme.surfaceContainerHighest,
+            );
+          },
+          errorBuilder: (_, __, ___) => errorWidget,
+        );
+      } else {
+        imageWidget = CachedNetworkImage(
+          imageUrl: trimmedUrl,
+          width: width,
+          height: height,
+          memCacheWidth: effectiveCacheWidth,
+          memCacheHeight: effectiveCacheHeight,
+          fit: fit,
+          alignment: alignment,
+          placeholder: (context, url) => Shimmer.fromColors(
+            baseColor: colorScheme.surfaceContainerHighest,
+            highlightColor: colorScheme.surface,
+            child: Container(
+              width: width,
+              height: height,
+              color: colorScheme.surfaceContainerHighest,
+            ),
           ),
-        ),
-        errorWidget: (context, url, error) => errorWidget,
-      );
+          errorWidget: (context, url, error) => errorWidget,
+        );
+      }
     } else {
       imageWidget = errorWidget;
     }

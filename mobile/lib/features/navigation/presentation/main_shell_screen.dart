@@ -27,6 +27,7 @@ class MainShellScreen extends StatefulWidget {
 
 class _MainShellScreenState extends State<MainShellScreen> {
   int _lastKnownTab = 0;
+  String? _lastRecordedHistoryTrackId;
 
   int _calculateSelectedIndex(BuildContext context) {
     final String location = GoRouterState.of(context).uri.path;
@@ -107,10 +108,16 @@ class _MainShellScreenState extends State<MainShellScreen> {
           return true;
         }
         if (current.currentTrack == null) return false;
-        if (previous.currentTrack?.id != current.currentTrack?.id) return true;
+        // Enregistrer dans l'historique uniquement quand la lecture a réellement démarré
+        if (current.isPlaying &&
+            !current.isBuffering &&
+            _lastRecordedHistoryTrackId != current.currentTrack?.id) {
+          return true;
+        }
         if (previous.position > const Duration(seconds: 5) &&
             current.position < const Duration(seconds: 1) &&
-            current.isPlaying) {
+            current.isPlaying &&
+            !current.isBuffering) {
           return true;
         }
         return false;
@@ -122,7 +129,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
           );
           return;
         }
-        if (state.currentTrack != null) {
+        if (state.currentTrack != null && state.isPlaying && !state.isBuffering) {
+          _lastRecordedHistoryTrackId = state.currentTrack!.id;
           context
               .read<LibraryCubit>()
               .addHistoryRecordLocal(state.currentTrack!);
@@ -384,15 +392,21 @@ class _MainShellScreenState extends State<MainShellScreen> {
             ),
           ),
           Expanded(
-            child: Column(
+            child: Stack(
               children: [
-                Expanded(
+                Positioned.fill(
                   child: ResponsiveContentConstraint(
                     maxWidth: AppBreakpoints.maxContentWidth,
                     child: widget.child,
                   ),
                 ),
-                if (!hideMiniPlayer) const MiniPlayerWidget(),
+                if (!hideMiniPlayer)
+                  Positioned(
+                    top: MediaQuery.paddingOf(context).top + kToolbarHeight + 6,
+                    right: 16,
+                    width: 400,
+                    child: const MiniPlayerWidget(),
+                  ),
               ],
             ),
           ),
@@ -567,15 +581,21 @@ class _MainShellScreenState extends State<MainShellScreen> {
             ),
           ),
           Expanded(
-            child: Column(
+            child: Stack(
               children: [
-                Expanded(
+                Positioned.fill(
                   child: ResponsiveContentConstraint(
                     maxWidth: AppBreakpoints.maxContentWidth,
                     child: widget.child,
                   ),
                 ),
-                if (!hideMiniPlayer) const MiniPlayerWidget(),
+                if (!hideMiniPlayer)
+                  Positioned(
+                    top: MediaQuery.paddingOf(context).top + kToolbarHeight + 6,
+                    right: 16,
+                    width: 400,
+                    child: const MiniPlayerWidget(),
+                  ),
               ],
             ),
           ),

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -488,10 +489,10 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
             child: CircleAvatar(
               radius: 16,
               backgroundColor: colorScheme.primaryContainer,
-              backgroundImage: profileImagePath != null && File(profileImagePath).existsSync()
+              backgroundImage: !kIsWeb && profileImagePath != null && File(profileImagePath).existsSync()
                   ? FileImage(File(profileImagePath))
                   : null,
-              child: profileImagePath == null || !File(profileImagePath).existsSync()
+              child: kIsWeb || profileImagePath == null || !File(profileImagePath).existsSync()
                   ? Text(
                       username.isNotEmpty ? username[0].toUpperCase() : 'U',
                       style: TextStyle(color: colorScheme.onPrimaryContainer, fontSize: 14, fontWeight: FontWeight.bold),
@@ -1540,6 +1541,16 @@ class _WeeklyCuratedCardState extends State<_WeeklyCuratedCard> {
         child: const Center(
           child: Icon(Icons.music_note_rounded, color: Colors.white54, size: 28),
         ),
+      );
+    }
+    if (kIsWeb) {
+      return SonoritizArtwork(
+        imageUrl: url,
+        width: double.infinity,
+        height: double.infinity,
+        borderRadius: 0,
+        fit: BoxFit.cover,
+        cacheMaxDimension: 268,
       );
     }
     return CachedNetworkImage(

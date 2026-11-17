@@ -1,3 +1,7 @@
+import hashlib
+import json
+import urllib.parse
+import urllib.request
 from rest_framework import status, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -180,3 +184,60 @@ class GenresView(APIView):
         # Cache genres for 24 hours
         cache.set(cache_key, serializer.data, 86400)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class DeezerProxyView(APIView):
+    """
+    CORS-safe server-side proxy for Deezer and iTunes public catalog endpoints
+    used by the Flutter Web client.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    ALLOWED_PREFIXES = (
+        'https://api.deezer.com/',
+        'https://itunes.apple.com/',
+    )
+
+    def get(self, request):
+        target_url = (request.query_params.get('url') or '').strip()
+        if not target_url or not any(target_url.startswith(p) for p in self.ALLOWED_PREFIXES):
+            return Response(
+                {'error': {'code': 'INVALID_PROXY_URL', 'message': 'URL cible non autorisée.'}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        parsed = urllib.parse.urlsplit(target_url)
+        if parsed.scheme != 'https' or parsed.netloc not in ('api.deezer.com', 'itunes.apple.com'):
+            return Response(
+                {'error': {'code': 'INVALID_PROXY_HOST', 'message': 'Hôte cible non autorisé.'}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        digest = hashlib.sha256(target_url.encode('utf-8')).hexdigest()
+        cache_key = f'deezer_proxy_{digest}'
+        cached_payload = cache.get(cache_key)
+        if cached_payload is not None:
+            return Response(cached_payload, status=status.HTTP_200_OK)
+
+        try:
+            req = urllib.request.Request(
+                target_url,
+                headers={
+                    'Accept': 'application/json',
+                    'User-Agent': 'Sonoritiz/1.0 (+https://sonoritiz.vercel.app)',
+                },
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                raw = resp.read().decode('utf-8')
+                data = json.loads(raw)
+        except Exception as exc:
+            return Response(
+                {'error': {'code': 'UPSTREAM_ERROR', 'message': str(exc)}},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        # Les endpoints /track/ contiennent un jeton preview signé (15 min) : TTL court (4 min)
+        ttl = 240 if '/track/' in parsed.path else 900
+        cache.set(cache_key, data, ttl)
+        return Response(data, status=status.HTTP_200_OK)
+

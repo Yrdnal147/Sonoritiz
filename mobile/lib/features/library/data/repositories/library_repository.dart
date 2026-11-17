@@ -178,10 +178,32 @@ class FavoriteAlbumModel {
 class LibraryRepository {
   final ApiClient apiClient;
 
+  Future<List<TrackModel>>? _favoritesInFlight;
+  List<TrackModel>? _recentFavoritesCache;
+  DateTime? _recentFavoritesAt;
+
+  Future<List<PlaylistModel>>? _playlistsInFlight;
+  Future<List<HistoryModel>>? _historyInFlight;
+
   LibraryRepository({required this.apiClient});
 
   // Favorites (paginé pour préserver l'intégralité des titres lors des reconnexions)
-  Future<List<TrackModel>> getFavorites() async {
+  Future<List<TrackModel>> getFavorites() {
+    final inflight = _favoritesInFlight;
+    if (inflight != null) return inflight;
+
+    final future = _fetchFavorites().then((tracks) {
+      _recentFavoritesCache = tracks;
+      _recentFavoritesAt = DateTime.now();
+      return tracks;
+    }).whenComplete(() {
+      _favoritesInFlight = null;
+    });
+    _favoritesInFlight = future;
+    return future;
+  }
+
+  Future<List<TrackModel>> _fetchFavorites() async {
     final List<TrackModel> allTracks = [];
     final Set<String> seenIds = {};
     int offset = 0;
@@ -233,6 +255,13 @@ class LibraryRepository {
 
   Future<bool> isFavorite(String trackId) async {
     try {
+      final cached = _recentFavoritesCache;
+      final cachedAt = _recentFavoritesAt;
+      if (cached != null &&
+          cachedAt != null &&
+          DateTime.now().difference(cachedAt) < const Duration(seconds: 15)) {
+        return cached.any((t) => t.id == trackId);
+      }
       final favs = await getFavorites();
       return favs.any((t) => t.id == trackId);
     } catch (e) {
@@ -241,6 +270,8 @@ class LibraryRepository {
   }
 
   Future<void> addFavorite(TrackModel track) async {
+    _recentFavoritesCache = null;
+    _recentFavoritesAt = null;
     await apiClient.post(ApiConstants.favorites, data: {
       'youtube_id': track.id,
       'title': track.title,
@@ -252,6 +283,8 @@ class LibraryRepository {
   }
 
   Future<void> removeFavorite(String trackId) async {
+    _recentFavoritesCache = null;
+    _recentFavoritesAt = null;
     await apiClient.delete('${ApiConstants.favorites}$trackId/');
   }
 
@@ -269,7 +302,18 @@ class LibraryRepository {
     return serverValue;
   }
 
-  Future<List<PlaylistModel>> getPlaylists() async {
+  Future<List<PlaylistModel>> getPlaylists() {
+    final inflight = _playlistsInFlight;
+    if (inflight != null) return inflight;
+
+    final future = _fetchPlaylists().whenComplete(() {
+      _playlistsInFlight = null;
+    });
+    _playlistsInFlight = future;
+    return future;
+  }
+
+  Future<List<PlaylistModel>> _fetchPlaylists() async {
     final List<PlaylistModel> allPlaylists = [];
     int offset = 0;
     const int limit = 50;
@@ -349,7 +393,18 @@ class LibraryRepository {
   }
 
   // History
-  Future<List<HistoryModel>> getHistory() async {
+  Future<List<HistoryModel>> getHistory() {
+    final inflight = _historyInFlight;
+    if (inflight != null) return inflight;
+
+    final future = _fetchHistory().whenComplete(() {
+      _historyInFlight = null;
+    });
+    _historyInFlight = future;
+    return future;
+  }
+
+  Future<List<HistoryModel>> _fetchHistory() async {
     final List<HistoryModel> allHistory = [];
     int offset = 0;
     const int limit = 50;
