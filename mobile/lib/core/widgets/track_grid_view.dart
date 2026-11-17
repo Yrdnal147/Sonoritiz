@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../features/player/data/models/track_model.dart';
@@ -53,7 +54,8 @@ class TrackGridView extends StatelessWidget {
           (context, index) {
             final track = sortedTracks[index];
             final localPath = localCoverPaths?[track.id];
-            final cover = (localPath != null &&
+            final cover = (!kIsWeb &&
+                    localPath != null &&
                     localPath.isNotEmpty &&
                     File(localPath).existsSync())
                 ? "file://$localPath"
@@ -214,7 +216,8 @@ class TrackGridView extends StatelessWidget {
     ViewMode mode,
   ) {
     final localPath = localCoverPaths?[track.id];
-    final cover = (localPath != null &&
+    final cover = (!kIsWeb &&
+            localPath != null &&
             localPath.isNotEmpty &&
             File(localPath).existsSync())
         ? "file://$localPath"

@@ -24,12 +24,19 @@ class SuperlikeCubit extends Cubit<SuperlikeState> {
     emit(const SuperlikeState());
   }
 
+  static bool _isValidSuperlikeId(String rawId) {
+    final clean = rawId.trim();
+    if (clean.isEmpty) return false;
+    const invalid = {'0', 'null', 'undefined', 'deezer_', 'deezer_0', 'deezer_null'};
+    return !invalid.contains(clean.toLowerCase());
+  }
+
   void loadSuperlikes() {
     try {
       final rawList = _storageService.getSuperlikesRaw();
       final tracks = rawList
           .map((json) => TrackModel.fromJson(json))
-          .where((t) => t.id.trim().isNotEmpty)
+          .where((t) => _isValidSuperlikeId(t.id))
           .toList();
       final ids = tracks.map((t) => t.id.trim()).toSet();
       emit(state.copyWith(
@@ -44,13 +51,13 @@ class SuperlikeCubit extends Cubit<SuperlikeState> {
 
   bool isSuperliked(String trackId) {
     final clean = trackId.trim();
-    if (clean.isEmpty) return false;
+    if (!_isValidSuperlikeId(clean)) return false;
     return state.superlikedIds.contains(clean);
   }
 
   Future<bool> addSuperlike(TrackModel track) async {
     final cleanId = track.id.trim();
-    if (cleanId.isEmpty) return false;
+    if (!_isValidSuperlikeId(cleanId)) return false;
     if (state.superlikedIds.contains(cleanId)) {
       return true;
     }

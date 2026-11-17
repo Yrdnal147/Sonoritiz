@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:ui' show PlatformDispatcher, PointerDeviceKind;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -80,8 +82,12 @@ void main() async {
   // Initialize Native Audio Service & Handler (inject offlineRepo)
   final audioHandler = await initAudioHandler(offlineRepository: offlineRepository);
 
-  // Register home widget callback
-  await HomeWidget.registerBackgroundCallback(backgroundCallback);
+  // Register home widget callback (Android uniquement)
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    try {
+      await HomeWidget.registerBackgroundCallback(backgroundCallback);
+    } catch (_) {}
+  }
 
   runApp(SonoritizApp(
     storageService: storageService,
@@ -123,8 +129,10 @@ class _SonoritizAppState extends State<SonoritizApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MultiBlocProvider(
-      providers: [
+    return RepositoryProvider<CatalogRepository>.value(
+      value: _catalogRepository,
+      child: MultiBlocProvider(
+        providers: [
         BlocProvider<PlayerCubit>(
           create: (_) => PlayerCubit(
             audioHandler: widget.audioHandler,
@@ -192,6 +200,7 @@ class _SonoritizAppState extends State<SonoritizApp> {
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -291,17 +300,19 @@ class _AppLifecycleAndWidgetBridgeState extends State<_AppLifecycleAndWidgetBrid
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    HomeWidget.initiallyLaunchedFromHomeWidget().then((uri) {
-      if (mounted && uri != null) {
-        _handleWidgetUri(uri, isInitialLaunch: true);
-      }
-    }).catchError((_) {});
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      HomeWidget.initiallyLaunchedFromHomeWidget().then((uri) {
+        if (mounted && uri != null) {
+          _handleWidgetUri(uri, isInitialLaunch: true);
+        }
+      }).catchError((_) {});
 
-    _widgetClickSub = HomeWidget.widgetClicked.listen((uri) {
-      if (mounted && uri != null) {
-        _handleWidgetUri(uri, isInitialLaunch: false);
-      }
-    });
+      _widgetClickSub = HomeWidget.widgetClicked.listen((uri) {
+        if (mounted && uri != null) {
+          _handleWidgetUri(uri, isInitialLaunch: false);
+        }
+      });
+    }
   }
 
   @override

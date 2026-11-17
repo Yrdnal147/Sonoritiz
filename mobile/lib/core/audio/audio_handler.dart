@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../../features/offline/data/repositories/offline_repository.dart';
+import '../storage/storage_service.dart';
 
 /// Lien de streaming résolu, avec sa date de résolution (les liens YouTube expirent).
 class _CachedStreamUrl {
@@ -16,25 +17,33 @@ class _CachedStreamUrl {
 }
 
 class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
-  final AndroidEqualizer _equalizer = AndroidEqualizer();
-  late final AudioPipeline _audioPipeline = AudioPipeline(
-    androidAudioEffects: [_equalizer],
-  );
-  late final AudioPlayer _player = AudioPlayer(
-    audioPipeline: _audioPipeline,
-    handleInterruptions: true,
-    androidApplyAudioAttributes: true,
-    handleAudioSessionActivation: true,
-    audioLoadConfiguration: const AudioLoadConfiguration(
-      androidLoadControl: AndroidLoadControl(
-        minBufferDuration: Duration(seconds: 60),
-        maxBufferDuration: Duration(seconds: 180),
-        bufferForPlaybackDuration: Duration(milliseconds: 1500),
-        bufferForPlaybackAfterRebufferDuration: Duration(seconds: 4),
-        backBufferDuration: Duration(seconds: 30),
-      ),
-    ),
-  );
+  static bool get _isAndroidNative =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  final AndroidEqualizer? _equalizer =
+      _isAndroidNative ? AndroidEqualizer() : null;
+  late final AudioPlayer _player = _isAndroidNative
+      ? AudioPlayer(
+          audioPipeline: AudioPipeline(
+            androidAudioEffects: [_equalizer!],
+          ),
+          handleInterruptions: true,
+          androidApplyAudioAttributes: true,
+          handleAudioSessionActivation: true,
+          audioLoadConfiguration: const AudioLoadConfiguration(
+            androidLoadControl: AndroidLoadControl(
+              minBufferDuration: Duration(seconds: 60),
+              maxBufferDuration: Duration(seconds: 180),
+              bufferForPlaybackDuration: Duration(milliseconds: 1500),
+              bufferForPlaybackAfterRebufferDuration: Duration(seconds: 4),
+              backBufferDuration: Duration(seconds: 30),
+            ),
+          ),
+        )
+      : AudioPlayer(
+          handleInterruptions: true,
+          handleAudioSessionActivation: true,
+        );
   final YoutubeExplode _yt = YoutubeExplode();
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 12),
@@ -52,21 +61,20 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
     final clamped = level.clamp(0.0, 1.0);
     _vocalAttenuationLevel = clamped;
 
-    if (!Platform.isAndroid) return;
+    final equalizer = _equalizer;
+    if (!_isAndroidNative || equalizer == null) return;
 
     try {
       if (clamped <= 0.01) {
-        if (_equalizer.enabled) {
-          await _equalizer.setEnabled(false);
-        }
+        await applyUserAudioSettings();
         return;
       }
 
-      if (!_equalizer.enabled) {
-        await _equalizer.setEnabled(true);
+      if (!equalizer.enabled) {
+        await equalizer.setEnabled(true);
       }
 
-      final params = await _equalizer.parameters;
+      final params = await equalizer.parameters;
       for (final band in params.bands) {
         final freq = band.centerFrequency;
         // Atténuation ciblée sur les formants vocaux (400 Hz à 4500 Hz)
@@ -80,6 +88,95 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
       }
     } catch (e) {
       debugPrint('[SonoritizAudioHandler] Vocal attenuation warning: $e');
+    }
+  }
+
+  /// Vide le cache d'URL de flux (ex: après changement de qualité de streaming)
+  /// et réapplique le profil acoustique et la normalisation choisis.
+  Future<void> applyUserAudioSettings({bool clearResolvedStreams = false}) async {
+    if (clearResolvedStreams) {
+      _streamUrlCache.clear();
+    }
+
+    try {
+      final storage = StorageService();
+      final normalize = storage.volumeNormalizationEnabled;
+      await _player.setVolume(normalize ? 0.92 : 1.0);
+
+      if (_vocalAttenuationLevel > 0.01) return;
+      final equalizer = _equalizer;
+      if (!_isAndroidNative || equalizer == null) return;
+
+      final preset = storage.audioPreset;
+      if (preset == 'Studio') {
+        if (equalizer.enabled) {
+          final params = await equalizer.parameters;
+          for (final band in params.bands) {
+            await band.setGain(0.0);
+          }
+          await equalizer.setEnabled(false);
+        }
+        return;
+      }
+
+      if (!equalizer.enabled) {
+        await equalizer.setEnabled(true);
+      }
+      final params = await equalizer.parameters;
+      final maxDb = params.maxDecibels;
+      final minDb = params.minDecibels;
+
+      for (final band in params.bands) {
+        final f = band.centerFrequency;
+        double ratio = 0.0;
+        switch (preset) {
+          case 'Bass Boost':
+            if (f <= 250) {
+              ratio = 0.55;
+            } else if (f <= 700) {
+              ratio = -0.10;
+            } else if (f >= 6000) {
+              ratio = 0.20;
+            }
+            break;
+          case 'Vocal Clair':
+            if (f < 180) {
+              ratio = -0.25;
+            } else if (f >= 800 && f <= 4500) {
+              ratio = 0.45;
+            } else if (f > 4500) {
+              ratio = 0.15;
+            }
+            break;
+          case 'Acoustique':
+            if (f >= 180 && f <= 600) {
+              ratio = 0.25;
+            } else if (f >= 3500) {
+              ratio = 0.35;
+            }
+            break;
+          case 'Club & Urbain':
+            if (f <= 220) {
+              ratio = 0.60;
+            } else if (f >= 500 && f <= 2000) {
+              ratio = -0.12;
+            } else if (f >= 4500) {
+              ratio = 0.40;
+            }
+            break;
+          case 'Nuit Douce':
+            if (f <= 120) {
+              ratio = -0.15;
+            } else if (f >= 3000) {
+              ratio = -0.35;
+            }
+            break;
+        }
+        final gain = ratio >= 0 ? (maxDb * ratio) : (minDb.abs() * ratio);
+        await band.setGain(gain.clamp(minDb, maxDb));
+      }
+    } catch (e) {
+      debugPrint('[SonoritizAudioHandler] applyUserAudioSettings warning: $e');
     }
   }
 
@@ -306,8 +403,8 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
     } catch (_) {}
 
     try {
-      // 1. Fichier déjà téléchargé hors-ligne ?
-      if (offlineRepository != null) {
+      // 1. Fichier déjà téléchargé hors-ligne ? (hors navigateur Web)
+      if (!kIsWeb && offlineRepository != null) {
         final offlineTrack = offlineRepository!.getOfflineTrack(item.id);
         if (offlineTrack != null && await File(offlineTrack.localAudioPath).exists()) {
           debugPrint('Playing OFFLINE file: ${offlineTrack.localAudioPath}');
@@ -326,13 +423,14 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
         }
       }
 
-      // 2. Fichier local sur le téléphone ?
-      String audioUrl = (item.extras?['audio_url'] ?? '').toString();
+      // 2. Fichier local sur l'appareil ?
+      final String rawExtraAudioUrl = (item.extras?['audio_url'] ?? '').toString();
+      String audioUrl = rawExtraAudioUrl;
       if (audioUrl.contains('dzcdn.net') || audioUrl.contains('preview')) {
         audioUrl = '';
       }
 
-      if (audioUrl.startsWith('file://') || item.id.startsWith('local_')) {
+      if (!kIsWeb && (audioUrl.startsWith('file://') || item.id.startsWith('local_'))) {
         final localPath = audioUrl.replaceFirst('file://', '');
         debugPrint('Playing LOCAL file: $localPath');
         await _player.setAudioSource(
@@ -351,6 +449,12 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
       }
       if (isStale()) return;
 
+      // Fallback Web : si le navigateur bloque l'extraction YouTube par CORS,
+      // utiliser l'extrait Deezer direct (`dzcdn.net` supporte la balise <audio> HTML5).
+      if (audioUrl.isEmpty && kIsWeb && rawExtraAudioUrl.startsWith('http')) {
+        audioUrl = rawExtraAudioUrl;
+      }
+
       if (audioUrl.isEmpty) {
         throw Exception("Impossible d'extraire le flux audio pour ${item.title}");
       }
@@ -365,6 +469,7 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
             .timeout(const Duration(seconds: 12));
       } catch (directError) {
         if (isStale()) return;
+        if (kIsWeb) rethrow;
         debugPrint('[playback] Direct ExoPlayer URI failed ($directError), using Dio local stream cache fallback...');
         final tempDir = await getTemporaryDirectory();
         final safeId = item.id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
@@ -515,6 +620,55 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
     return '';
   }
 
+  /// Sélectionne le flux optimal selon le réglage de qualité/compression de l'utilisateur :
+  /// - `economie` (~48-70 kbps) : flux audioOnly bas débit (Opus 249/250 ou AAC 139) -> ~5x moins de données
+  /// - `normale` (~128 kbps)    : flux audioOnly moyen débit (AAC 140 ou Opus ~128 kbps)
+  /// - `haute` / `hifi`         : flux audioOnly le plus haut débit disponible (Opus 251 ~160 kbps / AAC HQ)
+  /// Avec repli sur le flux progressif `itag 18` pour une compatibilité maximale.
+  String _selectStreamUrlFromManifest(StreamManifest manifest) {
+    String quality = 'haute';
+    try {
+      quality = StorageService().streamingQuality;
+    } catch (_) {}
+
+    if (manifest.audioOnly.isNotEmpty) {
+      final sortedAudio = manifest.audioOnly.toList()
+        ..sort((a, b) =>
+            a.bitrate.bitsPerSecond.compareTo(b.bitrate.bitsPerSecond));
+
+      if (quality == 'economie') {
+        return sortedAudio.first.url.toString();
+      }
+
+      if (quality == 'normale') {
+        final itag140 =
+            sortedAudio.where((s) => s.tag == 140).firstOrNull;
+        if (itag140 != null) return itag140.url.toString();
+        final medium = sortedAudio
+            .where((s) => s.bitrate.bitsPerSecond <= 140000)
+            .lastOrNull;
+        return (medium ?? sortedAudio.first).url.toString();
+      }
+
+      // 'haute' ou 'hifi' : meilleur débit audio pur disponible (sans piste vidéo inutile)
+      return sortedAudio.last.url.toString();
+    }
+
+    if (manifest.muxed.isNotEmpty) {
+      final itag18 = manifest.muxed.where((s) => s.tag == 18).firstOrNull;
+      if (itag18 != null) {
+        return itag18.url.toString();
+      }
+      try {
+        return manifest.muxed.sortByVideoQuality().first.url.toString();
+      } catch (_) {
+        return manifest.muxed.first.url.toString();
+      }
+    }
+
+    return '';
+  }
+
   Future<String> _extractMuxedStreamUrl(String videoId) async {
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(
@@ -523,21 +677,8 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
         requireWatchPage: false,
       ).timeout(const Duration(seconds: 6));
 
-      if (manifest.muxed.isNotEmpty) {
-        final itag18 = manifest.muxed.where((s) => s.tag == 18).firstOrNull;
-        if (itag18 != null) {
-          return itag18.url.toString();
-        }
-        try {
-          return manifest.muxed.sortByVideoQuality().first.url.toString();
-        } catch (_) {
-          return manifest.muxed.first.url.toString();
-        }
-      }
-
-      if (manifest.audioOnly.isNotEmpty) {
-        return manifest.audioOnly.withHighestBitrate().url.toString();
-      }
+      final selected = _selectStreamUrlFromManifest(manifest);
+      if (selected.isNotEmpty) return selected;
     } catch (e) {
       debugPrint('androidSdkless manifest failed for $videoId: $e');
     }
@@ -547,21 +688,8 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
           .getManifest(videoId)
           .timeout(const Duration(seconds: 7));
 
-      if (manifest.muxed.isNotEmpty) {
-        final itag18 = manifest.muxed.where((s) => s.tag == 18).firstOrNull;
-        if (itag18 != null) {
-          return itag18.url.toString();
-        }
-        try {
-          return manifest.muxed.sortByVideoQuality().first.url.toString();
-        } catch (_) {
-          return manifest.muxed.first.url.toString();
-        }
-      }
-
-      if (manifest.audioOnly.isNotEmpty) {
-        return manifest.audioOnly.withHighestBitrate().url.toString();
-      }
+      final selected = _selectStreamUrlFromManifest(manifest);
+      if (selected.isNotEmpty) return selected;
     } catch (e) {
       debugPrint('Standard manifest failed for $videoId: $e');
     }
@@ -621,15 +749,25 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
 }
 
 Future<SonoritizAudioHandler> initAudioHandler({OfflineRepository? offlineRepository}) async {
-  return await AudioService.init(
-    builder: () => SonoritizAudioHandler(offlineRepository: offlineRepository),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.sonoritiz.app.channel.audio',
-      androidNotificationChannelName: 'Sonoritiz Audio Streaming',
-      androidNotificationIcon: 'drawable/ic_stat_logo_transparent',
-      androidNotificationOngoing: false,
-      androidStopForegroundOnPause: false,
-      androidResumeOnClick: true,
-    ),
-  );
+  final isDesktopOs = !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux);
+  if (isDesktopOs) {
+    return SonoritizAudioHandler(offlineRepository: offlineRepository);
+  }
+  try {
+    return await AudioService.init(
+      builder: () => SonoritizAudioHandler(offlineRepository: offlineRepository),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.sonoritiz.app.channel.audio',
+        androidNotificationChannelName: 'Sonoritiz Audio Streaming',
+        androidNotificationIcon: 'drawable/ic_stat_logo_transparent',
+        androidNotificationOngoing: false,
+        androidStopForegroundOnPause: false,
+        androidResumeOnClick: true,
+      ),
+    );
+  } catch (_) {
+    return SonoritizAudioHandler(offlineRepository: offlineRepository);
+  }
 }

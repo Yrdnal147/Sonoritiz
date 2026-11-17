@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
@@ -78,7 +79,7 @@ class SonoritizArtwork extends StatelessWidget {
 
     if (trimmedUrl.isEmpty) {
       imageWidget = errorWidget;
-    } else if (_isLocalPath(trimmedUrl)) {
+    } else if (!kIsWeb && _isLocalPath(trimmedUrl)) {
       final cleanPath = trimmedUrl.startsWith('file://')
           ? trimmedUrl.replaceFirst('file://', '')
           : trimmedUrl;

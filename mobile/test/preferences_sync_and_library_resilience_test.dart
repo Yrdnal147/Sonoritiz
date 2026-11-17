@@ -13,6 +13,7 @@ import 'package:sonoritiz/core/network/api_client.dart';
 import 'package:sonoritiz/core/services/favorite_artists_sync_service.dart';
 import 'package:sonoritiz/core/storage/storage_service.dart';
 import 'package:sonoritiz/core/utils/responsive_utils.dart';
+import 'package:sonoritiz/core/widgets/sonoritiz_brand_logo.dart';
 import 'package:sonoritiz/features/library/data/repositories/library_repository.dart';
 import 'package:sonoritiz/features/library/presentation/cubit/library_cubit.dart';
 import 'package:sonoritiz/features/library/presentation/cubit/library_state.dart';
@@ -486,6 +487,48 @@ void main() {
       );
       final boxSize = tester.getSize(find.byKey(const ValueKey('constrained_box_target')));
       expect(boxSize.width, 480.0);
+    });
+  });
+
+  group('SuperlikeCubit placeholder ID filtering & SonoritizVectorLogo bécarre rendering', () {
+    test('SuperlikeCubit rejects placeholder IDs (0, null, deezer_0) and keeps valid superlikes', () async {
+      SharedPreferences.setMockInitialValues({});
+      final storage = StorageService();
+      await storage.init();
+      await storage.saveTokens(accessToken: 'tok_sl', refreshToken: 'ref_sl');
+      await storage.saveUserInfo(username: 'tester', email: 'tester@sonoritiz.com');
+      await storage.saveSuperlikesRaw([
+        {'id': '0', 'title': 'Ghost 0', 'artist_name': 'Unknown', 'duration_seconds': 0, 'audio_url': ''},
+        {'id': 'deezer_0', 'title': 'Ghost Deezer', 'artist_name': 'Unknown', 'duration_seconds': 0, 'audio_url': ''},
+        {'id': 'yt_real_42', 'title': 'Real Track', 'artist_name': 'Tiakola', 'duration_seconds': 185, 'audio_url': ''},
+      ], syncToServer: false);
+
+      final cubit = SuperlikeCubit(storageService: storage);
+      expect(cubit.state.isSuperliked('0'), isFalse);
+      expect(cubit.state.isSuperliked('null'), isFalse);
+      expect(cubit.state.isSuperliked('deezer_0'), isFalse);
+      expect(cubit.state.isSuperliked('deezer_'), isFalse);
+      expect(cubit.state.isSuperliked('yt_real_42'), isTrue);
+      expect(cubit.state.tracks.map((t) => t.id).toList(), ['yt_real_42']);
+      await cubit.close();
+    });
+
+    testWidgets('SonoritizVectorLogo renders official 8-ring bécarre across all 3 variants', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                SonoritizVectorLogo(size: 80, variant: SonoritizLogoVariant.standard),
+                SonoritizVectorLogo(size: 80, variant: SonoritizLogoVariant.allWhite),
+                SonoritizVectorLogo(size: 80, variant: SonoritizLogoVariant.orangeBecarreWhiteCircles),
+              ],
+            ),
+          ),
+        ),
+      );
+      expect(find.byType(SonoritizVectorLogo), findsNWidgets(3));
+      expect(tester.takeException(), isNull);
     });
   });
 }

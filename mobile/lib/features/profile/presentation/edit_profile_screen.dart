@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -123,8 +124,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool hasCustomImage =
-        _profileImagePath != null && File(_profileImagePath!).existsSync();
+    final bool hasCustomImage = !kIsWeb &&
+        _profileImagePath != null &&
+        File(_profileImagePath!).existsSync();
 
     return Scaffold(
       backgroundColor: Colors.black,

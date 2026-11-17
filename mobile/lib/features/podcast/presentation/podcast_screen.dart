@@ -9,6 +9,7 @@ import '../../../core/utils/responsive_utils.dart';
 import '../../../../core/widgets/sonoritiz_dynamic_background.dart';
 import '../../../../core/widgets/sonoritiz_page_title.dart';
 import '../../home/data/repositories/catalog_repository.dart';
+import '../../home/presentation/cubit/home_cubit.dart';
 import '../../player/data/models/track_model.dart';
 
 class PodcastScreen extends StatefulWidget {
@@ -72,6 +73,20 @@ class _PodcastScreenState extends State<PodcastScreen> {
     }
   }
 
+  late final CatalogRepository _fallbackRepository = CatalogRepository();
+
+  CatalogRepository _resolveRepository() {
+    try {
+      return context.read<CatalogRepository>();
+    } catch (_) {
+      try {
+        return context.read<HomeCubit>().catalogRepository;
+      } catch (_) {
+        return _fallbackRepository;
+      }
+    }
+  }
+
   Future<void> _fetchPodcasts({
     String query = '',
     String type = 'all',
@@ -87,7 +102,7 @@ class _PodcastScreenState extends State<PodcastScreen> {
       _activeType = type;
     });
     try {
-      final repo = context.read<CatalogRepository>();
+      final repo = _resolveRepository();
       final results = await repo.getPodcasts(
         query: query,
         type: type,
@@ -112,7 +127,7 @@ class _PodcastScreenState extends State<PodcastScreen> {
     final int seq = _requestSeq;
     setState(() => _isLoadingMore = true);
     try {
-      final repo = context.read<CatalogRepository>();
+      final repo = _resolveRepository();
       final more = await repo.getPodcasts(
         query: _activeQuery,
         type: _activeType,

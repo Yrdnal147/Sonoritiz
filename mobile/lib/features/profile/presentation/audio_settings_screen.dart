@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/storage/storage_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/sonoritiz_dynamic_background.dart';
 import '../../../core/widgets/sonoritiz_page_title.dart';
+import '../../player/presentation/cubit/player_cubit.dart';
 
 /// Écran des réglages Audio & Lecture Sonoritiz.
 /// Reprend l'architecture ouverte et éditoriale de Profil (typographie nette,
@@ -274,6 +276,9 @@ class _AudioSettingsScreenState extends State<AudioSettingsScreen> {
                               HapticFeedback.selectionClick();
                               setState(() => _audioPreset = name);
                               _storage.setAudioPreset(name);
+                              try {
+                                context.read<PlayerCubit>().applyAudioSettings();
+                              } catch (_) {}
                             },
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 180),
@@ -363,6 +368,12 @@ class _AudioSettingsScreenState extends State<AudioSettingsScreen> {
                                 final id = opt['id'] as String;
                                 setState(() => _streamingQuality = id);
                                 _storage.setStreamingQuality(id);
+                                _storage.setDownloadQuality(id);
+                                try {
+                                  context.read<PlayerCubit>().applyAudioSettings(
+                                        clearResolvedStreams: true,
+                                      );
+                                } catch (_) {}
                               },
                               borderRadius: BorderRadius.circular(10),
                               child: Padding(

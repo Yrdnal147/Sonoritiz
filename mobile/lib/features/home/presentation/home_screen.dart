@@ -944,88 +944,29 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        SonoritizSectionHeader(
+          title: "Sonoritiz Random",
+          seeAllText: "Tout lire",
+          onSeeAll: () {
+            context.read<PlayerCubit>().playTrack(
+              randomTracks.first,
+              queue: randomTracks,
+              source: "Sonoritiz Random",
+            );
+          },
+        ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingMd),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF00E676).withOpacity(0.18),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.shuffle_rounded,
-                      color: Color(0xFF00E676),
-                      size: 16,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    "Sonoritiz Random",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.4,
-                    ),
-                  ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: () {
-                      context.read<PlayerCubit>().playTrack(
-                        randomTracks.first,
-                        queue: randomTracks,
-                        source: "Sonoritiz Random",
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF00E676).withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: const Color(0xFF00E676).withOpacity(0.4),
-                          width: 0.9,
-                        ),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.play_arrow_rounded, color: Color(0xFF00E676), size: 16),
-                          SizedBox(width: 3),
-                          Text(
-                            "25 sons",
-                            style: TextStyle(
-                              color: Color(0xFF00E676),
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                "Découvertes fraîches sélectionnées en harmonie avec votre univers musical.",
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.72),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  fontStyle: FontStyle.italic,
-                  height: 1.25,
-                ),
-              ),
-            ],
+          child: Text(
+            "Découvertes fraîches sélectionnées en harmonie avec votre univers musical.",
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.60),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: AppDimensions.spacingSm),
         _buildTrackCarousel(
           context,
           randomTracks,
@@ -1036,58 +977,46 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
   }
 
   Widget _buildDailyAmbiancesSection(BuildContext context, HomeLoaded state) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     final ambiances = const [
       {
         'id': 'soiree',
         'title': 'Soirée & Fiesta',
-        'subtitle': 'Club, danse & fête',
-        'accent': Color(0xFFFF6D00),
         'icon': Icons.celebration_rounded,
       },
       {
         'id': 'nocturne',
         'title': 'Nocturne',
-        'subtitle': 'Late night & néons',
-        'accent': Color(0xFF9C64FF),
         'icon': Icons.nightlife_rounded,
       },
       {
         'id': 'sport',
         'title': 'Sport & Boost',
-        'subtitle': 'Cardio & énergie',
-        'accent': Color(0xFFFF3D00),
         'icon': Icons.fitness_center_rounded,
       },
       {
         'id': 'detente',
         'title': 'Détente & Chill',
-        'subtitle': 'Calme & acoustique',
-        'accent': Color(0xFF00BFA5),
         'icon': Icons.spa_rounded,
       },
       {
         'id': 'focus',
         'title': 'Focus & Travail',
-        'subtitle': 'Concentration pure',
-        'accent': Color(0xFF00B0FF),
         'icon': Icons.headphones_rounded,
       },
       {
         'id': 'trajet',
         'title': 'Sur la Route',
-        'subtitle': 'Trajet & évasion',
-        'accent': Color(0xFFFFB300),
         'icon': Icons.directions_car_rounded,
       },
     ];
 
     final activeAmbiance = ambiances.firstWhere(
       (a) => a['id'] == state.selectedMood,
-      orElse: () => ambiances[3], // Détente par défaut
+      orElse: () => ambiances[3],
     );
     final activeTitle = activeAmbiance['title'] as String;
-    final activeSubtitle = activeAmbiance['subtitle'] as String;
-    final activeAccent = activeAmbiance['accent'] as Color;
     final displayTracks = state.moodTracks.isNotEmpty
         ? state.moodTracks
         : state.contextualTracks;
@@ -1095,67 +1024,58 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingMd),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Ambiances du Quotidien",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.4,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: activeAccent,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            "$activeTitle • $activeSubtitle",
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.65),
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              if (displayTracks.isNotEmpty)
-                GestureDetector(
-                  onTap: () => context.read<PlayerCubit>().playTrack(
+        SonoritizSectionHeader(
+          title: "Ambiances du Quotidien",
+          seeAllText: "Lancer",
+          onSeeAll: displayTracks.isNotEmpty
+              ? () => context.read<PlayerCubit>().playTrack(
                     displayTracks.first,
                     queue: displayTracks,
                     source: "Ambiance • $activeTitle",
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  )
+              : null,
+        ),
+        const SizedBox(height: AppDimensions.spacingSm),
+        SizedBox(
+          height: 46,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppDimensions.spacingMd,
+              vertical: 4,
+            ),
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: ambiances.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final item = ambiances[index];
+              final id = item['id'] as String;
+              final title = item['title'] as String;
+              final icon = item['icon'] as IconData;
+              final isSelected = state.selectedMood == id;
+
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => context.read<HomeCubit>().selectMood(id),
+                  borderRadius: BorderRadius.circular(30),
+                  splashColor: colorScheme.primary.withValues(alpha: 0.2),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutCubic,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
-                      color: activeAccent.withOpacity(0.16),
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(30),
+                      color: isSelected
+                          ? colorScheme.primary
+                          : Colors.white.withValues(alpha: 0.06),
                       border: Border.all(
-                        color: activeAccent.withOpacity(0.45),
+                        color: isSelected
+                            ? colorScheme.primary
+                            : Colors.white.withValues(alpha: 0.08),
                         width: 1,
                       ),
                     ),
@@ -1163,115 +1083,34 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          Icons.play_arrow_rounded,
-                          color: activeAccent,
+                          icon,
                           size: 16,
+                          color: isSelected
+                              ? colorScheme.onPrimary
+                              : Colors.white70,
                         ),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: 7),
                         Text(
-                          "Lancer",
-                          style: TextStyle(
-                            color: activeAccent,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
+                          title,
+                          style: isSelected
+                              ? textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: colorScheme.onPrimary,
+                                )
+                              : textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white70,
+                                ),
                         ),
                       ],
                     ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        SizedBox(
-          height: 68,
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingMd),
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            itemCount: ambiances.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (context, index) {
-              final item = ambiances[index];
-              final id = item['id'] as String;
-              final title = item['title'] as String;
-              final subtitle = item['subtitle'] as String;
-              final accent = item['accent'] as Color;
-              final icon = item['icon'] as IconData;
-              final isSelected = state.selectedMood == id;
-
-              return GestureDetector(
-                onTap: () => context.read<HomeCubit>().selectMood(id),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 168,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? accent.withOpacity(0.16)
-                        : const Color(0xFF141418),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isSelected ? accent : Colors.white.withOpacity(0.10),
-                      width: isSelected ? 1.4 : 0.9,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(7),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: isSelected ? accent.withOpacity(0.25) : Colors.white.withOpacity(0.06),
-                        ),
-                        child: Icon(
-                          icon,
-                          size: 18,
-                          color: isSelected ? accent : Colors.white70,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: isSelected ? Colors.white : Colors.white.withOpacity(0.9),
-                                fontSize: 13.0,
-                                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                                letterSpacing: -0.2,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: isSelected
-                                    ? accent.withOpacity(0.95)
-                                    : Colors.white.withOpacity(0.48),
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
                   ),
                 ),
               );
             },
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: AppDimensions.spacingSm),
         if (state.isMoodLoading)
           const SizedBox(
             height: 200,

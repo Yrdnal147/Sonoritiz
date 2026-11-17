@@ -1014,6 +1014,39 @@ class CatalogRepository {
         }
       }
 
+      // 3. Recherche directe YouTube en parallèle lorsqu'une requête est saisie (podcasts & livres audio complets)
+      if (cleanQuery.isNotEmpty && offset == 0) {
+        final String ytQuery = type == 'audiobook'
+            ? '$cleanQuery livre audio complet français'
+            : (type == 'podcast'
+                ? '$cleanQuery podcast épisode français'
+                : '$cleanQuery podcast livre audio français');
+        futures.add(
+          yt.search.search(ytQuery).timeout(const Duration(seconds: 8)).then((searchResults) {
+            for (final v in searchResults.whereType<Video>().take(20)) {
+              final title = v.title.trim();
+              if (title.isEmpty) continue;
+              final titleLower = title.toLowerCase();
+              final key = 'yt_${v.id.value}';
+              final titleKey = 't_$titleLower';
+              if (seenKeys.contains(key) || seenKeys.contains(titleKey)) continue;
+              seenKeys.add(key);
+              seenKeys.add(titleKey);
+              final mapped = _mapVideoToTrack(v);
+              final isBookHint = type == 'audiobook' ||
+                  titleLower.contains('livre') ||
+                  titleLower.contains('roman') ||
+                  titleLower.contains('audiobook');
+              results.add(
+                mapped.copyWith(
+                  genre: isBookHint ? 'Livre audio' : 'Podcast',
+                ),
+              );
+            }
+          }).catchError((_) {}),
+        );
+      }
+
       await Future.wait(futures);
 
       if (results.isNotEmpty) {

@@ -1,6 +1,7 @@
 import 'dart:collection';
 import 'dart:io';
 import 'dart:ui';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -67,7 +68,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
     }
 
     ImageProvider? baseProvider;
-    if (trimmed.startsWith('file://')) {
+    if (!kIsWeb && trimmed.startsWith('file://')) {
       final file = File(trimmed.replaceFirst('file://', ''));
       if (file.existsSync()) {
         baseProvider = FileImage(file);
@@ -353,14 +354,6 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
                       children: [
                         Row(
                           children: [
-                            if (isVerticalGauge) ...[
-                              Icon(
-                                Icons.equalizer_rounded,
-                                size: 15,
-                                color: palette.accentColor,
-                              ),
-                              const SizedBox(width: 5),
-                            ],
                             Expanded(
                               child: Text(
                                 track.title,

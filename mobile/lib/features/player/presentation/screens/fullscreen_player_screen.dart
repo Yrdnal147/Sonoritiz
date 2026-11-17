@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:ui';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../../../../core/utils/responsive_utils.dart';
@@ -232,7 +233,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
 
     try {
       ImageProvider baseProvider;
-      if (trimmed.startsWith("file://")) {
+      if (!kIsWeb && trimmed.startsWith("file://")) {
         final path = trimmed.replaceFirst("file://", "");
         if (File(path).existsSync()) {
           baseProvider = FileImage(File(path));

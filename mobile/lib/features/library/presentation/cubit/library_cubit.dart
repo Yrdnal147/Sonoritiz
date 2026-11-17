@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:home_widget/home_widget.dart';
 import '../../../../core/storage/storage_service.dart';
@@ -692,11 +694,13 @@ class LibraryCubit extends Cubit<LibraryState> {
         await _updateStateAndCache(loadedState.copyWith(favorites: newFavorites));
       }
     }
-    try {
-      await HomeWidget.saveWidgetData<bool>('isFavorite', true);
-      await HomeWidget.updateWidget(androidName: 'NowPlayingWidgetProvider');
-      await HomeWidget.updateWidget(androidName: 'PlaylistWidgetProvider');
-    } catch (_) {}
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        await HomeWidget.saveWidgetData<bool>('isFavorite', true);
+        await HomeWidget.updateWidget(androidName: 'NowPlayingWidgetProvider');
+        await HomeWidget.updateWidget(androidName: 'PlaylistWidgetProvider');
+      } catch (_) {}
+    }
     try {
       await repository.addFavorite(track);
     } catch (_) {}
@@ -708,11 +712,13 @@ class LibraryCubit extends Cubit<LibraryState> {
       final newFavorites = loadedState.favorites.where((t) => t.id != trackId).toList();
       await _updateStateAndCache(loadedState.copyWith(favorites: newFavorites));
     }
-    try {
-      await HomeWidget.saveWidgetData<bool>('isFavorite', false);
-      await HomeWidget.updateWidget(androidName: 'NowPlayingWidgetProvider');
-      await HomeWidget.updateWidget(androidName: 'PlaylistWidgetProvider');
-    } catch (_) {}
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        await HomeWidget.saveWidgetData<bool>('isFavorite', false);
+        await HomeWidget.updateWidget(androidName: 'NowPlayingWidgetProvider');
+        await HomeWidget.updateWidget(androidName: 'PlaylistWidgetProvider');
+      } catch (_) {}
+    }
     try {
       await repository.removeFavorite(trackId);
     } catch (_) {}

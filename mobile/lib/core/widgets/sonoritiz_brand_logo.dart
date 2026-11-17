@@ -2,19 +2,22 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 
-/// Variantes vectorielles du logo Sonoritiz sur fond totalement transparent.
+/// Variantes vectorielles du logo officiel Sonoritiz sur fond transparent.
 enum SonoritizLogoVariant {
-  /// Bécarre blanc + cercles concentriques brisés orange (#FF6B00)
+  /// Bécarre blanc + 8 cercles concentriques fins orange (#FA7921)
   standard,
 
-  /// Bécarre blanc + cercles concentriques brisés blancs
+  /// Bécarre blanc + 8 cercles concentriques fins blancs
   allWhite,
 
-  /// Bécarre orange (#FF6B00) + cercles concentriques brisés blancs
+  /// Bécarre orange (#FA7921) + 8 cercles concentriques fins blancs
   orangeBecarreWhiteCircles,
 }
 
-/// Logo vectoriel Sonoritiz sans fond noir, sans cadre et sans lueur.
+/// Logo vectoriel officiel Sonoritiz fidèle à `logo_version_2.png` / `logo_transparent.png` :
+/// - 8 anneaux concentriques continus d'épaisseur dégressive du centre vers l'extérieur,
+/// - Bécarre géométrique plein à extrémités biseautées en diagonale et fenêtre parallélogramme,
+/// - Détourage net autour du bécarre interrompant proprement les anneaux.
 class SonoritizVectorLogo extends StatelessWidget {
   final double size;
   final SonoritizLogoVariant variant;
@@ -72,75 +75,89 @@ class _SonoritizLogoPainter extends CustomPainter {
     required this.circlesColor,
   });
 
+  Path _buildBecarrePath(double s, Offset origin) {
+    Offset pt(double nx, double ny) =>
+        Offset(origin.dx + nx * s, origin.dy + ny * s);
+
+    // Contour extérieur exact du bécarre biseauté (sens horaire)
+    final outer = Path()
+      ..moveTo(pt(0.308, 0.144).dx, pt(0.308, 0.144).dy)
+      ..lineTo(pt(0.378, 0.104).dx, pt(0.378, 0.104).dy)
+      ..lineTo(pt(0.378, 0.364).dx, pt(0.378, 0.364).dy)
+      ..lineTo(pt(0.662, 0.288).dx, pt(0.662, 0.288).dy)
+      ..lineTo(pt(0.662, 0.856).dx, pt(0.662, 0.856).dy)
+      ..lineTo(pt(0.592, 0.896).dx, pt(0.592, 0.896).dy)
+      ..lineTo(pt(0.592, 0.636).dx, pt(0.592, 0.636).dy)
+      ..lineTo(pt(0.308, 0.712).dx, pt(0.308, 0.712).dy)
+      ..close();
+
+    // Fenêtre intérieure en parallélogramme
+    final innerWindow = Path()
+      ..moveTo(pt(0.378, 0.436).dx, pt(0.378, 0.436).dy)
+      ..lineTo(pt(0.592, 0.380).dx, pt(0.592, 0.380).dy)
+      ..lineTo(pt(0.592, 0.564).dx, pt(0.592, 0.564).dy)
+      ..lineTo(pt(0.378, 0.620).dx, pt(0.378, 0.620).dy)
+      ..close();
+
+    return Path.combine(PathOperation.difference, outer, innerWindow);
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final double s = math.min(size.width, size.height);
     final Offset center = Offset(size.width / 2, size.height / 2);
+    final Offset origin = Offset(center.dx - s / 2, center.dy - s / 2);
 
-    // 1. Cercles concentriques brisés (onde sonore Sonoritiz)
-    const List<double> radiiFactors = [0.23, 0.30, 0.37, 0.44, 0.50];
+    final becarrePath = _buildBecarrePath(s, origin);
+
+    canvas.saveLayer(Offset.zero & size, Paint());
+
+    // 1. Les 8 anneaux concentriques continus (d'épaisseur dégressive vers l'extérieur)
+    const List<double> radiiFactors = [
+      0.218,
+      0.252,
+      0.286,
+      0.320,
+      0.354,
+      0.388,
+      0.422,
+      0.456,
+    ];
     final ringPaint = Paint()
       ..color = circlesColor
       ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
+      ..isAntiAlias = true;
 
     for (int i = 0; i < radiiFactors.length; i++) {
       final double r = s * radiiFactors[i];
-      ringPaint.strokeWidth = math.max(1.1, s * (0.022 - i * 0.0014));
-      final rect = Rect.fromCircle(center: center, radius: r);
-      final double rot = (i.isEven ? 0.18 : -0.26) + (i * 0.22);
-
-      // Deux arcs symétriques brisés laissant respirer la forme centrale
-      canvas.drawArc(rect, rot, math.pi * 0.68, false, ringPaint);
-      canvas.drawArc(rect, rot + math.pi, math.pi * 0.68, false, ringPaint);
+      final double t = i / (radiiFactors.length - 1);
+      ringPaint.strokeWidth = math.max(0.7, s * (0.0155 - t * 0.0085));
+      canvas.drawCircle(center, r, ringPaint);
     }
 
-    // 2. Bécarre musical central net et équilibré
-    final stemWidth = math.max(1.6, s * 0.058);
-    final barThickness = math.max(1.8, s * 0.068);
-    final double boxHalfW = s * 0.095;
-    final double boxHalfH = s * 0.088;
-    final double skew = s * 0.026;
-
-    final stemPaint = Paint()
-      ..color = becarreColor
+    // 2. Détourage transparent net autour du bécarre (interrompt les anneaux comme sur le logo officiel)
+    final cutoutPaint = Paint()
+      ..blendMode = BlendMode.clear
       ..style = PaintingStyle.stroke
-      ..strokeWidth = stemWidth
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
+      ..strokeWidth = s * 0.044
+      ..strokeJoin = StrokeJoin.miter
+      ..strokeMiterLimit = 10
+      ..isAntiAlias = true;
+    canvas.drawPath(becarrePath, cutoutPaint);
 
-    // Montant gauche (monte haut)
-    canvas.drawLine(
-      Offset(center.dx - boxHalfW, center.dy - s * 0.22),
-      Offset(center.dx - boxHalfW, center.dy + boxHalfH),
-      stemPaint,
-    );
+    final clearFillPaint = Paint()
+      ..blendMode = BlendMode.clear
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(becarrePath, clearFillPaint);
 
-    // Montant droit (descend bas)
-    canvas.drawLine(
-      Offset(center.dx + boxHalfW, center.dy - boxHalfH),
-      Offset(center.dx + boxHalfW, center.dy + s * 0.22),
-      stemPaint,
-    );
-
-    // Barres transversales légèrement obliques du bécarre (♮)
-    final barPaint = Paint()
+    // 3. Tracé plein du bécarre géométrique biseauté
+    final fillPaint = Paint()
       ..color = becarreColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = barThickness
-      ..strokeCap = StrokeCap.butt;
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+    canvas.drawPath(becarrePath, fillPaint);
 
-    canvas.drawLine(
-      Offset(center.dx - boxHalfW - stemWidth * 0.15, center.dy - boxHalfH + skew),
-      Offset(center.dx + boxHalfW + stemWidth * 0.15, center.dy - boxHalfH - skew * 0.35),
-      barPaint,
-    );
-
-    canvas.drawLine(
-      Offset(center.dx - boxHalfW - stemWidth * 0.15, center.dy + boxHalfH + skew * 0.35),
-      Offset(center.dx + boxHalfW + stemWidth * 0.15, center.dy + boxHalfH - skew),
-      barPaint,
-    );
+    canvas.restore();
   }
 
   @override
@@ -149,7 +166,7 @@ class _SonoritizLogoPainter extends CustomPainter {
       oldDelegate.circlesColor != circlesColor;
 }
 
-/// Véritable icône Google "G" à 4 couleurs officielles (#4285F4, #34A853, #FBBC05, #EA4335).
+/// Logo de Google (G 4 couleurs officiel) dessiné vectoriellement.
 class GoogleLogoIcon extends StatelessWidget {
   final double size;
 
@@ -160,7 +177,9 @@ class GoogleLogoIcon extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: CustomPaint(painter: _GoogleLogoPainter()),
+      child: CustomPaint(
+        painter: _GoogleLogoPainter(),
+      ),
     );
   }
 }
@@ -170,62 +189,42 @@ class _GoogleLogoPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final double s = math.min(size.width, size.height);
     final Offset c = Offset(size.width / 2, size.height / 2);
-    final double radius = s * 0.40;
-    final double strokeWidth = s * 0.20;
-    final Rect oval = Rect.fromCircle(center: c, radius: radius);
+    final double stroke = s * 0.20;
+    final double radius = (s - stroke) / 2;
+    final Rect arcRect = Rect.fromCircle(center: c, radius: radius);
 
-    Paint strokePaint(Color color) => Paint()
-      ..color = color
+    final Paint paint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
+      ..strokeWidth = stroke
       ..strokeCap = StrokeCap.butt;
 
     // Rouge (haut)
-    canvas.drawArc(
-      oval,
-      -math.pi * 0.78,
-      math.pi * 0.56,
-      false,
-      strokePaint(const Color(0xFFEA4335)),
-    );
+    paint.color = const Color(0xFFEA4335);
+    canvas.drawArc(arcRect, -2.35, 1.55, false, paint);
 
     // Jaune (gauche)
-    canvas.drawArc(
-      oval,
-      math.pi * 0.78,
-      math.pi * 0.44,
-      false,
-      strokePaint(const Color(0xFFFBBC05)),
-    );
+    paint.color = const Color(0xFFFBBC05);
+    canvas.drawArc(arcRect, 2.30, 1.65, false, paint);
 
     // Vert (bas)
-    canvas.drawArc(
-      oval,
-      math.pi * 0.14,
-      math.pi * 0.64,
-      false,
-      strokePaint(const Color(0xFF34A853)),
-    );
+    paint.color = const Color(0xFF34A853);
+    canvas.drawArc(arcRect, 0.72, 1.62, false, paint);
 
-    // Bleu (arc droit)
-    canvas.drawArc(
-      oval,
-      -0.06,
-      math.pi * 0.22,
-      false,
-      strokePaint(const Color(0xFF4285F4)),
-    );
+    // Bleu (droite + barre horizontale)
+    paint.color = const Color(0xFF4285F4);
+    canvas.drawArc(arcRect, -0.18, 0.95, false, paint);
 
-    // Barre horizontale bleue du G
-    final barRect = Rect.fromLTWH(
-      c.dx - s * 0.02,
-      c.dy - strokeWidth * 0.50,
-      radius + strokeWidth * 0.48,
-      strokeWidth,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(barRect, Radius.circular(strokeWidth * 0.15)),
-      Paint()..color = const Color(0xFF4285F4),
+    final Paint barPaint = Paint()
+      ..color = const Color(0xFF4285F4)
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(
+      Rect.fromLTWH(
+        c.dx,
+        c.dy - stroke * 0.48,
+        radius + stroke * 0.48,
+        stroke * 0.96,
+      ),
+      barPaint,
     );
   }
 

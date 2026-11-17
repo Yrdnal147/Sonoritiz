@@ -16,6 +16,9 @@ import '../../../library/data/repositories/library_repository.dart';
 import 'player_state.dart';
 
 class PlayerCubit extends Cubit<PlayerState> {
+  static bool get _supportsHomeWidget =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
   final SonoritizAudioHandler _audioHandler;
   final LyricsService _lyricsService = LyricsService();
   final Dio _metaDio = Dio(BaseOptions(
@@ -88,6 +91,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   Future<void> syncFromWidgetPreferences() async {
+    if (!_supportsHomeWidget) return;
     try {
       final track = state.currentTrack;
       if (track == null) return;
@@ -120,6 +124,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   Future<void> _syncWidgetPlaybackState({bool force = false}) async {
+    if (!_supportsHomeWidget) return;
     final currentSec = state.position.inSeconds;
     if (!force && (currentSec - _lastWidgetSyncSecond).abs() < 30) {
       return;
@@ -151,6 +156,7 @@ class PlayerCubit extends Cubit<PlayerState> {
     final isFav = await libraryRepository?.isFavorite(effectiveId) ?? false;
     final isSuper = StorageService().getSuperlikesRaw().any((item) => item['id']?.toString() == effectiveId);
     _audioHandler.updateReactionState(isFavorite: isFav, isSuperliked: isSuper);
+    if (!_supportsHomeWidget) return;
     try {
       await HomeWidget.saveWidgetData<bool>('isFavorite', isFav);
       await HomeWidget.saveWidgetData<bool>('isSuperliked', isSuper);
@@ -165,13 +171,19 @@ class PlayerCubit extends Cubit<PlayerState> {
         final isFav = await libraryRepository!.isFavorite(trackId);
         if (isFav) {
           await libraryRepository!.removeFavorite(trackId);
-          await HomeWidget.saveWidgetData<bool>('isFavorite', false);
+          if (_supportsHomeWidget) {
+            await HomeWidget.saveWidgetData<bool>('isFavorite', false);
+          }
         } else {
           await libraryRepository!.addFavorite(state.currentTrack!);
-          await HomeWidget.saveWidgetData<bool>('isFavorite', true);
+          if (_supportsHomeWidget) {
+            await HomeWidget.saveWidgetData<bool>('isFavorite', true);
+          }
         }
-        await HomeWidget.updateWidget(androidName: 'NowPlayingWidgetProvider');
-        await HomeWidget.updateWidget(androidName: 'PlaylistWidgetProvider');
+        if (_supportsHomeWidget) {
+          await HomeWidget.updateWidget(androidName: 'NowPlayingWidgetProvider');
+          await HomeWidget.updateWidget(androidName: 'PlaylistWidgetProvider');
+        }
         await syncNotificationReactionState(trackId);
       } catch (e) {
         debugPrint('toggleFavorite from notification error: $e');
@@ -344,6 +356,7 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   Future<void> _updateHomeWidget(TrackModel track) async {
+    if (!_supportsHomeWidget) return;
     try {
       await HomeWidget.saveWidgetData<String>('title', track.title);
       await HomeWidget.saveWidgetData<String>('artist', track.artistName);
@@ -796,6 +809,12 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   Future<void> resetVocalAttenuation() async {
     await setVocalAttenuation(0.0);
+  }
+
+  Future<void> applyAudioSettings({bool clearResolvedStreams = false}) async {
+    await _audioHandler.applyUserAudioSettings(
+      clearResolvedStreams: clearResolvedStreams,
+    );
   }
 
   Future<void> togglePlayPause() async {

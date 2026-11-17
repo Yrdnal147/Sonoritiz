@@ -25,6 +25,7 @@ dependencies:
 
   # Audio Streaming & Background Service
   just_audio: ^0.9.36
+  just_audio_windows: ^0.2.2
   audio_service: ^0.18.12
 
   # Local Storage & Preferences

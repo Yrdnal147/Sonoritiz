@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../features/library/data/repositories/library_repository.dart';
@@ -28,6 +29,7 @@ class PlaylistCoverMosaic extends StatelessWidget {
   bool _hasUsableCustomCover(String url) {
     if (url.trim().isEmpty) return false;
     if (url.startsWith("file://") || url.startsWith("http://local.image/")) {
+      if (kIsWeb) return false;
       final path = url
           .replaceFirst("file://", "")
           .replaceFirst("http://local.image/", "");
