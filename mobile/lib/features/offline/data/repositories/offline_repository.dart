@@ -172,12 +172,7 @@ class OfflineRepository {
   }
 
   Future<String?> _getPlayableStreamUrl(String videoId) async {
-    String quality = 'haute';
-    try {
-      quality = StorageService().downloadQuality;
-    } catch (_) {}
-
-    // 1. Clients mobiles sans SDK (androidSdkless) avec sélection selon la qualité choisie
+    // 1. Clients mobiles sans SDK (androidSdkless) pour éviter les blocs PO-Token 403
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(
         videoId,
@@ -185,34 +180,21 @@ class OfflineRepository {
         requireWatchPage: false,
       ).timeout(const Duration(seconds: 10));
 
-      // Priorité 1 : Flux audio pur adapté au débit souhaité (sans piste vidéo lourde)
-      if (manifest.audioOnly.isNotEmpty) {
-        final sortedAudio = manifest.audioOnly.toList()
-          ..sort((a, b) =>
-              a.bitrate.bitsPerSecond.compareTo(b.bitrate.bitsPerSecond));
-        if (quality == 'economie') {
-          return sortedAudio.first.url.toString();
-        }
-        if (quality == 'normale') {
-          final itag140 =
-              sortedAudio.where((s) => s.tag == 140).firstOrNull;
-          if (itag140 != null) return itag140.url.toString();
-          final medium = sortedAudio
-              .where((s) => s.bitrate.bitsPerSecond <= 140000)
-              .lastOrNull;
-          return (medium ?? sortedAudio.first).url.toString();
-        }
-        return sortedAudio.last.url.toString();
-      }
-
-      // Priorité 2 : Repli itag 18 (MP4 progressif, stéréo AAC 44.1kHz)
+      // Priorité 1 : itag 18 (MP4 progressif, stéréo AAC 44.1kHz).
+      // Ne nécessite aucun PO-Token et se télécharge via Dio sans blocage 403.
       final itag18 = manifest.muxed.where((s) => s.tag == 18).firstOrNull;
       if (itag18 != null) {
         return itag18.url.toString();
       }
 
+      // Priorité 2 : Autre flux progressif muxé
       if (manifest.muxed.isNotEmpty) {
         return manifest.muxed.first.url.toString();
+      }
+
+      // Priorité 3 : Flux audio seul
+      if (manifest.audioOnly.isNotEmpty) {
+        return manifest.audioOnly.withHighestBitrate().url.toString();
       }
     } catch (e) {
       debugPrint("Light clients manifest failed for $videoId: $e");

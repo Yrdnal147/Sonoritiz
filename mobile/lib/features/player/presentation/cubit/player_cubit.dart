@@ -475,7 +475,6 @@ class PlayerCubit extends Cubit<PlayerState> {
       clearError: true,
     ));
 
-    libraryRepository?.addToHistory(track);
     await _startTrack(track);
   }
 
@@ -486,11 +485,12 @@ class PlayerCubit extends Cubit<PlayerState> {
     _prefetchTimer?.cancel();
     StorageService().recordLifetimeTrackPlay(track.toJson());
 
-    // Résolution immédiate (0s de délai) des featurings (contributors) et de la pochette HD en parallèle
-    unawaited(_fetchHighResCover(track));
-    unawaited(_enrichUpcomingQueueMetadata());
-
+    // 100 % de la bande passante réseau dédiée au démarrage du flux audio d'abord
     await _audioHandler.playTrack(track.toMediaItem());
+
+    if (isClosed) return;
+    unawaited(libraryRepository?.addToHistory(track));
+    unawaited(_fetchHighResCover(track));
     unawaited(syncNotificationReactionState(track.id));
     _fetchLyrics(track);
 
@@ -556,6 +556,13 @@ class PlayerCubit extends Cubit<PlayerState> {
     if (next == null) return;
     unawaited(_audioHandler.prefetch(next.toMediaItem()));
     unawaited(_fetchHighResCover(next));
+
+    // Pré-résoudre également le 2e titre à venir dans la file d'attente
+    if (!state.isShuffleModeEnabled && state.currentIndex + 2 < state.queue.length) {
+      final secondNext = state.queue[state.currentIndex + 2];
+      unawaited(_audioHandler.prefetch(secondNext.toMediaItem()));
+    }
+    unawaited(_enrichUpcomingQueueMetadata());
   }
 
   void _schedulePrefetchOfNext(TrackModel current) {
@@ -563,7 +570,7 @@ class PlayerCubit extends Cubit<PlayerState> {
     _prefetchTimer?.cancel();
     if (state.queue.length < 2) return;
 
-    _prefetchTimer = Timer(const Duration(seconds: 20), () {
+    _prefetchTimer = Timer(const Duration(milliseconds: 1500), () {
       if (isClosed || state.currentTrack?.id != current.id) return;
       _triggerNextTrackZeroLatencyPrefetch();
     });

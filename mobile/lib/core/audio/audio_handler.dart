@@ -36,8 +36,8 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
             androidLoadControl: AndroidLoadControl(
               minBufferDuration: Duration(seconds: 60),
               maxBufferDuration: Duration(seconds: 180),
-              bufferForPlaybackDuration: Duration(milliseconds: 1500),
-              bufferForPlaybackAfterRebufferDuration: Duration(seconds: 4),
+              bufferForPlaybackDuration: Duration(milliseconds: 250),
+              bufferForPlaybackAfterRebufferDuration: Duration(milliseconds: 1000),
               backBufferDuration: Duration(seconds: 30),
             ),
           ),
@@ -749,60 +749,29 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
     return '';
   }
 
-  /// Sélectionne le flux optimal selon le réglage de qualité/compression de l'utilisateur :
-  /// - `economie` (~48-70 kbps) : flux audioOnly bas débit (Opus 249/250 ou AAC 139) -> ~5x moins de données
-  /// - `normale` / `haute` / `hifi` : flux progressif `itag 18` prioritaire en streaming direct
-  ///   (évite le throttling/403 DASH YouTube sur ExoPlayer), avec repli sur `audioOnly` haut débit.
-  String _selectStreamUrlFromManifest(StreamManifest manifest) {
-    String quality = 'haute';
-    try {
-      quality = StorageService().streamingQuality;
-    } catch (_) {}
-
-    if (quality == 'economie' && manifest.audioOnly.isNotEmpty) {
-      final sortedAudio = manifest.audioOnly.toList()
-        ..sort((a, b) =>
-            a.bitrate.bitsPerSecond.compareTo(b.bitrate.bitsPerSecond));
-      return sortedAudio.first.url.toString();
-    }
-
-    if (manifest.muxed.isNotEmpty) {
-      final itag18 = manifest.muxed.where((s) => s.tag == 18).firstOrNull;
-      if (itag18 != null) {
-        return itag18.url.toString();
-      }
-      try {
-        return manifest.muxed.sortByVideoQuality().first.url.toString();
-      } catch (_) {
-        return manifest.muxed.first.url.toString();
-      }
-    }
-
-    if (manifest.audioOnly.isNotEmpty) {
-      final sortedAudio = manifest.audioOnly.toList()
-        ..sort((a, b) =>
-            a.bitrate.bitsPerSecond.compareTo(b.bitrate.bitsPerSecond));
-      if (quality == 'normale') {
-        final itag140 =
-            sortedAudio.where((s) => s.tag == 140).firstOrNull;
-        if (itag140 != null) return itag140.url.toString();
-      }
-      return sortedAudio.last.url.toString();
-    }
-
-    return '';
-  }
-
   Future<String> _extractMuxedStreamUrl(String videoId) async {
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(
         videoId,
         ytClients: [YoutubeApiClient.androidSdkless],
         requireWatchPage: false,
-      ).timeout(const Duration(seconds: 6));
+      ).timeout(const Duration(seconds: 4));
 
-      final selected = _selectStreamUrlFromManifest(manifest);
-      if (selected.isNotEmpty) return selected;
+      if (manifest.muxed.isNotEmpty) {
+        final itag18 = manifest.muxed.where((s) => s.tag == 18).firstOrNull;
+        if (itag18 != null) {
+          return itag18.url.toString();
+        }
+        try {
+          return manifest.muxed.sortByVideoQuality().first.url.toString();
+        } catch (_) {
+          return manifest.muxed.first.url.toString();
+        }
+      }
+
+      if (manifest.audioOnly.isNotEmpty) {
+        return manifest.audioOnly.withHighestBitrate().url.toString();
+      }
     } catch (e) {
       debugPrint('androidSdkless manifest failed for $videoId: $e');
     }
@@ -810,10 +779,23 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
     try {
       final manifest = await _yt.videos.streamsClient
           .getManifest(videoId)
-          .timeout(const Duration(seconds: 7));
+          .timeout(const Duration(seconds: 6));
 
-      final selected = _selectStreamUrlFromManifest(manifest);
-      if (selected.isNotEmpty) return selected;
+      if (manifest.muxed.isNotEmpty) {
+        final itag18 = manifest.muxed.where((s) => s.tag == 18).firstOrNull;
+        if (itag18 != null) {
+          return itag18.url.toString();
+        }
+        try {
+          return manifest.muxed.sortByVideoQuality().first.url.toString();
+        } catch (_) {
+          return manifest.muxed.first.url.toString();
+        }
+      }
+
+      if (manifest.audioOnly.isNotEmpty) {
+        return manifest.audioOnly.withHighestBitrate().url.toString();
+      }
     } catch (e) {
       debugPrint('Standard manifest failed for $videoId: $e');
     }
