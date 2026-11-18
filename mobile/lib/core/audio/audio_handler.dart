@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:audio_service/audio_service.dart';
 import 'package:dio/dio.dart';
@@ -446,7 +447,10 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
 
       // 3. Extraction directe du morceau complet YouTube (flux Muxed MP4 itag 18, 3 à 5 min)
       if (kIsWeb) {
-        audioUrl = await _resolveWebStreamUrl(item);
+        audioUrl = await _resolveWebStreamUrl(
+          item,
+          rawExtraAudioUrl: rawExtraAudioUrl,
+        );
       } else if (audioUrl.isEmpty && item.id.isNotEmpty) {
         audioUrl = await _resolveStreamUrl(item);
       }
@@ -463,18 +467,21 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
               AudioSource.uri(Uri.parse(audioUrl)),
               initialPosition: resumePosition,
             )
-            .timeout(Duration(seconds: kIsWeb ? 8 : 12));
+            .timeout(Duration(seconds: kIsWeb ? 9 : 12));
       } catch (directError) {
         if (isStale()) return;
         if (kIsWeb) {
-          final backendProxyUrl = _buildBackendYoutubeStreamUrl(item);
-          if (backendProxyUrl.isNotEmpty && backendProxyUrl != audioUrl) {
+          final safetyUrl = await _resolveWebSafetyFallbackUrl(
+            item,
+            rawExtraAudioUrl: rawExtraAudioUrl,
+          );
+          if (safetyUrl.isNotEmpty && safetyUrl != audioUrl) {
             await _player
                 .setAudioSource(
-                  AudioSource.uri(Uri.parse(backendProxyUrl)),
+                  AudioSource.uri(Uri.parse(safetyUrl)),
                   initialPosition: resumePosition,
                 )
-                .timeout(const Duration(seconds: 10));
+                .timeout(const Duration(seconds: 8));
           } else {
             rethrow;
           }
@@ -540,7 +547,7 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
       if (item.id.isEmpty || item.id.startsWith('local_')) return;
       if (offlineRepository?.getOfflineTrack(item.id) != null) return;
       if (kIsWeb) {
-        await _resolveWebStreamUrl(item);
+        await _resolveWebStreamUrl(item, rawExtraAudioUrl: rawUrl);
       } else {
         await _resolveStreamUrl(item);
       }
@@ -644,15 +651,9 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
     return '';
   }
 
-  String _buildBackendYoutubeStreamUrl(MediaItem item) {
-    final cachedId =
-        _videoIdCache[item.id] ?? offlineRepository?.getYoutubeMapping(item.id);
-    if (cachedId != null && _youtubeIdRegex.hasMatch(cachedId)) {
-      return '${ApiConstants.baseUrl}/api/tracks/youtube-stream/?video_id=${Uri.encodeComponent(cachedId)}';
-    }
-    if (!item.id.startsWith('deezer_') && _youtubeIdRegex.hasMatch(item.id)) {
-      return '${ApiConstants.baseUrl}/api/tracks/youtube-stream/?video_id=${Uri.encodeComponent(item.id)}';
-    }
+  static const String _localWebRelayBase = 'http://127.0.0.1:8765';
+
+  String _buildYoutubeSearchQuery(MediaItem item) {
     final cleanTitle = item.title
         .replaceAll(
           RegExp(r'\s*[\(\[][^\)\]]*(?:feat|ft|officiel|clip|video)[^\)\]]*[\)\]]',
@@ -665,31 +666,160 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
         .first
         .trim();
     final query = '$cleanArtist $cleanTitle'.trim();
-    final searchQuery = query.isNotEmpty ? query : item.title;
-    return '${ApiConstants.baseUrl}/api/tracks/youtube-stream/?q=${Uri.encodeComponent(searchQuery)}';
+    return query.isNotEmpty ? query : item.title;
+  }
+
+  /// Vérifie si une URL de flux signée (`exp=...`) est encore valide.
+  bool _isSignedStreamUrlFresh(String url) {
+    final trimmed = url.trim();
+    if (!trimmed.startsWith('http')) return false;
+    final expMatch = RegExp(r'exp=(\d{9,12})').firstMatch(trimmed);
+    if (expMatch == null) return true;
+    final expSeconds = int.tryParse(expMatch.group(1) ?? '');
+    if (expSeconds == null) return true;
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    return expSeconds > (nowSeconds + 45);
   }
 
   /// Résolution audio complète (3 à 5 min) pour le navigateur Web (Chrome / Edge) :
-  /// 1. Tente d'extraire le flux complet YouTube `itag 18` via `_resolveStreamUrl`.
-  /// 2. Sinon, utilise le flux complet YouTube relayé par le backend (`/api/tracks/youtube-stream/`)
-  ///    afin de ne jamais jouer les extraits de 30 secondes de Deezer.
-  Future<String> _resolveWebStreamUrl(MediaItem item) async {
+  /// 1. Relais local PC (`http://127.0.0.1:8765/youtube-stream`) utilisant l'IP résidentielle -> son complet YouTube `itag 18`.
+  /// 2. Endpoint backend (`/api/tracks/youtube-stream/`) -> son complet YouTube `itag 18`.
+  /// 3. Filet de sécurité Deezer/iTunes rafraîchi pour que le lecteur ne reste jamais muet.
+  Future<String> _resolveWebStreamUrl(
+    MediaItem item, {
+    String? rawExtraAudioUrl,
+  }) async {
     final cached = _streamUrlCache[item.id];
     if (cached != null &&
-        DateTime.now().difference(cached.resolvedAt) < _streamUrlTtl) {
+        DateTime.now().difference(cached.resolvedAt) < const Duration(minutes: 4) &&
+        _isSignedStreamUrlFresh(cached.url)) {
       return cached.url;
     }
 
+    final cachedVid = _videoIdCache[item.id] ??
+        offlineRepository?.getYoutubeMapping(item.id) ??
+        (!item.id.startsWith('deezer_') && _youtubeIdRegex.hasMatch(item.id)
+            ? item.id
+            : null);
+    final searchQuery = _buildYoutubeSearchQuery(item);
+    final queryParam = cachedVid != null
+        ? 'video_id=${Uri.encodeComponent(cachedVid)}'
+        : 'q=${Uri.encodeComponent(searchQuery)}';
+
+    // 1. Priorité 1 : Relais YouTube complet local sur le PC (127.0.0.1:8765)
     try {
-      final directYtUrl = await _resolveStreamUrl(item);
-      if (directYtUrl.isNotEmpty) {
-        return directYtUrl;
+      final checkRes = await _dio
+          .get('$_localWebRelayBase/youtube-stream?check=1&$queryParam')
+          .timeout(const Duration(milliseconds: 2800));
+      dynamic checkData = checkRes.data;
+      if (checkData is String && checkData.isNotEmpty) {
+        checkData = jsonDecode(checkData);
+      }
+      if (checkRes.statusCode == 200 &&
+          checkData is Map &&
+          checkData['ok'] == true) {
+        final resolvedVid = (checkData['video_id'] ?? '').toString().trim();
+        if (_youtubeIdRegex.hasMatch(resolvedVid)) {
+          _videoIdCache[item.id] = resolvedVid;
+          final fullLocalStream =
+              '$_localWebRelayBase/youtube-stream?video_id=${Uri.encodeComponent(resolvedVid)}';
+          _streamUrlCache[item.id] = _CachedStreamUrl(fullLocalStream);
+          return fullLocalStream;
+        }
       }
     } catch (_) {}
 
-    final backendStreamUrl = _buildBackendYoutubeStreamUrl(item);
-    _streamUrlCache[item.id] = _CachedStreamUrl(backendStreamUrl);
-    return backendStreamUrl;
+    // 2. Priorité 2 : Endpoint backend (/api/tracks/youtube-stream/)
+    try {
+      final checkBackend = await _dio
+          .get('${ApiConstants.baseUrl}/api/tracks/youtube-stream/?json=1&$queryParam')
+          .timeout(const Duration(seconds: 3));
+      dynamic bData = checkBackend.data;
+      if (bData is String && bData.isNotEmpty) {
+        bData = jsonDecode(bData);
+      }
+      if (checkBackend.statusCode == 200 &&
+          bData is Map &&
+          bData['video_id'] != null) {
+        final resolvedVid = bData['video_id'].toString().trim();
+        final fullBackendStream =
+            '${ApiConstants.baseUrl}/api/tracks/youtube-stream/?video_id=${Uri.encodeComponent(resolvedVid)}';
+        _streamUrlCache[item.id] = _CachedStreamUrl(fullBackendStream);
+        return fullBackendStream;
+      }
+    } catch (_) {}
+
+    // 3. Priorité 3 : Filet de sécurité (ne jamais laisser le lecteur muet)
+    return _resolveWebSafetyFallbackUrl(
+      item,
+      rawExtraAudioUrl: rawExtraAudioUrl,
+    );
+  }
+
+  Future<String> _resolveWebSafetyFallbackUrl(
+    MediaItem item, {
+    String? rawExtraAudioUrl,
+  }) async {
+    final candidateExtra = (rawExtraAudioUrl ?? '').trim();
+    if (candidateExtra.isNotEmpty && _isSignedStreamUrlFresh(candidateExtra)) {
+      _streamUrlCache[item.id] = _CachedStreamUrl(candidateExtra);
+      return candidateExtra;
+    }
+
+    if (item.id.startsWith('deezer_') &&
+        !item.id.startsWith('deezer_book_') &&
+        !item.id.startsWith('deezer_pod_')) {
+      final dzId = item.id.replaceFirst('deezer_', '').trim();
+      final targetUrl = 'https://api.deezer.com/track/$dzId';
+      for (final proxyUrl in [
+        '${ApiConstants.baseUrl}/api/tracks/deezer-proxy/?url=${Uri.encodeComponent(targetUrl)}',
+        'https://api.codetabs.com/v1/proxy?quest=${Uri.encodeComponent(targetUrl)}',
+      ]) {
+        try {
+          final res =
+              await _dio.get(proxyUrl).timeout(const Duration(seconds: 4));
+          dynamic data = res.data;
+          if (data is String && data.isNotEmpty) {
+            data = jsonDecode(data);
+          }
+          if (data is Map) {
+            final freshPreview = (data['preview'] ?? '').toString().trim();
+            if (freshPreview.startsWith('http')) {
+              _streamUrlCache[item.id] = _CachedStreamUrl(freshPreview);
+              return freshPreview;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    try {
+      final term = _buildYoutubeSearchQuery(item);
+      if (term.isNotEmpty) {
+        final res = await _dio
+            .get(
+              'https://itunes.apple.com/search?term=${Uri.encodeComponent(term)}&media=music&entity=song&limit=3',
+            )
+            .timeout(const Duration(seconds: 4));
+        dynamic data = res.data;
+        if (data is String && data.isNotEmpty) {
+          data = jsonDecode(data);
+        }
+        if (data is Map && data['results'] is List) {
+          for (final entry in (data['results'] as List)) {
+            if (entry is Map) {
+              final preview = (entry['previewUrl'] ?? '').toString().trim();
+              if (preview.startsWith('http')) {
+                _streamUrlCache[item.id] = _CachedStreamUrl(preview);
+                return preview;
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    return candidateExtra;
   }
 
   Future<String> _extractMuxedStreamUrl(String videoId) async {

@@ -252,6 +252,10 @@ class YoutubeStreamProxyView(APIView):
     """
     permission_classes = [permissions.AllowAny]
 
+    VR_UA = (
+        'com.google.android.apps.youtube.vr.oculus/1.56.21 '
+        '(Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip'
+    )
     ANDROID_UA = 'com.google.android.youtube/19.29.37 (Linux; U; Android 11) gzip'
     VID_REGEX = re.compile(r'^[a-zA-Z0-9_-]{11}$')
 
@@ -267,9 +271,9 @@ class YoutubeStreamProxyView(APIView):
             payload = json.dumps({
                 'context': {
                     'client': {
-                        'clientName': 'ANDROID',
-                        'clientVersion': '19.29.37',
-                        'androidSdkVersion': 30,
+                        'clientName': 'ANDROID_VR',
+                        'clientVersion': '1.56.21',
+                        'androidSdkVersion': 32,
                         'hl': 'fr',
                         'gl': 'FR',
                     }
@@ -281,7 +285,7 @@ class YoutubeStreamProxyView(APIView):
                 data=payload,
                 headers={
                     'Content-Type': 'application/json',
-                    'User-Agent': cls.ANDROID_UA,
+                    'User-Agent': cls.VR_UA,
                 },
                 method='POST',
             )
@@ -314,48 +318,64 @@ class YoutubeStreamProxyView(APIView):
         if cached_url:
             return cached_url
 
-        # 1. InnerTube ANDROID player endpoint (itag 18 progressive MP4, no PO-token required)
-        try:
-            payload = json.dumps({
-                'context': {
-                    'client': {
-                        'clientName': 'ANDROID',
-                        'clientVersion': '19.29.37',
-                        'androidSdkVersion': 30,
-                        'hl': 'fr',
-                        'gl': 'FR',
-                    }
+        # 1. InnerTube ANDROID_VR / ANDROID player endpoint (itag 18 progressive MP4, no PO-token required)
+        for client_ctx, ua in (
+            (
+                {
+                    'clientName': 'ANDROID_VR',
+                    'clientVersion': '1.56.21',
+                    'androidSdkVersion': 32,
+                    'osName': 'Android',
+                    'osVersion': '12L',
+                    'hl': 'fr',
+                    'gl': 'FR',
                 },
-                'videoId': video_id,
-                'contentCheckOk': True,
-                'racyCheckOk': True,
-            }).encode('utf-8')
-            req = urllib.request.Request(
-                'https://www.youtube.com/youtubei/v1/player?prettyPrint=false',
-                data=payload,
-                headers={
-                    'Content-Type': 'application/json',
-                    'User-Agent': cls.ANDROID_UA,
+                cls.VR_UA,
+            ),
+            (
+                {
+                    'clientName': 'ANDROID',
+                    'clientVersion': '19.29.37',
+                    'androidSdkVersion': 30,
+                    'hl': 'fr',
+                    'gl': 'FR',
                 },
-                method='POST',
-            )
-            with urllib.request.urlopen(req, timeout=6) as resp:
-                data = json.loads(resp.read().decode('utf-8'))
+                cls.ANDROID_UA,
+            ),
+        ):
+            try:
+                payload = json.dumps({
+                    'context': {'client': client_ctx},
+                    'videoId': video_id,
+                    'contentCheckOk': True,
+                    'racyCheckOk': True,
+                }).encode('utf-8')
+                req = urllib.request.Request(
+                    'https://www.youtube.com/youtubei/v1/player?prettyPrint=false',
+                    data=payload,
+                    headers={
+                        'Content-Type': 'application/json',
+                        'User-Agent': ua,
+                    },
+                    method='POST',
+                )
+                with urllib.request.urlopen(req, timeout=6) as resp:
+                    data = json.loads(resp.read().decode('utf-8'))
 
-            streaming_data = data.get('streamingData') or {}
-            formats = streaming_data.get('formats') or []
-            for fmt in formats:
-                if fmt.get('itag') == 18 and fmt.get('url'):
-                    url = str(fmt['url'])
-                    cache.set(cache_key, url, 3600)
-                    return url
-            for fmt in formats:
-                if fmt.get('url'):
-                    url = str(fmt['url'])
-                    cache.set(cache_key, url, 3600)
-                    return url
-        except Exception:
-            pass
+                streaming_data = data.get('streamingData') or {}
+                formats = streaming_data.get('formats') or []
+                for fmt in formats:
+                    if fmt.get('itag') == 18 and fmt.get('url'):
+                        url = str(fmt['url'])
+                        cache.set(cache_key, url, 3600)
+                        return url
+                for fmt in formats:
+                    if fmt.get('url') and not str(fmt.get('url')).endswith('.m3u8'):
+                        url = str(fmt['url'])
+                        cache.set(cache_key, url, 3600)
+                        return url
+            except Exception:
+                continue
 
         return ''
 
