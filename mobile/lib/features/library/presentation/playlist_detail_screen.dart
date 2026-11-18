@@ -1313,137 +1313,150 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
         final isSelected = _selectedTrackIds.contains(track.id);
         final durationStr = _formatTrackDuration(track.durationSeconds);
 
-        final tileContent = Material(
-          color: isCurrentTrack
-              ? AppColors.primary.withValues(alpha: 0.09)
-              : (isSelected ? Colors.white.withValues(alpha: 0.06) : Colors.transparent),
-          child: InkWell(
-            onTap: () {
-              if (_isSelectionMode) {
-                setState(() {
-                  if (isSelected) {
-                    _selectedTrackIds.remove(track.id);
-                  } else {
-                    _selectedTrackIds.add(track.id);
-                  }
-                });
-              } else {
-                context.read<PlayerCubit>().playTrack(
-                      track,
-                      queue: queue,
-                      source: sourceLabel,
-                    );
-              }
-            },
-            onLongPress: () {
-              if (!_isSelectionMode) {
-                TrackContextMenu.show(context, track, playlistId: playlistId);
-              }
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 24,
-                    child: Center(
-                      child: isCurrentTrack
-                          ? const Icon(
-                              Icons.graphic_eq_rounded,
-                              color: AppColors.primary,
-                              size: 18,
-                            )
-                          : Text(
-                              "${index + 1}",
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.52),
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                fontFeatures: const [FontFeature.tabularFigures()],
-                              ),
-                            ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: SizedBox(
-                      width: 50,
-                      height: 50,
-                      child: PlayingIndicatorOverlay(
-                        trackId: track.id,
-                        child: track.coverUrl.isNotEmpty
-                            ? (track.coverUrl.startsWith('file://') ||
-                                    track.coverUrl.startsWith('http://local.image/')
-                                ? Image.file(
-                                    File(
-                                      track.coverUrl
-                                          .replaceFirst('file://', '')
-                                          .replaceFirst('http://local.image/', ''),
-                                    ),
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => _buildFallbackCover(),
-                                  )
-                                : CachedNetworkImage(
-                                    imageUrl: track.coverUrl,
-                                    fit: BoxFit.cover,
-                                    errorWidget: (_, __, ___) => _buildFallbackCover(),
-                                  ))
-                            : _buildFallbackCover(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          track.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: isCurrentTrack ? AppColors.primary : Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16.5,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Row(
-                          children: [
-                            BlocBuilder<DownloadCubit, DownloadState>(
-                              builder: (context, dlState) {
-                                final isDownloaded = dlState is DownloadStateData &&
-                                    dlState.downloadedIds.contains(track.id);
-                                if (!isDownloaded) return const SizedBox.shrink();
-                                return const Padding(
-                                  padding: EdgeInsets.only(right: 5),
-                                  child: Icon(
-                                    Icons.download_done_rounded,
-                                    size: 14,
-                                    color: AppColors.primary,
-                                  ),
-                                );
-                              },
-                            ),
-                            Expanded(
-                              child: ArtistNameDisplay(
-                                artistName: track.artistName,
-                                maxLines: 1,
+        final tileContent = Container(
+          margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+          decoration: BoxDecoration(
+            color: isCurrentTrack
+                ? Colors.white.withValues(alpha: 0.09)
+                : (isSelected ? Colors.white.withValues(alpha: 0.06) : Colors.transparent),
+            borderRadius: BorderRadius.circular(12),
+            border: isCurrentTrack
+                ? Border.all(
+                    color: Colors.white.withValues(alpha: 0.16),
+                    width: 1,
+                  )
+                : null,
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                if (_isSelectionMode) {
+                  setState(() {
+                    if (isSelected) {
+                      _selectedTrackIds.remove(track.id);
+                    } else {
+                      _selectedTrackIds.add(track.id);
+                    }
+                  });
+                } else {
+                  context.read<PlayerCubit>().playTrack(
+                        track,
+                        queue: queue,
+                        source: sourceLabel,
+                      );
+                }
+              },
+              onLongPress: () {
+                if (!_isSelectionMode) {
+                  TrackContextMenu.show(context, track, playlistId: playlistId);
+                }
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 24,
+                      child: Center(
+                        child: isCurrentTrack
+                            ? const Icon(
+                                Icons.graphic_eq_rounded,
+                                color: Colors.white,
+                                size: 18,
+                              )
+                            : Text(
+                                "${index + 1}",
                                 style: TextStyle(
-                                  color: isCurrentTrack
-                                      ? AppColors.primary.withValues(alpha: 0.85)
-                                      : Colors.white.withValues(alpha: 0.72),
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white.withValues(alpha: 0.52),
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  fontFeatures: const [FontFeature.tabularFigures()],
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: SizedBox(
+                        width: 50,
+                        height: 50,
+                        child: PlayingIndicatorOverlay(
+                          trackId: track.id,
+                          child: track.coverUrl.isNotEmpty
+                              ? (track.coverUrl.startsWith('file://') ||
+                                      track.coverUrl.startsWith('http://local.image/')
+                                  ? Image.file(
+                                      File(
+                                        track.coverUrl
+                                            .replaceFirst('file://', '')
+                                            .replaceFirst('http://local.image/', ''),
+                                      ),
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => _buildFallbackCover(),
+                                    )
+                                  : CachedNetworkImage(
+                                      imageUrl: track.coverUrl,
+                                      fit: BoxFit.cover,
+                                      errorWidget: (_, __, ___) => _buildFallbackCover(),
+                                    ))
+                              : _buildFallbackCover(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            track.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: isCurrentTrack ? FontWeight.w800 : FontWeight.w700,
+                              fontSize: 16.5,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              BlocBuilder<DownloadCubit, DownloadState>(
+                                builder: (context, dlState) {
+                                  final isDownloaded = dlState is DownloadStateData &&
+                                      dlState.downloadedIds.contains(track.id);
+                                  if (!isDownloaded) return const SizedBox.shrink();
+                                  return const Padding(
+                                    padding: EdgeInsets.only(right: 5),
+                                    child: Icon(
+                                      Icons.download_done_rounded,
+                                      size: 14,
+                                      color: AppColors.primary,
+                                    ),
+                                  );
+                                },
+                              ),
+                              Expanded(
+                                child: ArtistNameDisplay(
+                                  artistName: track.artistName,
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: isCurrentTrack
+                                        ? Colors.white.withValues(alpha: 0.86)
+                                        : Colors.white.withValues(alpha: 0.72),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
                   if (_isSelectionMode)
                     Checkbox(
                       value: isSelected,
@@ -1518,6 +1531,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 ],
               ),
             ),
+          ),
           ),
         );
 

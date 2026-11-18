@@ -107,32 +107,20 @@ class QueueBottomSheet extends StatelessWidget {
                                 key: ValueKey('${track.id}_${track.hashCode}'),
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Container(
-                                    margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-                                    decoration: BoxDecoration(
-                                      color: isCurrent
-                                          ? AppColors.primary.withOpacity(0.15)
-                                          : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: isCurrent
-                                          ? Border.all(color: AppColors.primary.withOpacity(0.5), width: 1)
-                                          : Border.all(color: Colors.transparent, width: 1),
-                                    ),
-                                    child: SonoritizTrackTile(
-                                      track: track,
-                                      queue: state.queue,
-                                      trailing: isCurrent && state.isPlaying
-                                          ? const Icon(Icons.equalizer_rounded, color: AppColors.primary)
-                                              .animate(onPlay: (controller) => controller.repeat())
-                                              .shimmer(duration: 1000.ms)
-                                          : ReorderableDragStartListener(
-                                              index: index,
-                                              child: Icon(Icons.drag_handle_rounded, color: Colors.white.withOpacity(0.3)),
-                                            ),
-                                      onTap: () {
-                                        context.read<PlayerCubit>().skipToQueueItem(index);
-                                      },
-                                    ),
+                                  SonoritizTrackTile(
+                                    track: track,
+                                    queue: state.queue,
+                                    trailing: isCurrent && state.isPlaying
+                                        ? const Icon(Icons.equalizer_rounded, color: Colors.white)
+                                            .animate(onPlay: (controller) => controller.repeat())
+                                            .shimmer(duration: 1000.ms)
+                                        : ReorderableDragStartListener(
+                                            index: index,
+                                            child: Icon(Icons.drag_handle_rounded, color: Colors.white.withValues(alpha: 0.3)),
+                                          ),
+                                    onTap: () {
+                                      context.read<PlayerCubit>().skipToQueueItem(index);
+                                    },
                                   ),
                                   // Trait gris de séparation distinct entre les sons de haut en bas
                                   Divider(

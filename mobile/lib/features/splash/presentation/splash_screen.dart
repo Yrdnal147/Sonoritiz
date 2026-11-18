@@ -13,7 +13,7 @@ class SplashScreen extends StatefulWidget {
   const SplashScreen({
     super.key,
     this.storageService,
-    this.splashDuration = const Duration(seconds: 4),
+    this.splashDuration = const Duration(seconds: 2),
     this.enableAudio = true,
   });
 

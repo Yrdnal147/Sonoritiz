@@ -1,7 +1,9 @@
 import hashlib
 import json
+import re
 import urllib.parse
 import urllib.request
+from django.http import StreamingHttpResponse
 from rest_framework import status, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -240,4 +242,191 @@ class DeezerProxyView(APIView):
         ttl = 240 if '/track/' in parsed.path else 900
         cache.set(cache_key, data, ttl)
         return Response(data, status=status.HTTP_200_OK)
+
+
+class YoutubeStreamProxyView(APIView):
+    """
+    Resolves and streams the full-length YouTube progressive stream (itag 18)
+    for Flutter Web clients so browsers play the complete track instead of
+    30-second Deezer previews.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    ANDROID_UA = 'com.google.android.youtube/19.29.37 (Linux; U; Android 11) gzip'
+    VID_REGEX = re.compile(r'^[a-zA-Z0-9_-]{11}$')
+
+    @classmethod
+    def _resolve_video_id(cls, query: str) -> str:
+        cache_key = f'yt_vid_q_{hashlib.sha256(query.lower().encode("utf-8")).hexdigest()[:24]}'
+        cached_vid = cache.get(cache_key)
+        if cached_vid:
+            return cached_vid
+
+        # 1. InnerTube search
+        try:
+            payload = json.dumps({
+                'context': {
+                    'client': {
+                        'clientName': 'ANDROID',
+                        'clientVersion': '19.29.37',
+                        'androidSdkVersion': 30,
+                        'hl': 'fr',
+                        'gl': 'FR',
+                    }
+                },
+                'query': query,
+            }).encode('utf-8')
+            req = urllib.request.Request(
+                'https://www.youtube.com/youtubei/v1/search?prettyPrint=false',
+                data=payload,
+                headers={
+                    'Content-Type': 'application/json',
+                    'User-Agent': cls.ANDROID_UA,
+                },
+                method='POST',
+            )
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                raw = resp.read().decode('utf-8', errors='replace')
+            matches = re.findall(r'"videoId"\s*:\s*"([a-zA-Z0-9_-]{11})"', raw)
+            if matches:
+                vid = matches[0]
+                cache.set(cache_key, vid, 86400)
+                return vid
+        except Exception:
+            pass
+
+        # 2. Fallback via YTClient (ytmusicapi)
+        try:
+            client = YTClient()
+            results = client.search_tracks(query=query, limit=1, offset=0)
+            if results and results[0].get('youtube_id'):
+                vid = str(results[0]['youtube_id'])
+                cache.set(cache_key, vid, 86400)
+                return vid
+        except Exception:
+            pass
+        return ''
+
+    @classmethod
+    def _resolve_itag18_url(cls, video_id: str) -> str:
+        cache_key = f'yt_itag18_{video_id}'
+        cached_url = cache.get(cache_key)
+        if cached_url:
+            return cached_url
+
+        # 1. InnerTube ANDROID player endpoint (itag 18 progressive MP4, no PO-token required)
+        try:
+            payload = json.dumps({
+                'context': {
+                    'client': {
+                        'clientName': 'ANDROID',
+                        'clientVersion': '19.29.37',
+                        'androidSdkVersion': 30,
+                        'hl': 'fr',
+                        'gl': 'FR',
+                    }
+                },
+                'videoId': video_id,
+                'contentCheckOk': True,
+                'racyCheckOk': True,
+            }).encode('utf-8')
+            req = urllib.request.Request(
+                'https://www.youtube.com/youtubei/v1/player?prettyPrint=false',
+                data=payload,
+                headers={
+                    'Content-Type': 'application/json',
+                    'User-Agent': cls.ANDROID_UA,
+                },
+                method='POST',
+            )
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+
+            streaming_data = data.get('streamingData') or {}
+            formats = streaming_data.get('formats') or []
+            for fmt in formats:
+                if fmt.get('itag') == 18 and fmt.get('url'):
+                    url = str(fmt['url'])
+                    cache.set(cache_key, url, 3600)
+                    return url
+            for fmt in formats:
+                if fmt.get('url'):
+                    url = str(fmt['url'])
+                    cache.set(cache_key, url, 3600)
+                    return url
+        except Exception:
+            pass
+
+        return ''
+
+    def get(self, request):
+        video_id = (request.query_params.get('video_id') or '').strip()
+        query = (request.query_params.get('q') or '').strip()
+
+        if not self.VID_REGEX.match(video_id):
+            if not query:
+                return Response(
+                    {'error': {'code': 'MISSING_QUERY', 'message': 'Paramètre q ou video_id requis.'}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            video_id = self._resolve_video_id(query)
+
+        if not video_id:
+            return Response(
+                {'error': {'code': 'VIDEO_NOT_FOUND', 'message': 'Aucun flux trouvé pour ce titre.'}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        stream_url = self._resolve_itag18_url(video_id)
+        if not stream_url:
+            return Response(
+                {'error': {'code': 'STREAM_UNAVAILABLE', 'message': 'Flux itag 18 indisponible.'}},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        if request.query_params.get('json') == '1':
+            return Response({'video_id': video_id, 'stream_url': stream_url}, status=status.HTTP_200_OK)
+
+        headers = {'User-Agent': self.ANDROID_UA}
+        range_header = request.META.get('HTTP_RANGE')
+        if range_header:
+            headers['Range'] = range_header
+
+        try:
+            upstream_req = urllib.request.Request(stream_url, headers=headers)
+            upstream_resp = urllib.request.urlopen(upstream_req, timeout=12)
+        except Exception as exc:
+            return Response(
+                {'error': {'code': 'UPSTREAM_STREAM_ERROR', 'message': str(exc)}},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        def chunk_iterator():
+            try:
+                while True:
+                    chunk = upstream_resp.read(65536)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                try:
+                    upstream_resp.close()
+                except Exception:
+                    pass
+
+        status_code = getattr(upstream_resp, 'status', 200) or 200
+        content_type = upstream_resp.headers.get('Content-Type', 'audio/mp4')
+        response = StreamingHttpResponse(
+            chunk_iterator(),
+            status=status_code,
+            content_type=content_type,
+        )
+        response['Accept-Ranges'] = 'bytes'
+        response['Access-Control-Allow-Origin'] = '*'
+        for hdr in ('Content-Length', 'Content-Range'):
+            val = upstream_resp.headers.get(hdr)
+            if val:
+                response[hdr] = val
+        return response
+
 

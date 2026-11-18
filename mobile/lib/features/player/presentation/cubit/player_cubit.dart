@@ -78,6 +78,61 @@ class PlayerCubit extends Cubit<PlayerState> {
         _syncWidgetPlaybackState(force: true);
       }
     };
+
+    restoreLastSessionIfIdle();
+  }
+
+  /// Restaure le dernier morceau écouté dans le mini-lecteur (en pause, prêt à jouer en 1 tap)
+  /// et pré-résout silencieusement les 2 premiers titres uniquement si aucun son ne tourne.
+  void restoreLastSessionIfIdle() {
+    if (state.hasTrack || _isResolving) return;
+    try {
+      final storage = StorageService();
+      if (!storage.isAuthenticated) return;
+      final recentEntries = storage.getRecentLocalTrackEntries();
+      if (recentEntries.isEmpty) return;
+
+      final List<TrackModel> restoredQueue = [];
+      final Set<String> seenIds = {};
+      for (final entry in recentEntries) {
+        final rawTrack = entry['track'];
+        if (rawTrack is! Map) continue;
+        final track = TrackModel.fromJson(Map<String, dynamic>.from(rawTrack));
+        final cleanId = track.id.trim();
+        if (cleanId.isEmpty ||
+            cleanId == '0' ||
+            cleanId == 'null' ||
+            track.title.trim().isEmpty) {
+          continue;
+        }
+        if (seenIds.add(cleanId)) {
+          restoredQueue.add(track);
+          if (restoredQueue.length >= 15) break;
+        }
+      }
+
+      if (restoredQueue.isEmpty) return;
+      final first = restoredQueue.first;
+      emit(state.copyWith(
+        queue: restoredQueue,
+        currentIndex: 0,
+        duration: Duration(seconds: first.durationSeconds),
+        position: Duration.zero,
+        playbackSource: 'Reprise d’écoute',
+        isBuffering: false,
+        isPlaying: false,
+        clearError: true,
+      ));
+      _audioHandler.prepareIdleMediaItem(first.toMediaItem());
+      unawaited(_prefetchIdleTracksSequentially(restoredQueue.take(2).toList()));
+    } catch (_) {}
+  }
+
+  Future<void> _prefetchIdleTracksSequentially(List<TrackModel> candidates) async {
+    for (final track in candidates) {
+      if (isClosed || _isResolving || state.isPlaying) return;
+      await _audioHandler.prefetch(track.toMediaItem());
+    }
   }
 
   int _lastWidgetSyncSecond = -1;

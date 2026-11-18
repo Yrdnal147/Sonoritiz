@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import '../../../features/player/presentation/cubit/player_cubit.dart';
 import '../../../features/player/presentation/cubit/player_state.dart';
-import '../theme/app_colors.dart';
 
 class PlayingIndicatorOverlay extends StatelessWidget {
   final String trackId;
@@ -26,11 +25,11 @@ class PlayingIndicatorOverlay extends StatelessWidget {
           children: [
             child,
             Container(
-              color: Colors.black.withOpacity(0.5),
+              color: Colors.black.withValues(alpha: 0.45),
             ),
-            SpinKitWave(
-              color: AppColors.secondary,
-              size: 20.0,
+            const SpinKitWave(
+              color: Colors.white,
+              size: 18.0,
             ),
           ],
         );
