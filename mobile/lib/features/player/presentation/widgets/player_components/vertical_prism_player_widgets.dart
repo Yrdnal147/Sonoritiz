@@ -10,6 +10,7 @@ import 'package:just_audio/just_audio.dart' show LoopMode;
 import '../../../../../core/audio/audio_device_service.dart';
 import '../../../../../core/utils/share_utils.dart';
 import '../../../../../core/widgets/artist_name_display.dart';
+import '../../../../home/data/repositories/catalog_repository.dart';
 import '../../../../offline/presentation/cubit/download_cubit.dart';
 import '../../../data/models/track_model.dart';
 import 'immersive_player_widgets.dart';
@@ -1128,26 +1129,100 @@ class _SonoritizTrackArtistsFramesState
     return result;
   }
 
+  CatalogRepository _resolveCatalogRepo() {
+    try {
+      return context.read<CatalogRepository>();
+    } catch (_) {
+      return CatalogRepository();
+    }
+  }
+
   void _syncArtistsForCurrentTrack() {
     final parsed =
         _parseTrackArtists(widget.track.artistName, widget.track.title);
     _artists = parsed;
     _resolvedUrls.clear();
 
+    final List<String> toFetch = [];
     for (final artist in parsed) {
       final key = artist.toLowerCase();
-      if (_avatarCache.containsKey(key)) {
+      if (_avatarCache.containsKey(key) && _avatarCache[key]!.isNotEmpty) {
         _resolvedUrls[artist] = _avatarCache[key]!;
       } else {
-        _fetchArtistAvatar(artist);
+        toFetch.add(artist);
       }
     }
     if (mounted) {
       setState(() {});
     }
+    if (toFetch.isNotEmpty) {
+      _resolveArtistsWithTrackAndSearch(widget.track.id, toFetch);
+    }
   }
 
-  Future<void> _fetchArtistAvatar(String artistName) async {
+  Future<void> _resolveArtistsWithTrackAndSearch(
+    String trackId,
+    List<String> artistsToFetch,
+  ) async {
+    final Set<String> resolvedLower = {};
+
+    // 1. Si c'est un morceau Deezer, lire les `contributors` officiels du titre (zéro erreur d'homonyme)
+    if (trackId.startsWith('deezer_') &&
+        !trackId.startsWith('deezer_book_') &&
+        !trackId.startsWith('deezer_pod_')) {
+      final dzId = trackId.replaceFirst('deezer_', '').trim();
+      try {
+        final response = await _dio.get('https://api.deezer.com/track/$dzId');
+        if (response.statusCode == 200 && response.data is Map) {
+          final data = response.data as Map;
+          final List<Map> rawArtists = [];
+          if (data['contributors'] is List) {
+            rawArtists.addAll((data['contributors'] as List).whereType<Map>());
+          }
+          if (data['artist'] is Map) {
+            rawArtists.add(data['artist'] as Map);
+          }
+          for (final target in artistsToFetch) {
+            final targetLower = target.toLowerCase().trim();
+            for (final c in rawArtists) {
+              final cName = (c['name'] ?? '').toString().toLowerCase().trim();
+              if (cName == targetLower ||
+                  (cName.isNotEmpty &&
+                      (cName.contains(targetLower) ||
+                          targetLower.contains(cName)))) {
+                final rawPic = (c['picture_xl'] ??
+                        c['picture_big'] ??
+                        c['picture_medium'] ??
+                        c['picture_small'] ??
+                        c['picture'] ??
+                        '')
+                    .toString();
+                if (rawPic.isNotEmpty && !rawPic.contains('/images/artist//')) {
+                  _avatarCache[targetLower] = rawPic;
+                  resolvedLower.add(targetLower);
+                  if (mounted && widget.track.id == trackId) {
+                    setState(() => _resolvedUrls[target] = rawPic);
+                  }
+                  break;
+                }
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Pour les artistes restants, utiliser le même moteur que la Recherche (nom exact + nb_fan décroissant)
+    for (final artist in artistsToFetch) {
+      if (resolvedLower.contains(artist.toLowerCase().trim())) continue;
+      await _fetchArtistAvatar(artist, expectedTrackId: trackId);
+    }
+  }
+
+  Future<void> _fetchArtistAvatar(
+    String artistName, {
+    String? expectedTrackId,
+  }) async {
     final String key = artistName.toLowerCase().trim();
     if (key.isEmpty ||
         key == 'artiste inconnu' ||
@@ -1161,49 +1236,12 @@ class _SonoritizTrackArtistsFramesState
     }
 
     try {
-      final response = await _dio.get(
-        'https://api.deezer.com/search/artist?q=${Uri.encodeComponent(artistName)}&limit=5',
-      );
       String foundPicture = '';
-      if (response.statusCode == 200 &&
-          response.data is Map &&
-          response.data['data'] is List &&
-          (response.data['data'] as List).isNotEmpty) {
-        final List dataList = response.data['data'] as List;
-        Map<String, dynamic>? match;
-
-        // 1re passe : correspondance exacte sur le nom de l'artiste
-        for (final item in dataList) {
-          if (item is Map<String, dynamic>) {
-            final name = (item['name'] ?? '').toString().toLowerCase().trim();
-            if (name == key) {
-              match = item;
-              break;
-            }
-          }
-        }
-
-        // 2e passe : correspondance partielle si aucun nom exact trouvé
-        if (match == null) {
-          for (final item in dataList) {
-            if (item is Map<String, dynamic>) {
-              final name = (item['name'] ?? '').toString().toLowerCase().trim();
-              if (name.contains(key) || key.contains(name)) {
-                match = item;
-                break;
-              }
-            }
-          }
-        }
-
-        match ??= dataList.first as Map<String, dynamic>?;
-        final rawPic = (match?['picture_medium'] ??
-                match?['picture_big'] ??
-                match?['picture_small'] ??
-                match?['picture'] ??
-                '')
-            .toString();
-        // Ignorer l'avatar vide par défaut de Deezer (/images/artist//)
+      final repo = _resolveCatalogRepo();
+      final results = await repo.searchArtists(artistName, limit: 10);
+      if (results.isNotEmpty) {
+        final top = results.first;
+        final rawPic = (top['picture'] ?? '').toString();
         if (rawPic.isNotEmpty && !rawPic.contains('/images/artist//')) {
           foundPicture = rawPic;
         }
@@ -1212,16 +1250,20 @@ class _SonoritizTrackArtistsFramesState
       if (_avatarCache.length >= 80) {
         _avatarCache.remove(_avatarCache.keys.first);
       }
-      _avatarCache[key] = foundPicture;
+      if (foundPicture.isNotEmpty) {
+        _avatarCache[key] = foundPicture;
+      }
 
-      if (mounted) {
+      if (mounted &&
+          (expectedTrackId == null || widget.track.id == expectedTrackId)) {
         setState(() {
           _resolvedUrls[artistName] = foundPicture;
         });
       }
     } catch (_) {
       // Ne pas mettre en cache en cas d'erreur réseau temporaire afin de pouvoir réessayer
-      if (mounted) {
+      if (mounted &&
+          (expectedTrackId == null || widget.track.id == expectedTrackId)) {
         setState(() {
           _resolvedUrls[artistName] = '';
         });

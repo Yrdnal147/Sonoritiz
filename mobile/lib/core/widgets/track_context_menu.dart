@@ -141,6 +141,24 @@ class TrackContextMenu extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
+            // Action: Lire ensuite (Son suivant immédiat)
+            _buildMenuOption(
+              icon: Icons.playlist_play_rounded,
+              title: "Lire ensuite",
+              onTap: () {
+                context.read<PlayerCubit>().playTrackNext(track);
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text("« ${track.title} » sera lu ensuite"),
+                    backgroundColor: AppColors.surface,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+
             // Action: File d'attente
             _buildMenuOption(
               icon: Icons.queue_music_rounded,

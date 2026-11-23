@@ -113,17 +113,26 @@ class PlayerCubit extends Cubit<PlayerState> {
 
       if (restoredQueue.isEmpty) return;
       final first = restoredQueue.first;
+      final savedSec = storage.getLastPlaybackPositionSeconds(first.id);
+      final clampedSec = (first.durationSeconds > 10 && savedSec < first.durationSeconds - 5)
+          ? savedSec
+          : 0;
+      final resumePos = Duration(seconds: clampedSec);
+
       emit(state.copyWith(
         queue: restoredQueue,
         currentIndex: 0,
         duration: Duration(seconds: first.durationSeconds),
-        position: Duration.zero,
+        position: resumePos,
         playbackSource: 'Reprise d’écoute',
         isBuffering: false,
         isPlaying: false,
         clearError: true,
       ));
-      _audioHandler.prepareIdleMediaItem(first.toMediaItem());
+      _audioHandler.prepareIdleMediaItem(
+        first.toMediaItem(),
+        resumePosition: resumePos,
+      );
       unawaited(_prefetchIdleTracksSequentially(restoredQueue.take(2).toList()));
     } catch (_) {}
   }
@@ -288,10 +297,14 @@ class PlayerCubit extends Cubit<PlayerState> {
       if ((pos - state.position).inMilliseconds.abs() < 1000) return;
       emit(state.copyWith(position: pos));
 
+      final currentId = state.currentTrack?.id;
+      if (currentId != null && pos.inSeconds > 0 && pos.inSeconds % 5 == 0) {
+        unawaited(StorageService().saveLastPlaybackPosition(currentId, pos.inSeconds));
+      }
+
       // Pré-chargement « Zero-Latency » à ~30s de la fin du morceau (synchronisé avec la bannière « À suivre »)
       final totalSec = state.duration.inSeconds;
       final remainingSec = totalSec - pos.inSeconds;
-      final currentId = state.currentTrack?.id;
       if (currentId != null &&
           totalSec >= 40 &&
           remainingSec <= 32 &&
@@ -390,15 +403,36 @@ class PlayerCubit extends Cubit<PlayerState> {
       }
 
       final response = await _metaDio.get(
-        'https://api.deezer.com/search/artist?q=${Uri.encodeComponent(target)}&limit=3',
+        'https://api.deezer.com/search/artist?q=${Uri.encodeComponent(target)}&limit=10',
       );
       if (response.statusCode == 200 &&
           response.data is Map &&
           response.data['data'] is List &&
           (response.data['data'] as List).isNotEmpty) {
-        final List dataList = response.data['data'] as List;
-        final match = dataList.first as Map<String, dynamic>?;
-        final rawPic = (match?['picture_medium'] ?? match?['picture_small'] ?? match?['picture'] ?? '').toString();
+        final List<Map<String, dynamic>> dataList = (response.data['data'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+        final cleanQ = target.toLowerCase().trim();
+        dataList.sort((a, b) {
+          final nameA = (a['name'] ?? '').toString().trim().toLowerCase();
+          final nameB = (b['name'] ?? '').toString().trim().toLowerCase();
+          final exactA = nameA == cleanQ;
+          final exactB = nameB == cleanQ;
+          if (exactA && !exactB) return -1;
+          if (!exactA && exactB) return 1;
+          final fansA = a['nb_fan'] is int ? a['nb_fan'] as int : 0;
+          final fansB = b['nb_fan'] is int ? b['nb_fan'] as int : 0;
+          return fansB.compareTo(fansA);
+        });
+        final match = dataList.isNotEmpty ? dataList.first : null;
+        final rawPic = (match?['picture_xl'] ??
+                match?['picture_big'] ??
+                match?['picture_medium'] ??
+                match?['picture_small'] ??
+                match?['picture'] ??
+                '')
+            .toString();
         if (rawPic.isNotEmpty && !rawPic.contains('/images/artist//')) {
           await _metaDio.download(rawPic, localPath);
           if (await file.exists()) {
@@ -1005,6 +1039,20 @@ class PlayerCubit extends Cubit<PlayerState> {
     ));
     libraryRepository?.addToHistory(targetTrack);
     await _startTrack(targetTrack);
+  }
+
+  /// Insère un titre juste après le morceau en cours (« Lire ensuite ») et le pré-charge.
+  void playTrackNext(TrackModel track) {
+    if (state.queue.isEmpty) {
+      unawaited(playTrack(track, queue: [track]));
+      return;
+    }
+    final updatedQueue = List<TrackModel>.from(state.queue);
+    final int insertIndex = (state.currentIndex + 1).clamp(0, updatedQueue.length);
+    updatedQueue.insert(insertIndex, track);
+    _nextShuffleIndex = state.isShuffleModeEnabled ? insertIndex : null;
+    emit(state.copyWith(queue: updatedQueue));
+    unawaited(_audioHandler.prefetch(track.toMediaItem()));
   }
 
   void addToQueue(TrackModel track) {

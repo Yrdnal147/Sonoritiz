@@ -1,15 +1,19 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
+import '../../../../core/services/palette_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/storage/storage_service.dart';
-import '../../../../core/widgets/sonoritiz_page_title.dart';
+import '../../../../core/widgets/sonoritiz_artwork.dart';
 import '../../../player/presentation/cubit/player_cubit.dart';
+import '../../../player/presentation/widgets/player_components/immersive_player_widgets.dart';
 import '../../../player/data/models/track_model.dart';
 import '../../../search/presentation/cubit/search_cubit.dart';
 import '../../../../core/widgets/sonoritiz_track_tile.dart';
+import '../widgets/artist_personalized_wordmark.dart';
 
 class ArtistDetailScreen extends StatefulWidget {
   final Map<String, String> artistInfo;
@@ -30,6 +34,8 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
   bool _isFollowed = false;
   bool _isBioExpanded = false;
   String? _errorMessage;
+  ImmersivePalette _palette = ImmersivePalette.fallback;
+  String _lastPaletteUrl = '';
 
   @override
   void initState() {
@@ -37,9 +43,32 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
     _artistName = widget.artistInfo['name'] ?? 'Artiste Inconnu';
     _isFollowed = StorageService().isArtistFollowed(_artistName);
 
+    final initialImage = (widget.artistInfo['imageUrl'] ?? '').trim();
+    if (initialImage.isNotEmpty) {
+      final cached = PaletteService.getCached(initialImage);
+      if (cached != null) {
+        _palette = cached;
+        _lastPaletteUrl = initialImage;
+      } else {
+        _extractArtistPalette(initialImage);
+      }
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchData();
     });
+  }
+
+  Future<void> _extractArtistPalette(String url) async {
+    final clean = url.trim();
+    if (clean.isEmpty || clean == _lastPaletteUrl) return;
+    _lastPaletteUrl = clean;
+    final palette = await PaletteService.getPalette(clean);
+    if (mounted) {
+      setState(() {
+        _palette = palette;
+      });
+    }
   }
 
   Future<void> _fetchData() async {
@@ -89,6 +118,8 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
 
       if (mounted) {
         final realName = (details['name'] ?? _artistName).toString();
+        final resolvedImage =
+            (details['picture_xl'] ?? widget.artistInfo['imageUrl'] ?? '').toString();
         setState(() {
           _artistDetails = details;
           _topTracks = top;
@@ -97,6 +128,9 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
               StorageService().isArtistFollowed(_artistName);
           _isLoading = false;
         });
+        if (resolvedImage.isNotEmpty) {
+          _extractArtistPalette(resolvedImage);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -154,31 +188,39 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
       );
     }
 
-    final imageUrl = (_artistDetails?['picture_xl'] ?? '').toString();
+    final imageUrl =
+        (_artistDetails?['picture_xl'] ?? widget.artistInfo['imageUrl'] ?? '').toString();
     final int nbFan = (_artistDetails?['nb_fan'] ?? 0) as int;
     final int nbAlbum = (_artistDetails?['nb_album'] ?? _albums.length) as int;
     final String bio = (_artistDetails?['bio'] ?? '').toString();
     final String name = (_artistDetails?['name'] ?? _artistName).toString();
     final String sourceLabel = "le profil de $name";
 
+    final Color bgColor = _palette.deepColor;
+    final Color accentColor = _palette.accentColor;
+    final Color playIconColor =
+        ThemeData.estimateBrightnessForColor(accentColor) == Brightness.light
+            ? Colors.black
+            : Colors.white;
+
     return Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: bgColor,
         extendBodyBehindAppBar: true,
         body: Stack(
           children: [
             CustomScrollView(
               physics: const BouncingScrollPhysics(),
               slivers: [
-                // Grand Header immersif avec photo de l'artiste et flou artistique
+                // Grand Header immersif avec photo de l'artiste, nom personnalisé et fondu chromatique
                 SliverAppBar(
-                  backgroundColor: AppColors.background.withOpacity(0.85),
-                  expandedHeight: 330,
+                  backgroundColor: bgColor.withValues(alpha: 0.90),
+                  expandedHeight: 380,
                   pinned: true,
                   elevation: 0,
                   leading: Padding(
                     padding: const EdgeInsets.all(8.0),
                     child: CircleAvatar(
-                      backgroundColor: Colors.black.withOpacity(0.45),
+                      backgroundColor: Colors.black.withValues(alpha: 0.45),
                       child: IconButton(
                         icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
                         onPressed: () => context.pop(),
@@ -189,7 +231,7 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                     Padding(
                       padding: const EdgeInsets.all(8.0),
                       child: CircleAvatar(
-                        backgroundColor: Colors.black.withOpacity(0.45),
+                        backgroundColor: Colors.black.withValues(alpha: 0.45),
                         child: IconButton(
                           icon: const Icon(Icons.share_rounded, color: Colors.white, size: 18),
                           onPressed: () {
@@ -207,13 +249,13 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                       fit: StackFit.expand,
                       children: [
                         if (imageUrl.isNotEmpty)
-                          CachedNetworkImage(
+                          SonoritizArtwork(
                             imageUrl: imageUrl,
+                            width: double.infinity,
+                            height: double.infinity,
+                            borderRadius: 0,
                             fit: BoxFit.cover,
                             alignment: Alignment.topCenter,
-                            errorWidget: (_, __, ___) => Container(
-                              color: AppColors.surfaceLight,
-                            ),
                           )
                         else
                           Container(
@@ -234,39 +276,40 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
                               colors: [
-                                Colors.black.withValues(alpha: 0.25),
-                                Colors.black.withValues(alpha: 0.35),
-                                AppColors.background.withValues(alpha: 0.92),
-                                AppColors.background,
+                                Colors.black.withValues(alpha: 0.22),
+                                Colors.black.withValues(alpha: 0.18),
+                                bgColor.withValues(alpha: 0.86),
+                                bgColor,
                               ],
-                              stops: const [0.0, 0.45, 0.85, 1.0],
+                              stops: const [0.0, 0.46, 0.84, 1.0],
                             ),
                           ),
                         ),
                         SafeArea(
                           bottom: false,
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 44, 20, 16),
+                            padding: const EdgeInsets.fromLTRB(24, 44, 24, 12),
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.end,
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                SonoritizPageTitle(
-                                  title: name,
-                                  fontSize: 34,
-                                  maxLines: 2,
+                                ArtistPersonalizedWordmark(
+                                  artistName: name,
+                                  accentColor: accentColor,
                                 ),
                                 if (nbFan > 0 || nbAlbum > 0) ...[
-                                  const SizedBox(height: 10),
+                                  const SizedBox(height: 8),
                                   Text(
                                     [
                                       if (nbFan > 0) "${_formatNumber(nbFan)} fans",
                                       if (nbAlbum > 0) "$nbAlbum projet${nbAlbum > 1 ? 's' : ''}",
                                     ].join('  •  '),
+                                    textAlign: TextAlign.center,
                                     style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.68),
-                                      fontSize: 13.5,
+                                      color: Colors.white.withValues(alpha: 0.72),
+                                      fontSize: 13,
                                       fontWeight: FontWeight.w600,
+                                      letterSpacing: 0.2,
                                     ),
                                   ),
                                 ],
@@ -279,71 +322,27 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                   ),
                 ),
 
-                // Barre d'actions : Bouton Suivre + Lecture + Aléatoire
+                // Trio d'actions centré inspiré d'Apple Music : Aléatoire (gauche) • Lecture teintée (centre) • Suivre/Favori (droite)
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
                     child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // Bouton Suivre / Suivi
-                        GestureDetector(
-                          onTap: () => _toggleFollow(name),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 220),
-                            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 11),
-                            decoration: BoxDecoration(
-                              color: _isFollowed ? AppColors.primary : Colors.white.withOpacity(0.08),
-                              borderRadius: BorderRadius.circular(30),
-                              border: Border.all(
-                                color: _isFollowed ? AppColors.primary : Colors.white.withOpacity(0.35),
-                                width: 1.2,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  _isFollowed ? Icons.check_rounded : Icons.person_add_alt_1_rounded,
-                                  color: _isFollowed ? Colors.black : Colors.white,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  _isFollowed ? "Suivi" : "Suivre",
-                                  style: TextStyle(
-                                    color: _isFollowed ? Colors.black : Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-                        // Bouton Aléatoire
                         if (_topTracks.isNotEmpty) ...[
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.08),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white24),
-                            ),
-                            child: IconButton(
-                              icon: const Icon(Icons.shuffle_rounded, color: Colors.white, size: 22),
-                              tooltip: "Lecture aléatoire",
-                              onPressed: () {
-                                final shuffled = List<TrackModel>.from(_topTracks)..shuffle();
-                                context.read<PlayerCubit>().playTrack(
-                                  shuffled.first,
-                                  queue: shuffled,
-                                  source: sourceLabel,
-                                );
-                              },
-                            ),
+                          _buildFrostedCircleAction(
+                            icon: Icons.shuffle_rounded,
+                            tooltip: "Lecture aléatoire",
+                            onTap: () {
+                              final shuffled = List<TrackModel>.from(_topTracks)..shuffle();
+                              context.read<PlayerCubit>().playTrack(
+                                shuffled.first,
+                                queue: shuffled,
+                                source: sourceLabel,
+                              );
+                            },
                           ),
-                          const SizedBox(width: 12),
-                          // Bouton Lire (Blanc comme dans le lecteur)
+                          const SizedBox(width: 22),
                           GestureDetector(
                             onTap: () {
                               context.read<PlayerCubit>().playTrack(
@@ -352,37 +351,38 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                                 source: sourceLabel,
                               );
                             },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 260),
+                              width: 60,
+                              height: 60,
                               decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(30),
+                                color: accentColor,
+                                shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.white.withOpacity(0.25),
-                                    blurRadius: 16,
-                                    offset: const Offset(0, 4),
+                                    color: accentColor.withValues(alpha: 0.45),
+                                    blurRadius: 22,
+                                    offset: const Offset(0, 6),
                                   ),
                                 ],
                               ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.play_arrow_rounded, color: Colors.black, size: 22),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    "Lire",
-                                    style: TextStyle(
-                                      color: Colors.black,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ],
+                              child: Icon(
+                                Icons.play_arrow_rounded,
+                                color: playIconColor,
+                                size: 34,
                               ),
                             ),
                           ),
+                          const SizedBox(width: 22),
                         ],
+                        _buildFrostedCircleAction(
+                          icon: _isFollowed ? Icons.star_rounded : Icons.star_outline_rounded,
+                          tooltip: _isFollowed ? "Suivi" : "Suivre",
+                          isActive: _isFollowed,
+                          activeColor: accentColor,
+                          activeIconColor: playIconColor,
+                          onTap: () => _toggleFollow(name),
+                        ),
                       ],
                     ),
                   ),
@@ -488,6 +488,47 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
     );
   }
 
+  Widget _buildFrostedCircleAction({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+    bool isActive = false,
+    Color? activeColor,
+    Color activeIconColor = Colors.black,
+  }) {
+    final Color fillColor = isActive && activeColor != null
+        ? activeColor
+        : Colors.white.withValues(alpha: 0.12);
+    final Color borderColor = isActive && activeColor != null
+        ? activeColor
+        : Colors.white.withValues(alpha: 0.24);
+    final Color iconColor =
+        isActive && activeColor != null ? activeIconColor : Colors.white;
+
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: ClipOval(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: fillColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: borderColor, width: 1.1),
+              ),
+              child: Icon(icon, color: iconColor, size: 22),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildTopTracksList(String sourceLabel) {
     return SliverList(
       delegate: SliverChildBuilderDelegate(
@@ -550,7 +591,13 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(14),
                       child: cover.isNotEmpty
-                          ? CachedNetworkImage(imageUrl: cover, fit: BoxFit.cover)
+                          ? SonoritizArtwork(
+                              imageUrl: cover,
+                              width: 148,
+                              height: 148,
+                              borderRadius: 14,
+                              fit: BoxFit.cover,
+                            )
                           : const Icon(Icons.album, size: 50, color: Colors.white24),
                     ),
                   ),

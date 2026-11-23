@@ -27,6 +27,7 @@ dependencies:
   just_audio: ^0.9.36
   just_audio_windows: ^0.2.2
   audio_service: ^0.18.12
+  audio_session: ^0.1.25
 
   # Local Storage & Preferences
   hive: ^2.2.3

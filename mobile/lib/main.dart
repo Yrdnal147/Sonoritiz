@@ -43,6 +43,7 @@ Future<void> backgroundCallback(Uri? uri) async {
       await HomeWidget.saveWidgetData<bool>('isFavorite', nextFav);
       await HomeWidget.updateWidget(androidName: 'NowPlayingWidgetProvider');
       await HomeWidget.updateWidget(androidName: 'PlaylistWidgetProvider');
+    
     }
   } catch (e) {
     debugPrint("Erreur backgroundCallback widget: $e");

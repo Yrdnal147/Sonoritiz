@@ -739,6 +739,23 @@ class StorageService {
     return entries;
   }
 
+  // --- REPRISE EXACTE DE LA POSITION DE LECTURE (isolée par compte) ---
+  String get _lastPlaybackPosTrackKey => _scopedKey('last_playback_track_id');
+  String get _lastPlaybackPosSecKey => _scopedKey('last_playback_position_sec');
+
+  Future<void> saveLastPlaybackPosition(String trackId, int seconds) async {
+    final cleanId = trackId.trim();
+    if (cleanId.isEmpty || seconds < 0) return;
+    await _prefs.setString(_lastPlaybackPosTrackKey, cleanId);
+    await _prefs.setInt(_lastPlaybackPosSecKey, seconds);
+  }
+
+  int getLastPlaybackPositionSeconds(String trackId) {
+    final savedId = _prefs.getString(_lastPlaybackPosTrackKey);
+    if (savedId != trackId.trim()) return 0;
+    return _prefs.getInt(_lastPlaybackPosSecKey) ?? 0;
+  }
+
   Future<void> clearSession() async {
     _cachedAccessToken = null;
     _cachedRefreshToken = null;

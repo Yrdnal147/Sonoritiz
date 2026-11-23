@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:audio_service/audio_service.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
@@ -234,6 +235,10 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
 
   static final RegExp _youtubeIdRegex = RegExp(r'^[a-zA-Z0-9_-]{11}$');
 
+  AudioSession? _audioSession;
+  bool _wasPlayingBeforeInterruption = false;
+  Duration? _pendingIdleResumePosition;
+
   SonoritizAudioHandler({this.offlineRepository}) {
     _configurePlayerDefaults();
     _initPlayerListeners();
@@ -245,6 +250,59 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
       await _player.setLoopMode(LoopMode.off);
     } catch (e) {
       debugPrint('Player default setup warning: $e');
+    }
+
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
+      try {
+        final session = await AudioSession.instance;
+        await session.configure(const AudioSessionConfiguration.music());
+        _audioSession = session;
+
+        // Pause immédiate si les écouteurs / Bluetooth se déconnectent
+        session.becomingNoisyEventStream.listen((_) {
+          if (_player.playing) {
+            unawaited(_player.pause());
+          }
+        });
+
+        // Gestion stricte des interruptions (micro WhatsApp, caméra, appel, TikTok, Spotify...)
+        session.interruptionEventStream.listen((event) {
+          if (event.begin) {
+            switch (event.type) {
+              case AudioInterruptionType.duck:
+                unawaited(_player.setVolume(0.25));
+                break;
+              case AudioInterruptionType.pause:
+              case AudioInterruptionType.unknown:
+                _wasPlayingBeforeInterruption = _player.playing || _isResolving;
+                if (_player.playing) {
+                  unawaited(_player.pause());
+                }
+                break;
+            }
+          } else {
+            switch (event.type) {
+              case AudioInterruptionType.duck:
+                unawaited(applyUserAudioSettings());
+                break;
+              case AudioInterruptionType.pause:
+                if (_wasPlayingBeforeInterruption) {
+                  _wasPlayingBeforeInterruption = false;
+                  unawaited(_player.play());
+                }
+                break;
+              case AudioInterruptionType.unknown:
+                // Perte permanente du focus audio (autre média lancé) : rester en pause
+                _wasPlayingBeforeInterruption = false;
+                break;
+            }
+          }
+        });
+      } catch (e) {
+        debugPrint('AudioSession configuration warning: $e');
+      }
     }
   }
 
@@ -513,6 +571,7 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
       if (isStale()) return;
 
       _setResolving(false);
+      await _audioSession?.setActive(true);
       unawaited(_player.play());
     } on PlayerInterruptedException {
       // Chargement interrompu par un changement de morceau : normal.
@@ -532,8 +591,12 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
 
   /// Prépare un MediaItem au repos (ex: restauration du dernier son dans le mini-lecteur)
   /// sans démarrer la lecture ni prendre le focus audio.
-  void prepareIdleMediaItem(MediaItem item) {
+  void prepareIdleMediaItem(MediaItem item, {Duration? resumePosition}) {
     if (_isResolving || _player.playing) return;
+    _pendingIdleResumePosition =
+        (resumePosition != null && resumePosition.inSeconds > 2)
+            ? resumePosition
+            : null;
     mediaItem.add(item);
   }
 
@@ -879,10 +942,13 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> play() async {
     if (_isResolving) return;
+    await _audioSession?.setActive(true);
     if ((_player.processingState == ProcessingState.idle ||
             _player.processingState == ProcessingState.completed) &&
         mediaItem.value != null) {
-      await playTrack(mediaItem.value!);
+      final resumePos = _pendingIdleResumePosition;
+      _pendingIdleResumePosition = null;
+      await playTrack(mediaItem.value!, resumePosition: resumePos);
       return;
     }
     unawaited(_player.play());

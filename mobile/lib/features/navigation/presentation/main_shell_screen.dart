@@ -28,6 +28,29 @@ class MainShellScreen extends StatefulWidget {
 class _MainShellScreenState extends State<MainShellScreen> {
   int _lastKnownTab = 0;
   String? _lastRecordedHistoryTrackId;
+  bool _isBottomNavVisible = true;
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) return false;
+    if (notification is ScrollUpdateNotification) {
+      final delta = notification.scrollDelta ?? 0.0;
+      final pixels = notification.metrics.pixels;
+      if (pixels <= 16.0) {
+        if (!_isBottomNavVisible) {
+          setState(() => _isBottomNavVisible = true);
+        }
+      } else if (delta > 6.0 && pixels > 40.0) {
+        if (_isBottomNavVisible) {
+          setState(() => _isBottomNavVisible = false);
+        }
+      } else if (delta < -6.0) {
+        if (!_isBottomNavVisible) {
+          setState(() => _isBottomNavVisible = true);
+        }
+      }
+    }
+    return false;
+  }
 
   int _calculateSelectedIndex(BuildContext context) {
     final String location = GoRouterState.of(context).uri.path;
@@ -78,6 +101,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
   void _onTap(int index) {
     setState(() {
       _lastKnownTab = index;
+      _isBottomNavVisible = true;
     });
 
     switch (index) {
@@ -159,16 +183,37 @@ class _MainShellScreenState extends State<MainShellScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFF0B0B0C),
-      body: widget.child,
+      body: NotificationListener<ScrollNotification>(
+        onNotification: _handleScrollNotification,
+        child: widget.child,
+      ),
       extendBody: true,
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (!hideMiniPlayer) const MiniPlayerWidget(),
+          if (!hideMiniPlayer)
+            AnimatedPadding(
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeOutCubic,
+              padding: EdgeInsets.only(
+                bottom: _isBottomNavVisible
+                    ? 0.0
+                    : MediaQuery.paddingOf(context).bottom + 6.0,
+              ),
+              child: const MiniPlayerWidget(),
+            ),
           ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-              child: Container(
+            child: AnimatedAlign(
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              heightFactor: _isBottomNavVisible ? 1.0 : 0.0,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 180),
+                opacity: _isBottomNavVisible ? 1.0 : 0.0,
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+                  child: Container(
                 color: const Color(0xFF0B0B0C).withValues(alpha: 0.84),
                 child: SafeArea(
                   top: false,
@@ -318,6 +363,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     ],
                   ),
                 ),
+              ),
+            ),
               ),
             ),
           ),
