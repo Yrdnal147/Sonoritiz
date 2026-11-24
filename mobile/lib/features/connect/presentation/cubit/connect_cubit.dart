@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/storage/storage_service.dart';
 import '../../../player/data/models/track_model.dart';
@@ -16,7 +20,13 @@ class ConnectCubit extends Cubit<ConnectState> {
   StreamSubscription? _wsSubscription;
   StreamSubscription<PlayerState>? _playerSubscription;
   Timer? _syncTimer;
+  Timer? _httpSyncTimer;
   PlayerState? _lastPlayerState;
+  bool _httpSyncHealthy = false;
+  bool _isSyncInFlight = false;
+  String? _cachedMyAvatarPayload;
+  String? _lastAvatarSourcePath;
+  final Set<String> _consumedSuggestionIds = <String>{};
 
   ConnectCubit({
     required this.storageService,
@@ -24,66 +34,223 @@ class ConnectCubit extends Cubit<ConnectState> {
     required this.playerCubit,
   }) : super(ConnectInitial());
 
-  List<Map<String, dynamic>> _participantsFrom(dynamic raw) {
+  /// Résout la photo de profil de l'utilisateur courant :
+  /// 1. Si l'utilisateur a choisi une photo dans sa galerie (`getProfileImagePath()`),
+  ///    la redimensionne en miniature 72x72 (`data:image/png;base64,...`, ~8 Ko)
+  ///    afin que tous les autres participants voient sa vraie photo sur leur téléphone.
+  /// 2. Sinon, si c'est une URL http/https, l'utilise directement.
+  /// 3. Sinon, utilise la photo de son 1er artiste consulté/suivi comme avatar musical.
+  Future<String> _resolveMyAvatarPayload() async {
+    try {
+      final rawPath = (storageService.getProfileImagePath() ?? '').trim();
+      if (rawPath.isNotEmpty &&
+          rawPath == _lastAvatarSourcePath &&
+          _cachedMyAvatarPayload != null &&
+          _cachedMyAvatarPayload!.isNotEmpty) {
+        return _cachedMyAvatarPayload!;
+      }
+
+      if (rawPath.startsWith('http://') ||
+          rawPath.startsWith('https://') ||
+          rawPath.startsWith('data:image/')) {
+        _lastAvatarSourcePath = rawPath;
+        _cachedMyAvatarPayload = rawPath;
+        return rawPath;
+      }
+
+      if (!kIsWeb && rawPath.isNotEmpty) {
+        final cleanPath = rawPath.replaceFirst('file://', '');
+        final file = File(cleanPath);
+        if (file.existsSync()) {
+          final bytes = await file.readAsBytes();
+          final codec = await ui.instantiateImageCodec(
+            bytes,
+            targetWidth: 72,
+            targetHeight: 72,
+          );
+          final frame = await codec.getNextFrame();
+          final byteData = await frame.image.toByteData(
+            format: ui.ImageByteFormat.png,
+          );
+          if (byteData != null) {
+            final thumbBytes = byteData.buffer.asUint8List();
+            final dataUri =
+                'data:image/png;base64,${base64Encode(thumbBytes)}';
+            if (dataUri.length <= 155000) {
+              _lastAvatarSourcePath = rawPath;
+              _cachedMyAvatarPayload = dataUri;
+              return dataUri;
+            }
+          }
+        }
+      }
+
+      final topArtists = storageService.getTopSearchedArtists(limit: 5);
+      for (final a in topArtists) {
+        final img = (a['image'] ?? '').toString().trim();
+        if (img.startsWith('http://') || img.startsWith('https://')) {
+          return img;
+        }
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  List<Map<String, dynamic>> _participantsFrom(
+    dynamic raw, {
+    int? hostUserId,
+  }) {
     if (raw is! List) return const [];
+    final myUsername = storageService.username.trim().toLowerCase();
+    final myLocalPhoto = (storageService.getProfileImagePath() ?? '').trim();
+
     return raw.whereType<Map>().map((participant) {
       final user = participant['user'];
+      int? uid;
+      String username = 'Auditeur';
+      String avatar = (participant['avatar'] ?? '').toString().trim();
+      final bool isHostFlag = participant['is_host'] == true;
+
       if (user is Map) {
-        return <String, dynamic>{
-          'id': user['id'],
-          'username': user['username'] ?? 'Inconnu',
-          'status': 'connected',
-        };
+        uid = user['id'] is int
+            ? user['id'] as int
+            : int.tryParse((user['id'] ?? '').toString());
+        username = (user['username'] ?? 'Auditeur').toString();
+        if (avatar.isEmpty) {
+          avatar = (user['avatar'] ?? '').toString().trim();
+        }
+      } else {
+        uid = participant['id'] is int
+            ? participant['id'] as int
+            : int.tryParse((participant['id'] ?? '').toString());
+        username = (participant['username'] ?? 'Auditeur').toString();
       }
+
+      if (avatar.isEmpty &&
+          myLocalPhoto.isNotEmpty &&
+          myUsername.isNotEmpty &&
+          username.trim().toLowerCase() == myUsername) {
+        avatar = myLocalPhoto;
+      }
+
       return <String, dynamic>{
-        'id': participant['id'],
-        'username': participant['username'] ?? 'Inconnu',
+        'id': uid,
+        'username': username,
+        'avatar': avatar,
+        'is_host': isHostFlag || (hostUserId != null && uid == hostUserId),
         'status': 'connected',
       };
     }).toList();
   }
 
+  List<Map<String, dynamic>> _mapListFrom(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  int? _extractHostUserId(Map<String, dynamic> data) {
+    final hostUser = data['host_user'];
+    if (hostUser is Map && hostUser['id'] != null) {
+      return hostUser['id'] is int
+          ? hostUser['id'] as int
+          : int.tryParse(hostUser['id'].toString());
+    }
+    return null;
+  }
+
   Future<void> createSession() async {
     emit(ConnectLoading());
     try {
-      final data = await repository.createSession();
-      final sessionId = data['id'];
-      final inviteCode = data['invite_code'];
-      final participants = _participantsFrom(data['participants']);
+      final avatar = await _resolveMyAvatarPayload();
+      final currentTrack = playerCubit.state.currentTrack;
+      final data = await repository.createSession(
+        avatar: avatar,
+        initialTrack:
+            currentTrack != null ? _shareableTrack(currentTrack) : null,
+        position: playerCubit.state.position.inMilliseconds / 1000.0,
+        isPlaying: playerCubit.state.isPlaying,
+      );
+      final int sessionId = data['id'] as int;
+      final String inviteCode = (data['invite_code'] ?? '').toString();
+      final int? hostId = _extractHostUserId(data);
+      final participants =
+          _participantsFrom(data['participants'], hostUserId: hostId);
+      final playbackState = data['playback_state'] is Map
+          ? Map<String, dynamic>.from(data['playback_state'] as Map)
+          : const <String, dynamic>{};
+
+      _httpSyncHealthy = true;
+      _consumedSuggestionIds.clear();
 
       emit(ConnectActive(
         sessionId: sessionId,
         inviteCode: inviteCode,
         isHost: true,
         participants: participants,
+        reactions: _mapListFrom(playbackState['reactions']),
+        suggestions: _mapListFrom(playbackState['suggestions']),
+        connectionStatus: 'connected',
       ));
 
       _startListening(sessionId);
-    } catch (e) {
-      print('Error creating session: $e');
-      emit(const ConnectError("Impossible de créer la session Connect. Vérifiez votre connexion."));
+    } catch (_) {
+      emit(const ConnectError(
+          "Impossible de créer la session Connect. Vérifiez votre connexion."));
     }
   }
 
   Future<void> joinSession(String inviteCode) async {
     emit(ConnectLoading());
     try {
-      final data = await repository.joinSession(inviteCode);
-      final sessionId = data['id'];
-      
-      final participants = _participantsFrom(data['participants']);
+      final avatar = await _resolveMyAvatarPayload();
+      final data = await repository.joinSession(
+        inviteCode,
+        avatar: avatar,
+      );
+      final int sessionId = data['id'] as int;
+      final int? hostId = _extractHostUserId(data);
+      final String hostUsername = (data['host_user'] is Map
+              ? (data['host_user']['username'] ?? '')
+              : '')
+          .toString()
+          .trim()
+          .toLowerCase();
+      final String myUsername = storageService.username.trim().toLowerCase();
+      final bool isHost =
+          hostUsername.isNotEmpty && hostUsername == myUsername;
+
+      final participants =
+          _participantsFrom(data['participants'], hostUserId: hostId);
+      final playbackState = data['playback_state'] is Map
+          ? Map<String, dynamic>.from(data['playback_state'] as Map)
+          : const <String, dynamic>{};
+
+      _httpSyncHealthy = true;
+      _consumedSuggestionIds.clear();
 
       emit(ConnectActive(
         sessionId: sessionId,
-        inviteCode: data['invite_code'],
-        isHost: false,
+        inviteCode: (data['invite_code'] ?? inviteCode).toString(),
+        isHost: isHost,
         participants: participants,
+        reactions: _mapListFrom(playbackState['reactions']),
+        suggestions: _mapListFrom(playbackState['suggestions']),
+        connectionStatus: 'connected',
       ));
 
       _startListening(sessionId);
-    } catch (e) {
-      print('Error joining session: $e');
-      emit(const ConnectError("Code d'invitation invalide ou session terminée."));
+
+      if (!isHost && playbackState.isNotEmpty) {
+        final double? serverNow =
+            data['server_now'] is num ? (data['server_now'] as num).toDouble() : null;
+        await _applyHttpPlaybackState(playbackState, serverNow: serverNow);
+      }
+    } catch (_) {
+      emit(const ConnectError(
+          "Code d'invitation invalide ou session terminée."));
     }
   }
 
@@ -91,68 +258,223 @@ class ConnectCubit extends Cubit<ConnectState> {
     final token = storageService.accessToken ?? '';
     _wsSubscription?.cancel();
     webSocketService.disconnect();
+
     _wsSubscription = webSocketService.eventStream.listen((data) {
-      if (state is ConnectActive) {
-        final currentState = state as ConnectActive;
-        final eventType = data['event'];
+      if (state is! ConnectActive) return;
+      final currentState = state as ConnectActive;
+      final eventType = data['event'];
 
-        if (eventType == 'session_ended') {
-          emit(const ConnectError("La session a été fermée par l'hôte."));
-          _wsSubscription?.cancel();
-          _wsSubscription = null;
-          webSocketService.disconnect();
-          _stopWatchingPlayer();
-          return;
-        }
+      if (eventType == 'session_ended') {
+        _terminateLocalSession("La session a été fermée par l'hôte.");
+        return;
+      }
 
-        if (eventType == 'connected' || eventType == 'disconnected' || eventType == 'error') {
-          emit(currentState.copyWith(
-            connectionStatus: eventType == 'connected' ? 'connected' : 'disconnected',
-          ));
-          return;
-        }
+      if (eventType == 'connected') {
+        emit(currentState.copyWith(connectionStatus: 'connected'));
+        return;
+      }
 
-        if (eventType == 'participant_joined' || eventType == 'participant_left') {
-          if (data.containsKey('participants')) {
-            emit(currentState.copyWith(
-              participants: _participantsFrom(data['participants']),
-            ));
-          } else if (data['user'] is Map) {
-            final user = Map<String, dynamic>.from(data['user'] as Map);
-            final participant = <String, dynamic>{
-              'id': user['id'],
-              'username': user['username'] ?? 'Inconnu',
-              'status': 'connected',
-            };
-            final participants = List<Map<String, dynamic>>.from(
-              currentState.participants,
-            );
-            final userId = user['id'];
-            if (eventType == 'participant_joined') {
-              participants.removeWhere((item) =>
-                  userId != null && item['id'] == userId);
-              participants.add(participant);
-            } else {
-              participants.removeWhere((item) => userId != null
-                  ? item['id'] == userId
-                  : item['username'] == participant['username']);
-            }
-            emit(currentState.copyWith(participants: participants));
-          }
+      // Sur Vercel Serverless, le WebSocket se ferme immédiatement :
+      // si la synchro HTTP fonctionne (_httpSyncHealthy), on reste en 'connected' !
+      if (eventType == 'disconnected' || eventType == 'error') {
+        if (!_httpSyncHealthy) {
+          emit(currentState.copyWith(connectionStatus: 'disconnected'));
         }
+        return;
+      }
 
-        if (eventType == 'participant_joined' && currentState.isHost) {
-          _publishPlayerState(playerCubit.state);
-        } else if (!currentState.isHost) {
-          unawaited(_applyRemotePlaybackEvent(data));
-        }
+      if (eventType == 'participant_joined' ||
+          eventType == 'participant_left') {
+        unawaited(_performHttpSync());
+      }
+
+      if (eventType == 'participant_joined' && currentState.isHost) {
+        _publishPlayerState(playerCubit.state);
+      } else if (!currentState.isHost) {
+        unawaited(_applyRemotePlaybackEvent(data));
       }
     });
 
     webSocketService.connect(sessionId: sessionId, accessToken: token);
+    _startHttpSyncLoop();
+
     if (state is ConnectActive && (state as ConnectActive).isHost) {
       _watchHostPlayer();
     }
+  }
+
+  void _startHttpSyncLoop() {
+    _httpSyncTimer?.cancel();
+    _httpSyncTimer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
+      unawaited(_performHttpSync());
+    });
+  }
+
+  Future<void> _performHttpSync({
+    String? reaction,
+    Map<String, dynamic>? suggestedTrack,
+    String? clearSuggestionId,
+    bool forceHostState = false,
+  }) async {
+    if (state is! ConnectActive) return;
+    if (_isSyncInFlight &&
+        reaction == null &&
+        suggestedTrack == null &&
+        clearSuggestionId == null &&
+        !forceHostState) {
+      return;
+    }
+
+    final currentState = state as ConnectActive;
+    _isSyncInFlight = true;
+    try {
+      final avatar = await _resolveMyAvatarPayload();
+      final pState = playerCubit.state;
+      final curTrack = pState.currentTrack;
+
+      final data = await repository.syncSession(
+        currentState.sessionId,
+        avatar: avatar,
+        track: (currentState.isHost && curTrack != null)
+            ? _shareableTrack(curTrack)
+            : null,
+        position: currentState.isHost
+            ? pState.position.inMilliseconds / 1000.0
+            : null,
+        isPlaying: currentState.isHost ? pState.isPlaying : null,
+        reaction: reaction,
+        suggestedTrack: suggestedTrack,
+        clearSuggestionId: clearSuggestionId,
+      );
+
+      if (state is! ConnectActive) return;
+      final latestState = state as ConnectActive;
+
+      if (data['status'] == 'ended' || data['event'] == 'session_ended') {
+        _terminateLocalSession("La session a été fermée par l'hôte.");
+        return;
+      }
+
+      _httpSyncHealthy = true;
+      final int? hostId = _extractHostUserId(data);
+      final participants =
+          _participantsFrom(data['participants'], hostUserId: hostId);
+      final playbackState = data['playback_state'] is Map
+          ? Map<String, dynamic>.from(data['playback_state'] as Map)
+          : const <String, dynamic>{};
+      final reactions = _mapListFrom(playbackState['reactions']);
+      final suggestions = _mapListFrom(playbackState['suggestions']);
+
+      emit(latestState.copyWith(
+        participants:
+            participants.isNotEmpty ? participants : latestState.participants,
+        reactions: reactions,
+        suggestions: suggestions,
+        connectionStatus: 'connected',
+      ));
+
+      if (latestState.isHost) {
+        // Ajouter automatiquement les nouveaux sons suggérés par les participants à la file d'attente de l'hôte
+        for (final s in suggestions) {
+          final sid = (s['id'] ?? '').toString();
+          if (sid.isNotEmpty && _consumedSuggestionIds.add(sid)) {
+            try {
+              final track = TrackModel.fromJson(s);
+              playerCubit.addToQueue(track);
+              unawaited(repository.syncSession(
+                latestState.sessionId,
+                clearSuggestionId: sid,
+              ));
+            } catch (_) {}
+          }
+        }
+      } else if (playbackState.isNotEmpty) {
+        final double? serverNow = data['server_now'] is num
+            ? (data['server_now'] as num).toDouble()
+            : null;
+        await _applyHttpPlaybackState(playbackState, serverNow: serverNow);
+      }
+    } catch (_) {
+      _httpSyncHealthy = false;
+    } finally {
+      _isSyncInFlight = false;
+    }
+  }
+
+  Future<void> sendReaction(String emoji) async {
+    if (state is! ConnectActive) return;
+    await _performHttpSync(reaction: emoji);
+  }
+
+  Future<void> suggestCurrentTrackToHost() async {
+    if (state is! ConnectActive) return;
+    final currentTrack = playerCubit.state.currentTrack;
+    if (currentTrack == null) return;
+    await _performHttpSync(suggestedTrack: _shareableTrack(currentTrack));
+  }
+
+  Future<void> _applyHttpPlaybackState(
+    Map<String, dynamic> playbackState, {
+    double? serverNow,
+  }) async {
+    final rawTrack = playbackState['track'];
+    if (rawTrack is! Map) return;
+
+    TrackModel? track;
+    try {
+      track = TrackModel.fromJson(Map<String, dynamic>.from(rawTrack));
+    } catch (_) {}
+    if (track == null) return;
+
+    final bool hostIsPlaying = playbackState['is_playing'] == true;
+    double hostPos = playbackState['position'] is num
+        ? (playbackState['position'] as num).toDouble()
+        : 0.0;
+    final double? serverTs = playbackState['server_timestamp'] is num
+        ? (playbackState['server_timestamp'] as num).toDouble()
+        : null;
+
+    if (hostIsPlaying && serverNow != null && serverTs != null) {
+      final double elapsed = (serverNow - serverTs).clamp(0.0, 12.0);
+      hostPos += elapsed;
+    }
+
+    final bool isDifferentTrack =
+        playerCubit.state.currentTrack?.id != track.id;
+    if (isDifferentTrack) {
+      final queue = List<TrackModel>.from(playerCubit.state.queue);
+      final existingIndex = queue.indexWhere((item) => item.id == track!.id);
+      if (existingIndex < 0) {
+        queue.add(track);
+      } else {
+        queue[existingIndex] = track;
+      }
+      await playerCubit.playTrack(track, queue: queue, source: 'Connect');
+    }
+
+    if (playerCubit.state.hasTrack && hostPos >= 0) {
+      final target = Duration(milliseconds: (hostPos * 1000).round());
+      final diffMs = (playerCubit.state.position - target).inMilliseconds.abs();
+      if (diffMs > 3200) {
+        await playerCubit.seek(target);
+      }
+    }
+
+    if (hostIsPlaying && !playerCubit.state.isPlaying) {
+      await playerCubit.play();
+    } else if (!hostIsPlaying && playerCubit.state.isPlaying) {
+      await playerCubit.pause();
+    }
+  }
+
+  void _terminateLocalSession(String message) {
+    _wsSubscription?.cancel();
+    _wsSubscription = null;
+    _httpSyncTimer?.cancel();
+    _httpSyncTimer = null;
+    webSocketService.disconnect();
+    _stopWatchingPlayer();
+    emit(ConnectError(message));
   }
 
   void reconnect() {
@@ -160,6 +482,7 @@ class ConnectCubit extends Cubit<ConnectState> {
       final activeState = state as ConnectActive;
       emit(activeState.copyWith(connectionStatus: 'connecting'));
       _startListening(activeState.sessionId);
+      unawaited(_performHttpSync(forceHostState: activeState.isHost));
     }
   }
 
@@ -171,9 +494,7 @@ class ConnectCubit extends Cubit<ConnectState> {
     _playerSubscription = playerCubit.stream.listen(_onHostPlayerChanged);
     _syncTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       final current = state;
-      if (current is ConnectActive &&
-          current.isHost &&
-          current.connectionStatus == 'connected') {
+      if (current is ConnectActive && current.isHost) {
         _publishPlayerState(playerCubit.state);
       }
     });
@@ -184,6 +505,8 @@ class ConnectCubit extends Cubit<ConnectState> {
     _playerSubscription = null;
     _syncTimer?.cancel();
     _syncTimer = null;
+    _httpSyncTimer?.cancel();
+    _httpSyncTimer = null;
     _lastPlayerState = null;
   }
 
@@ -206,6 +529,7 @@ class ConnectCubit extends Cubit<ConnectState> {
       trackId: track?.id,
       track: track == null ? null : _shareableTrack(track),
     );
+    unawaited(_performHttpSync(forceHostState: true));
   }
 
   void _onHostPlayerChanged(PlayerState next) {
@@ -227,6 +551,7 @@ class ConnectCubit extends Cubit<ConnectState> {
           positionSeconds: next.position.inMilliseconds / 1000,
           isPlaying: next.isPlaying,
         );
+        unawaited(_performHttpSync(forceHostState: true));
       }
       return;
     }
@@ -237,12 +562,14 @@ class ConnectCubit extends Cubit<ConnectState> {
       } else {
         webSocketService.sendPause(next.position.inMilliseconds / 1000);
       }
+      unawaited(_performHttpSync(forceHostState: true));
       return;
     }
 
     if (nextTrack != null &&
         (next.position - previous.position).inMilliseconds.abs() > 3000) {
       webSocketService.sendSeek(next.position.inMilliseconds / 1000);
+      unawaited(_performHttpSync(forceHostState: true));
     }
   }
 
@@ -281,11 +608,15 @@ class ConnectCubit extends Cubit<ConnectState> {
     }
 
     final positionValue = event['position'];
-    final positionSeconds = positionValue is num ? positionValue.toDouble() : 0.0;
-    if ((type == 'play' || type == 'pause' || type == 'seek' ||
+    final positionSeconds =
+        positionValue is num ? positionValue.toDouble() : 0.0;
+    if ((type == 'play' ||
+            type == 'pause' ||
+            type == 'seek' ||
             type == 'sync_state' ||
             (type == 'track_changed' && event.containsKey('position'))) &&
-        playerCubit.state.hasTrack && positionSeconds >= 0) {
+        playerCubit.state.hasTrack &&
+        positionSeconds >= 0) {
       final target = Duration(milliseconds: (positionSeconds * 1000).round());
       if ((playerCubit.state.position - target).inMilliseconds.abs() > 2000) {
         await playerCubit.seek(target);
@@ -308,11 +639,9 @@ class ConnectCubit extends Cubit<ConnectState> {
       final currentState = state as ConnectActive;
       try {
         await repository.leaveSession(currentState.sessionId);
-      } catch (_) {
-        return;
-      }
+      } catch (_) {}
     }
-    
+
     _wsSubscription?.cancel();
     _stopWatchingPlayer();
     webSocketService.disconnect();

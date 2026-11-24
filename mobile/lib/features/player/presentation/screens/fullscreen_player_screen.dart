@@ -2123,7 +2123,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            "Découvrez de nouveaux sons",
+                            "Découvrez des sons similaires",
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.55),
                               fontSize: 11,
@@ -2532,7 +2532,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            "Découvrez de nouveaux sons",
+                            "Découvrez des sons similaires",
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.55),
                               fontSize: 11,
@@ -3380,7 +3380,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        "Découvrez de nouveaux sons",
+                        "Découvrez des sons similaires",
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.60),
                           fontSize: 11,
@@ -3449,7 +3449,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        "Découvrez de nouveaux sons",
+                        "Découvrez des sons similaires",
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: isSpecial ? 22 : 20,
@@ -3512,7 +3512,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                       context.read<PlayerCubit>().playTrack(
                         sTrack,
                         queue: _similarTracks,
-                        source: "Découvrez de nouveaux sons",
+                        source: "Découvrez des sons similaires",
                       );
                     },
                     child: Padding(
@@ -3569,7 +3569,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                               context.read<PlayerCubit>().playTrack(
                                 sTrack,
                                 queue: _similarTracks,
-                                source: "Découvrez de nouveaux sons",
+                                source: "Découvrez des sons similaires",
                               );
                             },
                           ),

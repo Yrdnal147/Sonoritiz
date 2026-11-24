@@ -24,6 +24,8 @@ import 'features/search/presentation/cubit/search_cubit.dart';
 import 'features/home/data/repositories/catalog_repository.dart';
 import 'features/home/presentation/cubit/home_cubit.dart';
 import 'features/discovery/presentation/cubit/discovery_cubit.dart';
+import 'features/connect/data/repositories/connect_repository.dart';
+import 'features/connect/presentation/cubit/connect_cubit.dart';
 import 'features/player/presentation/cubit/superlike_cubit.dart';
 import 'package:home_widget/home_widget.dart';
 
@@ -184,6 +186,13 @@ class _SonoritizAppState extends State<SonoritizApp> {
           create: (_) => SuperlikeCubit(
             storageService: widget.storageService,
             audioHandler: widget.audioHandler,
+          ),
+        ),
+        BlocProvider<ConnectCubit>(
+          create: (ctx) => ConnectCubit(
+            storageService: widget.storageService,
+            repository: ConnectRepository(apiClient: _apiClient),
+            playerCubit: ctx.read<PlayerCubit>(),
           ),
         ),
       ],

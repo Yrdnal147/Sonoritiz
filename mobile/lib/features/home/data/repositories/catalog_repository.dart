@@ -1080,6 +1080,19 @@ class CatalogRepository {
             }
           }).catchError((_) {}),
         );
+
+        // Enrichir "À la une" avec des podcasts sur l'amour & les relations humaines
+        if (cleanQuery.isEmpty && offset == 0) {
+          futures.add(
+            dioClient
+                .get('https://api.deezer.com/search/podcast?q=${Uri.encodeComponent('amour couple relations')}&limit=8')
+                .then((res) {
+              if (res.statusCode == 200 && res.data is Map) {
+                addPodcastItems(res.data['data']);
+              }
+            }).catchError((_) {}),
+          );
+        }
       }
 
       // 2. Livres audio & albums parlés (/search/album)
@@ -1120,40 +1133,77 @@ class CatalogRepository {
         }
       }
 
-      // 3. Recherche directe YouTube en parallèle lorsqu'une requête est saisie (hors navigateur Web où CORS bloque YouTube)
-      if (!kIsWeb && cleanQuery.isNotEmpty && offset == 0) {
-        final String ytQuery = type == 'audiobook'
-            ? '$cleanQuery livre audio complet français'
-            : (type == 'podcast'
-                ? '$cleanQuery podcast épisode français'
-                : '$cleanQuery podcast livre audio français');
-        futures.add(
-          yt.search.search(ytQuery).timeout(const Duration(seconds: 8)).then((searchResults) {
-            for (final v in searchResults.whereType<Video>().take(20)) {
-              final title = v.title.trim();
-              if (title.isEmpty) continue;
-              final titleLower = title.toLowerCase();
-              final key = 'yt_${v.id.value}';
-              final titleKey = 't_$titleLower';
-              if (seenKeys.contains(key) || seenKeys.contains(titleKey)) continue;
-              seenKeys.add(key);
-              seenKeys.add(titleKey);
-              final mapped = _mapVideoToTrack(v);
-              final isBookHint = type == 'audiobook' ||
-                  titleLower.contains('livre') ||
-                  titleLower.contains('roman') ||
-                  titleLower.contains('audiobook');
-              results.add(
-                mapped.copyWith(
-                  genre: isBookHint ? 'Livre audio' : 'Podcast',
-                ),
-              );
-            }
-          }).catchError((_) {}),
-        );
+      // 3. Recherche directe YouTube en parallèle (formats longs >= 8 min : émissions, interviews, vodcasts, livres audio complets)
+      final List<TrackModel> ytVideoEpisodes = [];
+      if (!kIsWeb && offset == 0) {
+        final List<String> ytQueries = cleanQuery.isEmpty
+            ? [
+                'podcast interview épisode complet français',
+                'podcast amour couple relations histoire vraie épisode complet',
+              ]
+            : [
+                type == 'audiobook'
+                    ? '$cleanQuery livre audio complet français'
+                    : (type == 'podcast'
+                        ? '$cleanQuery podcast interview épisode complet'
+                        : '$cleanQuery podcast interview livre audio complet'),
+              ];
+
+        for (final ytQuery in ytQueries) {
+          futures.add(
+            yt.search.search(ytQuery).timeout(const Duration(seconds: 8)).then((searchResults) {
+              for (final v in searchResults.whereType<Video>()) {
+                final int durSec = v.duration?.inSeconds ?? 0;
+                // Filtre strict : uniquement les formats longs (>= 8 minutes / 480s)
+                // pour exclure 100 % des clips musicaux, extraits courts et Shorts
+                if (durSec < 480) continue;
+
+                final title = v.title.trim();
+                if (title.isEmpty) continue;
+                final titleLower = title.toLowerCase();
+                final key = 'yt_${v.id.value}';
+                final titleKey = 't_$titleLower';
+                if (seenKeys.contains(key) || seenKeys.contains(titleKey)) continue;
+                seenKeys.add(key);
+                seenKeys.add(titleKey);
+                final mapped = _mapVideoToTrack(v);
+                final isBookHint = type == 'audiobook' ||
+                    titleLower.contains('livre') ||
+                    titleLower.contains('roman') ||
+                    titleLower.contains('audiobook');
+                ytVideoEpisodes.add(
+                  mapped.copyWith(
+                    genre: isBookHint ? 'Livre audio Vidéo' : 'Podcast Vidéo',
+                  ),
+                );
+                if (ytVideoEpisodes.length >= 20) break;
+              }
+            }).catchError((_) {}),
+          );
+        }
       }
 
       await Future.wait(futures);
+
+      if (ytVideoEpisodes.isNotEmpty) {
+        // Entrelacer harmonieusement les épisodes vidéo YouTube longs avec le catalogue
+        // pour qu'ils soient visibles dès les premières lignes
+        final List<TrackModel> merged = [];
+        int dIdx = 0;
+        int yIdx = 0;
+        while (dIdx < results.length || yIdx < ytVideoEpisodes.length) {
+          if (yIdx < ytVideoEpisodes.length) {
+            merged.add(ytVideoEpisodes[yIdx++]);
+          }
+          if (dIdx < results.length) {
+            merged.add(results[dIdx++]);
+          }
+          if (dIdx < results.length) {
+            merged.add(results[dIdx++]);
+          }
+        }
+        return merged;
+      }
 
       if (results.isNotEmpty) {
         return results;
@@ -1673,35 +1723,59 @@ class CatalogRepository {
           .first
           .trim();
 
+      final String queryLower = cleanName.toLowerCase().trim();
+
+      // 0. Vérifier si l'artiste exact a déjà été résolu et enregistré par l'utilisateur lors d'une recherche
+      try {
+        final recorded = StorageService().getTopSearchedArtists(limit: 30);
+        for (final r in recorded) {
+          final rName = (r['name'] ?? '').toString().toLowerCase().trim();
+          final rId = int.tryParse((r['id'] ?? '').toString()) ?? 0;
+          if (rName == queryLower && rId > 0) {
+            final byId = await getArtistDetailsDeezerById(rId);
+            if (byId.isNotEmpty && (byId['id'] ?? 0) != 0) {
+              return byId;
+            }
+          }
+        }
+      } catch (_) {}
+
       final dioClient = _externalDio;
       final searchResponse = await dioClient.get(
-        'https://api.deezer.com/search/artist?q=${Uri.encodeComponent(cleanName)}&limit=5',
+        'https://api.deezer.com/search/artist?q=${Uri.encodeComponent(cleanName)}&limit=10',
       );
       if (searchResponse.statusCode == 200 &&
           searchResponse.data['data'] != null &&
           (searchResponse.data['data'] as List).isNotEmpty) {
-        Map<String, dynamic>? bestMatch;
-        for (var artist in searchResponse.data['data']) {
-          String foundName = (artist['name'] as String).toLowerCase().trim();
-          String queryName = cleanName.toLowerCase().trim();
-          if (foundName == queryName) {
-            bestMatch = artist;
-            break;
-          }
-        }
-        if (bestMatch == null) {
-          for (var artist in searchResponse.data['data']) {
-            String foundName = (artist['name'] as String).toLowerCase().trim();
-            String queryName = cleanName.toLowerCase().trim();
-            if (foundName.contains(queryName) || queryName.contains(foundName)) {
-              bestMatch = artist;
-              break;
-            }
-          }
-        }
-        bestMatch ??= searchResponse.data['data'][0];
+        final List<Map<String, dynamic>> candidates = (searchResponse.data['data'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
 
-        final artistId = bestMatch!['id'];
+        // Trier par correspondance exacte du nom EN PREMIER, puis par popularité (nb_fan décroissant)
+        // pour éviter tout profil homonyme obscur portant le même nom !
+        candidates.sort((a, b) {
+          final String aName = (a['name'] ?? '').toString().toLowerCase().trim();
+          final String bName = (b['name'] ?? '').toString().toLowerCase().trim();
+          final bool aExact = aName == queryLower;
+          final bool bExact = bName == queryLower;
+          if (aExact != bExact) return aExact ? -1 : 1;
+
+          final bool aContains = aName.contains(queryLower) || queryLower.contains(aName);
+          final bool bContains = bName.contains(queryLower) || queryLower.contains(bName);
+          if (aContains != bContains) return aContains ? -1 : 1;
+
+          final int aFans = (a['nb_fan'] is int)
+              ? a['nb_fan'] as int
+              : (int.tryParse((a['nb_fan'] ?? '0').toString()) ?? 0);
+          final int bFans = (b['nb_fan'] is int)
+              ? b['nb_fan'] as int
+              : (int.tryParse((b['nb_fan'] ?? '0').toString()) ?? 0);
+          return bFans.compareTo(aFans);
+        });
+
+        final Map<String, dynamic> bestMatch = candidates.first;
+        final artistId = bestMatch['id'];
         final detailsResponse = await dioClient.get('https://api.deezer.com/artist/$artistId');
         if (detailsResponse.statusCode == 200) {
           final details = detailsResponse.data;
@@ -1787,7 +1861,7 @@ class CatalogRepository {
   Future<List<Map<String, dynamic>>> getArtistAlbumsDeezer(int artistId) async {
     try {
       final dioClient = _externalDio;
-      final response = await dioClient.get('https://api.deezer.com/artist/$artistId/albums?limit=20');
+      final response = await dioClient.get('https://api.deezer.com/artist/$artistId/albums?limit=25');
       if (response.statusCode == 200 && response.data['data'] != null) {
         final albumsData = response.data['data'] as List;
         return albumsData.map((a) {
@@ -1796,11 +1870,68 @@ class CatalogRepository {
             'title': a['title'] ?? '',
             'cover_xl': a['cover_xl'] ?? a['cover_medium'] ?? '',
             'release_date': a['release_date'] ?? '',
+            'record_type': a['record_type'] ?? 'album',
           };
         }).toList();
       }
     } catch (e) {
       print('getArtistAlbumsDeezer error: $e');
+    }
+    return [];
+  }
+
+  /// Artistes similaires officiels via Deezer `/artist/<id>/related`
+  Future<List<Map<String, String>>> getRelatedArtistsDeezer(
+    int artistId, {
+    int limit = 12,
+  }) async {
+    if (artistId <= 0) return [];
+    try {
+      final dioClient = _externalDio;
+      final response = await dioClient.get(
+        'https://api.deezer.com/artist/$artistId/related?limit=$limit',
+      );
+      if (response.statusCode == 200 && response.data['data'] is List) {
+        final list = response.data['data'] as List;
+        return list.whereType<Map>().map((a) {
+          return <String, String>{
+            'id': (a['id'] ?? '').toString(),
+            'name': (a['name'] ?? '').toString(),
+            'imageUrl': (a['picture_xl'] ??
+                    a['picture_big'] ??
+                    a['picture_medium'] ??
+                    a['picture'] ??
+                    '')
+                .toString(),
+          };
+        }).where((m) => (m['name'] ?? '').isNotEmpty).toList();
+      }
+    } catch (e) {
+      print('getRelatedArtistsDeezer error: $e');
+    }
+    return [];
+  }
+
+  /// Radio / Mix continu autour d'un artiste via Deezer `/artist/<id>/radio`
+  Future<List<TrackModel>> getArtistRadioTracksDeezer(
+    int artistId, {
+    int limit = 25,
+  }) async {
+    if (artistId <= 0) return [];
+    try {
+      final dioClient = _externalDio;
+      final response = await dioClient.get(
+        'https://api.deezer.com/artist/$artistId/radio?limit=$limit',
+      );
+      if (response.statusCode == 200 && response.data['data'] is List) {
+        final list = response.data['data'] as List;
+        return list
+            .whereType<Map>()
+            .map((t) => _mapDeezerTrack(Map<String, dynamic>.from(t)))
+            .toList();
+      }
+    } catch (e) {
+      print('getArtistRadioTracksDeezer error: $e');
     }
     return [];
   }

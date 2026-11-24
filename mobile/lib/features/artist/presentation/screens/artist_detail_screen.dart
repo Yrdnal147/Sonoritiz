@@ -9,9 +9,13 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/storage/storage_service.dart';
 import '../../../../core/widgets/sonoritiz_artwork.dart';
 import '../../../../core/widgets/sonoritiz_cover_atmosphere.dart';
+import '../../../library/presentation/cubit/library_cubit.dart';
+import '../../../library/presentation/cubit/library_state.dart';
 import '../../../player/presentation/cubit/player_cubit.dart';
 import '../../../player/presentation/cubit/player_state.dart';
+import '../../../player/presentation/cubit/superlike_cubit.dart';
 import '../../../player/presentation/widgets/player_components/immersive_player_widgets.dart';
+import '../../../player/data/models/lyrics_model.dart';
 import '../../../player/data/models/track_model.dart';
 import '../../../player/data/services/lyrics_service.dart';
 import '../../../search/presentation/cubit/search_cubit.dart';
@@ -38,6 +42,12 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
   List<TrackModel> _artistSyncedLyricsShorts = [];
   bool _isLoadingSyncedLyrics = true;
   List<Map<String, dynamic>> _albums = [];
+  Map<String, dynamic>? _latestRelease;
+  List<TrackModel> _featuringTracks = [];
+  List<TrackModel> _radioTracks = [];
+  List<Map<String, String>> _relatedArtists = [];
+  String? _artistQuoteText;
+  TrackModel? _artistQuoteTrack;
   bool _isLoading = true;
   bool _isFollowed = false;
   bool _isBioExpanded = false;
@@ -110,14 +120,20 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
 
       List<TrackModel> fetchedPool = [];
       List<Map<String, dynamic>> albums = [];
+      List<Map<String, String>> relatedArtists = [];
+      List<TrackModel> radioTracks = [];
 
       if (artistId != 0) {
         final results = await Future.wait([
           repository.getArtistTopTracksDeezer(artistId, limit: 30),
           repository.getArtistAlbumsDeezer(artistId),
+          repository.getRelatedArtistsDeezer(artistId, limit: 12),
+          repository.getArtistRadioTracksDeezer(artistId, limit: 25),
         ]);
         fetchedPool = results[0] as List<TrackModel>;
         albums = results[1] as List<Map<String, dynamic>>;
+        relatedArtists = results[2] as List<Map<String, String>>;
+        radioTracks = results[3] as List<TrackModel>;
       }
 
       final String realName = (details['name'] ?? _artistName).toString();
@@ -142,6 +158,52 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
         } catch (_) {}
       }
 
+      // Déterminer la "Dernière sortie" (tri par release_date décroissante)
+      Map<String, dynamic>? latestRelease;
+      if (albums.isNotEmpty) {
+        final sortedAlbums = List<Map<String, dynamic>>.from(albums)
+          ..sort((a, b) {
+            final da = (a['release_date'] ?? '').toString();
+            final db = (b['release_date'] ?? '').toString();
+            return db.compareTo(da);
+          });
+        latestRelease = sortedAlbums.first;
+      }
+
+      // Extraire les Featurings & Collaborations de l'artiste
+      final List<TrackModel> featurings = [];
+      final Set<String> seenFeatTitles = {};
+      final RegExp collabRegex = RegExp(
+        r'(\s+(?:feat\.?|ft\.?|featuring|&|x)\s+|,\s+)',
+        caseSensitive: false,
+      );
+      final String realLower = realName.toLowerCase().trim();
+
+      void collectCollab(TrackModel t) {
+        final combined = '${t.artistName} ${t.title}';
+        if (!collabRegex.hasMatch(combined)) return;
+        if (!combined.toLowerCase().contains(realLower)) return;
+        final key = t.title.toLowerCase().trim();
+        if (seenFeatTitles.add(key) && featurings.length < 6) {
+          featurings.add(t);
+        }
+      }
+
+      for (final t in fetchedPool) {
+        collectCollab(t);
+      }
+      if (featurings.length < 4) {
+        try {
+          final extraFeat = await repository.getArtistTopTracks(
+            '$realName feat',
+            limit: 12,
+          );
+          for (final t in extraFeat) {
+            collectCollab(t);
+          }
+        } catch (_) {}
+      }
+
       final List<TrackModel> top = fetchedPool.take(10).toList();
       final List<TrackModel> shortsPool = fetchedPool.take(25).toList();
 
@@ -154,6 +216,10 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
           _artistVideoShorts = List<TrackModel>.from(shortsPool);
           _artistAudioShorts = List<TrackModel>.from(shortsPool);
           _albums = albums;
+          _latestRelease = latestRelease;
+          _featuringTracks = featurings;
+          _radioTracks = radioTracks;
+          _relatedArtists = relatedArtists;
           _isFollowed = StorageService().isArtistFollowed(realName) ||
               StorageService().isArtistFollowed(_artistName);
           _isLoading = false;
@@ -173,8 +239,49 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
     }
   }
 
+  String? _extractBestQuoteLine(LyricsModel model) {
+    final List<String> lines = [];
+    if (model.hasSynced && model.parsedSyncedLyrics != null) {
+      for (final l in model.parsedSyncedLyrics!) {
+        final t = l.text.trim();
+        if (t.isNotEmpty) lines.add(t);
+      }
+    } else if (model.hasPlain && model.plainLyrics != null) {
+      for (final raw in model.plainLyrics!.split('\n')) {
+        final t = raw.trim();
+        if (t.isNotEmpty) lines.add(t);
+      }
+    }
+    if (lines.isEmpty) return null;
+
+    // Chercher une phrase expressive au cœur du morceau (entre 26 et 92 caractères)
+    final int startIdx = lines.length > 6 ? 3 : 0;
+    for (int i = startIdx; i < lines.length; i++) {
+      final candidate = lines[i]
+          .replaceAll(RegExp(r'^["«»\s]+|["«»\s]+$'), '')
+          .trim();
+      if (candidate.length < 26 || candidate.length > 92) continue;
+      if (candidate.startsWith('[') || candidate.startsWith('(')) continue;
+      final lower = candidate.toLowerCase();
+      if (lower.contains('refrain') ||
+          lower.contains('couplet') ||
+          lower.contains('chorus') ||
+          lower.contains('verse') ||
+          lower.contains('intro') ||
+          lower.contains('outro') ||
+          lower.contains('paroles') ||
+          lower.contains('lyrics') ||
+          lower.contains('http')) {
+        continue;
+      }
+      return candidate;
+    }
+    return null;
+  }
+
   /// Filtre uniquement les sons de l'artiste qui possèdent des paroles synchronisées (LRC horodaté)
-  /// pour alimenter la carte Karaoké / Lyrics Shorts de l'artiste (jusqu'à 25 titres).
+  /// pour alimenter la carte Karaoké / Lyrics Shorts de l'artiste (jusqu'à 25 titres)
+  /// et extrait simultanément une phrase signature de l'artiste avec son morceau.
   Future<void> _filterSyncedLyricsShorts(List<TrackModel> candidates) async {
     if (candidates.isEmpty) {
       if (mounted) {
@@ -200,11 +307,21 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
               track.title,
               track.durationSeconds,
             );
-            if (lyrics != null &&
-                lyrics.hasSynced &&
-                lyrics.parsedSyncedLyrics != null &&
-                lyrics.parsedSyncedLyrics!.isNotEmpty) {
-              return track;
+            if (lyrics != null) {
+              if (_artistQuoteText == null) {
+                final quote = _extractBestQuoteLine(lyrics);
+                if (quote != null && mounted && _artistQuoteText == null) {
+                  setState(() {
+                    _artistQuoteText = quote;
+                    _artistQuoteTrack = track;
+                  });
+                }
+              }
+              if (lyrics.hasSynced &&
+                  lyrics.parsedSyncedLyrics != null &&
+                  lyrics.parsedSyncedLyrics!.isNotEmpty) {
+                return track;
+              }
             }
           } catch (_) {}
           return null;
@@ -574,7 +691,38 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
               ),
             ),
 
-            // Section Titres Populaires
+            // 1. Phrase signature de l'artiste entre guillemets avec le son auquel elle appartient
+            if (_artistQuoteText != null && _artistQuoteTrack != null)
+              SliverToBoxAdapter(
+                child: _buildArtistSignatureQuoteCard(
+                  quote: _artistQuoteText!,
+                  track: _artistQuoteTrack!,
+                  sourceLabel: sourceLabel,
+                  adaptiveColor: adaptiveColor,
+                ),
+              ),
+
+            // 2. Rubrique "Dernière sortie" (le projet le plus récent mis en avant)
+            if (_latestRelease != null)
+              SliverToBoxAdapter(
+                child: _buildLatestReleaseCard(
+                  release: _latestRelease!,
+                  artistName: name,
+                  adaptiveColor: adaptiveColor,
+                  adaptiveFgColor: adaptiveFgColor,
+                ),
+              ),
+
+            // 3. Rubrique "Dans votre bibliothèque" (vos titres aimés / superlikés de cet artiste)
+            SliverToBoxAdapter(
+              child: _buildInYourLibrarySection(
+                artistName: name,
+                sourceLabel: sourceLabel,
+                adaptiveColor: adaptiveColor,
+              ),
+            ),
+
+            // 4. Section Titres Populaires
             if (_topTracks.isNotEmpty) ...[
               const SliverToBoxAdapter(
                 child: Padding(
@@ -593,7 +741,7 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
               _buildTopTracksList(sourceLabel),
             ],
 
-            // Section Discographie / Albums
+            // 5. Section Discographie / Albums
             if (_albums.isNotEmpty) ...[
               const SliverToBoxAdapter(
                 child: Padding(
@@ -612,7 +760,26 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
               SliverToBoxAdapter(child: _buildAlbumsList(name)),
             ],
 
-            // Section "<Nom de l'artiste> Shorts" (Clips Vidéo 25 • Audio 25 • Karaoké Lyrics synchrones 25 • 45s sur les moments forts)
+            // 6. Rubrique "Featurings & Collaborations"
+            if (_featuringTracks.isNotEmpty) ...[
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(20, 24, 20, 8),
+                  child: Text(
+                    "Featurings & Collaborations",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.4,
+                    ),
+                  ),
+                ),
+              ),
+              _buildFeaturingsList(sourceLabel),
+            ],
+
+            // 7. Section "<Nom de l'artiste> Shorts" (Clips Vidéo 25 • Audio 25 • Karaoké Lyrics synchrones 25 • 45s sur les moments forts)
             if (_artistVideoShorts.isNotEmpty ||
                 _artistAudioShorts.isNotEmpty ||
                 _artistSyncedLyricsShorts.isNotEmpty) ...[
@@ -658,6 +825,37 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                     focusHighlight: true,
                   ),
                 ),
+              ),
+            ],
+
+            // 8. Rubrique "Radio / Mix <Nom de l'artiste>"
+            if (_radioTracks.isNotEmpty)
+              SliverToBoxAdapter(
+                child: _buildArtistRadioBanner(
+                  artistName: name,
+                  adaptiveColor: adaptiveColor,
+                  adaptiveFgColor: adaptiveFgColor,
+                ),
+              ),
+
+            // 9. Rubrique "Artistes similaires"
+            if (_relatedArtists.isNotEmpty) ...[
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(20, 26, 20, 12),
+                  child: Text(
+                    "Artistes similaires",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.4,
+                    ),
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: _buildRelatedArtistsCarousel(),
               ),
             ],
 
@@ -727,9 +925,18 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
     required Color adaptiveBgColor,
     required Color adaptiveFgColor,
   }) {
-    final Color borderColor = adaptiveBgColor == Colors.black
-        ? Colors.white.withValues(alpha: 0.30)
+    final bool isBlackBase = adaptiveBgColor == Colors.black;
+    final Color fillColor = _isFollowed
+        ? adaptiveBgColor
+        : (isBlackBase
+            ? Colors.black.withValues(alpha: 0.45)
+            : adaptiveBgColor.withValues(alpha: 0.22));
+    final Color borderColor = isBlackBase
+        ? Colors.white.withValues(alpha: _isFollowed ? 0.55 : 0.35)
         : adaptiveBgColor;
+    final Color fgColor = _isFollowed
+        ? adaptiveFgColor
+        : (isBlackBase ? Colors.white : adaptiveBgColor);
 
     return GestureDetector(
       onTap: () => _toggleFollow(name),
@@ -738,9 +945,18 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
         height: 48,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         decoration: BoxDecoration(
-          color: adaptiveBgColor,
+          color: fillColor,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: borderColor, width: 1.2),
+          border: Border.all(color: borderColor, width: 1.3),
+          boxShadow: _isFollowed
+              ? [
+                  BoxShadow(
+                    color: adaptiveBgColor.withValues(alpha: 0.32),
+                    blurRadius: 12,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : const [],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -750,20 +966,547 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
               _isFollowed
                   ? Icons.check_rounded
                   : Icons.person_add_alt_1_rounded,
-              color: adaptiveFgColor,
+              color: fgColor,
               size: 19,
             ),
             const SizedBox(width: 8),
             Text(
               _isFollowed ? "Suivi" : "Suivre",
               style: TextStyle(
-                color: adaptiveFgColor,
+                color: fgColor,
                 fontWeight: FontWeight.w800,
                 fontSize: 14.5,
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildArtistSignatureQuoteCard({
+    required String quote,
+    required TrackModel track,
+    required String sourceLabel,
+    required Color adaptiveColor,
+  }) {
+    final Color quoteTint = adaptiveColor == Colors.black
+        ? Colors.white
+        : adaptiveColor;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+      child: GestureDetector(
+        onTap: () {
+          context.read<PlayerCubit>().playTrack(
+                track,
+                queue: _topTracks.isNotEmpty ? _topTracks : [track],
+                source: sourceLabel,
+              );
+        },
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: quoteTint.withValues(alpha: 0.28),
+                  width: 1.0,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    "« $quote »",
+                    textAlign: TextAlign.center,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontStyle: FontStyle.italic,
+                      fontWeight: FontWeight.w600,
+                      height: 1.38,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.music_note_rounded,
+                        color: quoteTint,
+                        size: 15,
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          track.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: quoteTint,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLatestReleaseCard({
+    required Map<String, dynamic> release,
+    required String artistName,
+    required Color adaptiveColor,
+    required Color adaptiveFgColor,
+  }) {
+    final String title = (release['title'] ?? 'Dernière sortie').toString();
+    final String cover = (release['cover_xl'] ?? '').toString();
+    final String releaseDate = (release['release_date'] ?? '').toString();
+    final String year =
+        releaseDate.length >= 4 ? releaseDate.substring(0, 4) : '';
+    final Color badgeBg = adaptiveColor == Colors.black
+        ? Colors.white
+        : adaptiveColor;
+    final Color badgeFg = adaptiveColor == Colors.black
+        ? Colors.black
+        : adaptiveFgColor;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Dernière sortie",
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.4,
+            ),
+          ),
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: () {
+              context.push(
+                '/album',
+                extra: {'album': release, 'artistName': artistName},
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.14),
+                ),
+              ),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: cover.isNotEmpty
+                        ? SonoritizArtwork(
+                            imageUrl: cover,
+                            width: 76,
+                            height: 76,
+                            borderRadius: 12,
+                            fit: BoxFit.cover,
+                          )
+                        : Container(
+                            width: 76,
+                            height: 76,
+                            color: AppColors.surfaceLight,
+                            child: const Icon(
+                              Icons.album_rounded,
+                              color: Colors.white24,
+                              size: 36,
+                            ),
+                          ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: badgeBg,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            year.isNotEmpty
+                                ? "DERNIÈRE SORTIE • $year"
+                                : "DERNIÈRE SORTIE",
+                            style: TextStyle(
+                              color: badgeFg,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        if (releaseDate.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            "Sorti le $releaseDate",
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.62),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    color: Colors.white.withValues(alpha: 0.65),
+                    size: 16,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInYourLibrarySection({
+    required String artistName,
+    required String sourceLabel,
+    required Color adaptiveColor,
+  }) {
+    final String artistLower = artistName.toLowerCase().trim();
+    if (artistLower.isEmpty) return const SizedBox.shrink();
+
+    return BlocBuilder<LibraryCubit, LibraryState>(
+      builder: (context, libState) {
+        final List<TrackModel> likedForArtist = [];
+        final Set<String> seenIds = {};
+
+        List<TrackModel> superliked = const [];
+        try {
+          superliked = context.watch<SuperlikeCubit>().state.tracks;
+        } catch (_) {}
+        for (final t in superliked) {
+          if (t.artistName.toLowerCase().contains(artistLower) &&
+              seenIds.add(t.id)) {
+            likedForArtist.add(t);
+          }
+        }
+
+        if (libState is LibraryLoaded) {
+          for (final t in libState.favorites) {
+            if (t.artistName.toLowerCase().contains(artistLower) &&
+                seenIds.add(t.id)) {
+              likedForArtist.add(t);
+            }
+          }
+        }
+
+        if (likedForArtist.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final displayList = likedForArtist.take(4).toList();
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(0, 16, 0, 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    const Text(
+                      "Dans votre bibliothèque",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        "${likedForArtist.length}",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 6),
+              for (int i = 0; i < displayList.length; i++)
+                Container(
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  child: SonoritizTrackTile(
+                    track: displayList[i],
+                    queue: likedForArtist,
+                    index: i,
+                    playbackSource: "vos favoris de $artistName",
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFeaturingsList(String sourceLabel) {
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          final track = _featuringTracks[index];
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            child: SonoritizTrackTile(
+              track: track,
+              queue: _featuringTracks,
+              index: index,
+              playbackSource: sourceLabel,
+            ),
+          );
+        },
+        childCount: _featuringTracks.length,
+      ),
+    );
+  }
+
+  Widget _buildArtistRadioBanner({
+    required String artistName,
+    required Color adaptiveColor,
+    required Color adaptiveFgColor,
+  }) {
+    final Color btnBg = adaptiveColor == Colors.black
+        ? Colors.white
+        : adaptiveColor;
+    final Color btnFg = adaptiveColor == Colors.black
+        ? Colors.black
+        : adaptiveFgColor;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 26, 20, 4),
+      child: GestureDetector(
+        onTap: () {
+          if (_radioTracks.isEmpty) return;
+          final mix = List<TrackModel>.from(_radioTracks)..shuffle();
+          context.read<PlayerCubit>().playTrack(
+                mix.first,
+                queue: mix,
+                source: "la Radio $artistName",
+              );
+        },
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                _palette.dominantColor.withValues(alpha: 0.34),
+                Colors.white.withValues(alpha: 0.06),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.16),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: btnBg,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.podcasts_rounded,
+                  color: btnFg,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Radio / Mix $artistName",
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      "${_radioTracks.length} titres continus dans l'univers de $artistName",
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.72),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  color: btnBg,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  "Lancer",
+                  style: TextStyle(
+                    color: btnFg,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRelatedArtistsCarousel() {
+    return SizedBox(
+      height: 136,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        itemCount: _relatedArtists.length,
+        itemBuilder: (context, index) {
+          final rel = _relatedArtists[index];
+          final relId = (rel['id'] ?? '').trim();
+          final relName = (rel['name'] ?? 'Artiste').trim();
+          final relImg = (rel['imageUrl'] ?? '').trim();
+
+          return GestureDetector(
+            onTap: () {
+              context.push(
+                '/artist',
+                extra: <String, String>{
+                  'name': relName,
+                  if (relId.isNotEmpty) 'id': relId,
+                  if (relImg.isNotEmpty) 'imageUrl': relImg,
+                },
+              );
+            },
+            child: Container(
+              width: 98,
+              margin: const EdgeInsets.only(right: 14),
+              child: Column(
+                children: [
+                  Container(
+                    width: 88,
+                    height: 88,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.surfaceLight,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: ClipOval(
+                      child: relImg.isNotEmpty
+                          ? SonoritizArtwork(
+                              imageUrl: relImg,
+                              width: 88,
+                              height: 88,
+                              borderRadius: 44,
+                              fit: BoxFit.cover,
+                            )
+                          : const Icon(
+                              Icons.person_outline_rounded,
+                              color: Colors.white38,
+                              size: 36,
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    relName,
+                    maxLines: 2,
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      height: 1.15,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

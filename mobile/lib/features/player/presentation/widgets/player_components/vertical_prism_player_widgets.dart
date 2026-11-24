@@ -1053,6 +1053,7 @@ class SonoritizTrackArtistsFrames extends StatefulWidget {
 class _SonoritizTrackArtistsFramesState
     extends State<SonoritizTrackArtistsFrames> {
   static final Map<String, String> _avatarCache = <String, String>{};
+  static final Map<String, String> _idCache = <String, String>{};
   static final dio_pkg.Dio _dio = dio_pkg.Dio(
     dio_pkg.BaseOptions(
       connectTimeout: const Duration(seconds: 6),
@@ -1062,6 +1063,7 @@ class _SonoritizTrackArtistsFramesState
 
   List<String> _artists = const [];
   final Map<String, String> _resolvedUrls = <String, String>{};
+  final Map<String, String> _resolvedIds = <String, String>{};
 
   @override
   void initState() {
@@ -1142,12 +1144,19 @@ class _SonoritizTrackArtistsFramesState
         _parseTrackArtists(widget.track.artistName, widget.track.title);
     _artists = parsed;
     _resolvedUrls.clear();
+    _resolvedIds.clear();
 
     final List<String> toFetch = [];
     for (final artist in parsed) {
       final key = artist.toLowerCase();
+      if (_idCache.containsKey(key) && _idCache[key]!.isNotEmpty) {
+        _resolvedIds[artist] = _idCache[key]!;
+      }
       if (_avatarCache.containsKey(key) && _avatarCache[key]!.isNotEmpty) {
         _resolvedUrls[artist] = _avatarCache[key]!;
+        if (!_resolvedIds.containsKey(artist)) {
+          toFetch.add(artist);
+        }
       } else {
         toFetch.add(artist);
       }
@@ -1197,11 +1206,20 @@ class _SonoritizTrackArtistsFramesState
                         c['picture'] ??
                         '')
                     .toString();
+                final rawId = (c['id'] ?? '').toString().trim();
+                if (rawId.isNotEmpty && rawId != '0') {
+                  _idCache[targetLower] = rawId;
+                }
                 if (rawPic.isNotEmpty && !rawPic.contains('/images/artist//')) {
                   _avatarCache[targetLower] = rawPic;
                   resolvedLower.add(targetLower);
                   if (mounted && widget.track.id == trackId) {
-                    setState(() => _resolvedUrls[target] = rawPic);
+                    setState(() {
+                      _resolvedUrls[target] = rawPic;
+                      if (rawId.isNotEmpty && rawId != '0') {
+                        _resolvedIds[target] = rawId;
+                      }
+                    });
                   }
                   break;
                 }
@@ -1237,13 +1255,18 @@ class _SonoritizTrackArtistsFramesState
 
     try {
       String foundPicture = '';
+      String foundId = '';
       final repo = _resolveCatalogRepo();
       final results = await repo.searchArtists(artistName, limit: 10);
       if (results.isNotEmpty) {
         final top = results.first;
         final rawPic = (top['picture'] ?? '').toString();
+        final rawId = (top['id'] ?? '').toString().trim();
         if (rawPic.isNotEmpty && !rawPic.contains('/images/artist//')) {
           foundPicture = rawPic;
+        }
+        if (rawId.isNotEmpty && rawId != '0') {
+          foundId = rawId;
         }
       }
 
@@ -1253,11 +1276,17 @@ class _SonoritizTrackArtistsFramesState
       if (foundPicture.isNotEmpty) {
         _avatarCache[key] = foundPicture;
       }
+      if (foundId.isNotEmpty) {
+        _idCache[key] = foundId;
+      }
 
       if (mounted &&
           (expectedTrackId == null || widget.track.id == expectedTrackId)) {
         setState(() {
           _resolvedUrls[artistName] = foundPicture;
+          if (foundId.isNotEmpty) {
+            _resolvedIds[artistName] = foundId;
+          }
         });
       }
     } catch (_) {
@@ -1275,10 +1304,20 @@ class _SonoritizTrackArtistsFramesState
     final clean = artistName.trim();
     if (clean.isEmpty || clean.toLowerCase() == 'artiste inconnu') return;
     HapticFeedback.lightImpact();
+    final key = clean.toLowerCase();
+    final resolvedId = _resolvedIds[artistName] ?? _idCache[key] ?? '';
+    final resolvedUrl = _resolvedUrls[artistName] ?? _avatarCache[key] ?? '';
     final router = import_go_router.GoRouter.of(context);
     Navigator.of(context, rootNavigator: true)
         .popUntil((route) => route is! PopupRoute);
-    router.push('/artist', extra: {'name': clean});
+    router.push(
+      '/artist',
+      extra: <String, String>{
+        'name': clean,
+        if (resolvedId.isNotEmpty) 'id': resolvedId,
+        if (resolvedUrl.isNotEmpty) 'imageUrl': resolvedUrl,
+      },
+    );
   }
 
   Widget _buildEmptyGreyProfileFallback() {

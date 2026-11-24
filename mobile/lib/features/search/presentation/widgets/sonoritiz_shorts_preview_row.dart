@@ -106,24 +106,30 @@ class SonoritizShortsPreviewRow extends StatelessWidget {
                 },
               ),
             ),
-            const SizedBox(width: 12),
-            _LyricsKaraokePreviewCard(
-              track: lTracks.isNotEmpty ? lTracks.first : null,
-              isLoading: isLoading,
-              cardWidth: effectiveWidth,
-              cardHeight: effectiveHeight,
-              compact: compact,
-              countLabel: lTracks.isNotEmpty ? '${lTracks.length} SYNC • 45S' : 'SYNC 45S',
-              onTap: () => context.push(
-                '/discovery/lyrics',
-                extra: {
-                  'tracks': lTracks,
-                  'artistName': artistName,
-                  'clipDurationSeconds': clipDurationSeconds,
-                  'focusHighlight': focusHighlight,
+            if (isLoading || lTracks.isNotEmpty) ...[
+              const SizedBox(width: 12),
+              _LyricsKaraokePreviewCard(
+                track: lTracks.isNotEmpty ? lTracks.first : null,
+                isLoading: isLoading,
+                cardWidth: effectiveWidth,
+                cardHeight: effectiveHeight,
+                compact: compact,
+                countLabel:
+                    lTracks.isNotEmpty ? '${lTracks.length} SYNC • 45S' : 'SYNC 45S',
+                onTap: () {
+                  if (lTracks.isEmpty) return;
+                  context.push(
+                    '/discovery/lyrics',
+                    extra: {
+                      'tracks': lTracks,
+                      'artistName': artistName,
+                      'clipDurationSeconds': clipDurationSeconds,
+                      'focusHighlight': focusHighlight,
+                    },
+                  );
                 },
               ),
-            ),
+            ],
           ],
         ),
       );

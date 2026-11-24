@@ -34,6 +34,13 @@ class _PodcastPlayerScreenState extends State<PodcastPlayerScreen> {
   @override
   void initState() {
     super.initState();
+    // Si l'épisode est directement un podcast vidéo YouTube, activer l'affichage vidéo par défaut
+    final bool isDirectYoutubeVideo = !widget.track.id.startsWith('deezer_') &&
+        RegExp(r'^[a-zA-Z0-9_-]{11}$').hasMatch(widget.track.id);
+    if (isDirectYoutubeVideo ||
+        widget.track.genre.toLowerCase().contains('vidéo')) {
+      _isVideoMode = true;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         context.read<PlayerCubit>().pause();

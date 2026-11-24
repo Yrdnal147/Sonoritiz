@@ -2,10 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../core/utils/responsive_utils.dart';
+import '../../../../core/widgets/sonoritiz_artwork.dart';
 import '../../../../core/widgets/sonoritiz_dynamic_background.dart';
 import '../../../../core/widgets/sonoritiz_page_title.dart';
 import '../../home/data/repositories/catalog_repository.dart';
@@ -37,14 +37,28 @@ class _PodcastScreenState extends State<PodcastScreen> {
 
   static const List<Map<String, String>> _themes = [
     {'id': 'all', 'label': 'À la une', 'query': '', 'type': 'all'},
-    {'id': 'foot', 'label': 'Football & Sport', 'query': 'football sport after foot', 'type': 'podcast'},
+    {'id': 'amour', 'label': 'Amour & Relations', 'query': 'amour couple relations sentimentales histoire d amour', 'type': 'podcast'},
+    {'id': 'musique', 'label': 'Musique & Interviews', 'query': 'interview artiste musique rap afro podcast', 'type': 'podcast'},
+    {'id': 'afrique', 'label': 'Afrique & Société', 'query': 'afrique culture société interview débat', 'type': 'podcast'},
+    {'id': 'crime', 'label': 'Enquêtes & True Crime', 'query': 'enquête histoire vraie affaire criminelle récit', 'type': 'podcast'},
+    {'id': 'foot', 'label': 'Football & Sport', 'query': 'football sport after foot débrief', 'type': 'podcast'},
+    {'id': 'business', 'label': 'Business & Tech', 'query': 'business entrepreneuriat tech intelligence artificielle', 'type': 'podcast'},
     {'id': 'books', 'label': 'Livres Audio', 'query': 'livre audio roman complet', 'type': 'audiobook'},
-    {'id': 'histoire', 'label': 'Histoire & Récits', 'query': 'histoire culture récit', 'type': 'podcast'},
-    {'id': 'business', 'label': 'Business & Tech', 'query': 'business entrepreneuriat tech', 'type': 'podcast'},
-    {'id': 'afrique', 'label': 'Afrique & Société', 'query': 'afrique culture société', 'type': 'podcast'},
-    {'id': 'humour', 'label': 'Humour', 'query': 'humour comédie stand up', 'type': 'podcast'},
-    {'id': 'dev', 'label': 'Développement & Philo', 'query': 'développement personnel philosophie livre audio', 'type': 'all'},
+    {'id': 'histoire', 'label': 'Histoire & Récits', 'query': 'histoire culture récit documentaire', 'type': 'podcast'},
+    {'id': 'science', 'label': 'Sciences & Découvertes', 'query': 'science espace univers découverte documentaire', 'type': 'podcast'},
+    {'id': 'humour', 'label': 'Humour & Stand-up', 'query': 'humour comédie stand up spectacle podcast', 'type': 'podcast'},
+    {'id': 'dev', 'label': 'Développement & Philo', 'query': 'développement personnel philosophie psychologie', 'type': 'all'},
   ];
+
+  String _formatEpisodeDuration(int seconds) {
+    if (seconds <= 0) return '';
+    final int hours = seconds ~/ 3600;
+    final int mins = (seconds % 3600) ~/ 60;
+    if (hours > 0) {
+      return '${hours}h ${mins.toString().padLeft(2, '0')}m';
+    }
+    return '$mins min';
+  }
 
   @override
   void initState() {
@@ -239,7 +253,7 @@ class _PodcastScreenState extends State<PodcastScreen> {
                           fontWeight: FontWeight.w500,
                         ),
                         decoration: InputDecoration(
-                          hintText: "Thème, sport, foot, livre audio, histoire...",
+                          hintText: "Amour, couple, musique, sport, livre audio...",
                           hintStyle: TextStyle(
                             color: Colors.white.withValues(alpha: 0.38),
                             fontSize: 14,
@@ -398,6 +412,14 @@ class _PodcastScreenState extends State<PodcastScreen> {
                                         (context, index) {
                                           final item = _items[index];
                                           final isBook = item.genre.toLowerCase().contains('livre');
+                                          final isVideoEpisode =
+                                              !item.id.startsWith('deezer_') ||
+                                                  item.genre
+                                                      .toLowerCase()
+                                                      .contains('vidéo');
+                                          final durationLabel =
+                                              _formatEpisodeDuration(
+                                                  item.durationSeconds);
 
                                           return GestureDetector(
                                             onTap: () {
@@ -413,18 +435,12 @@ class _PodcastScreenState extends State<PodcastScreen> {
                                                       ClipRRect(
                                                         borderRadius: BorderRadius.circular(14),
                                                         child: item.coverUrl.isNotEmpty
-                                                            ? CachedNetworkImage(
+                                                            ? SonoritizArtwork(
                                                                 imageUrl: item.coverUrl,
+                                                                width: double.infinity,
+                                                                height: double.infinity,
+                                                                borderRadius: 14,
                                                                 fit: BoxFit.cover,
-                                                                errorWidget: (_, __, ___) =>
-                                                                    Container(
-                                                                  color: const Color(0xFF1C1C22),
-                                                                  child: const Icon(
-                                                                    Icons.podcasts_rounded,
-                                                                    color: Colors.white24,
-                                                                    size: 40,
-                                                                  ),
-                                                                ),
                                                               )
                                                             : Container(
                                                                 color: const Color(0xFF1C1C22),
@@ -441,22 +457,64 @@ class _PodcastScreenState extends State<PodcastScreen> {
                                                         child: Container(
                                                           padding: const EdgeInsets.symmetric(
                                                             horizontal: 8,
-                                                            vertical: 3,
+                                                            vertical: 3.5,
                                                           ),
                                                           decoration: BoxDecoration(
-                                                            color: Colors.black.withValues(alpha: 0.72),
+                                                            color: isVideoEpisode
+                                                                ? AppColors.primary
+                                                                : Colors.black.withValues(alpha: 0.72),
                                                             borderRadius: BorderRadius.circular(6),
                                                           ),
-                                                          child: Text(
-                                                            isBook ? "Livre audio" : "Podcast",
-                                                            style: const TextStyle(
-                                                              color: Colors.white,
-                                                              fontSize: 10.5,
-                                                              fontWeight: FontWeight.w700,
-                                                            ),
+                                                          child: Row(
+                                                            mainAxisSize: MainAxisSize.min,
+                                                            children: [
+                                                              if (isVideoEpisode) ...[
+                                                                const Icon(
+                                                                  Icons.videocam_rounded,
+                                                                  color: Colors.black,
+                                                                  size: 12,
+                                                                ),
+                                                                const SizedBox(width: 4),
+                                                              ],
+                                                              Text(
+                                                                isVideoEpisode
+                                                                    ? (isBook ? "Livre Vidéo" : "Podcast Vidéo")
+                                                                    : (isBook ? "Livre audio" : "Podcast"),
+                                                                style: TextStyle(
+                                                                  color: isVideoEpisode
+                                                                      ? Colors.black
+                                                                      : Colors.white,
+                                                                  fontSize: 10.5,
+                                                                  fontWeight: FontWeight.w800,
+                                                                ),
+                                                              ),
+                                                            ],
                                                           ),
                                                         ),
                                                       ),
+                                                      if (durationLabel.isNotEmpty)
+                                                        Positioned(
+                                                          bottom: 8,
+                                                          right: 8,
+                                                          child: Container(
+                                                            padding: const EdgeInsets.symmetric(
+                                                              horizontal: 7,
+                                                              vertical: 3,
+                                                            ),
+                                                            decoration: BoxDecoration(
+                                                              color: Colors.black.withValues(alpha: 0.78),
+                                                              borderRadius: BorderRadius.circular(6),
+                                                            ),
+                                                            child: Text(
+                                                              durationLabel,
+                                                              style: const TextStyle(
+                                                                color: Colors.white,
+                                                                fontSize: 10.5,
+                                                                fontWeight: FontWeight.w700,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ),
                                                     ],
                                                   ),
                                                 ),

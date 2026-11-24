@@ -16,6 +16,8 @@ class ConnectActive extends ConnectState {
   final String inviteCode;
   final bool isHost;
   final List<Map<String, dynamic>> participants;
+  final List<Map<String, dynamic>> reactions;
+  final List<Map<String, dynamic>> suggestions;
   final String connectionStatus;
   final String? actionError;
 
@@ -24,21 +26,28 @@ class ConnectActive extends ConnectState {
     required this.inviteCode,
     required this.isHost,
     required this.participants,
-    this.connectionStatus = 'connecting',
+    this.reactions = const [],
+    this.suggestions = const [],
+    this.connectionStatus = 'connected',
     this.actionError,
   });
 
   ConnectActive copyWith({
     List<Map<String, dynamic>>? participants,
+    List<Map<String, dynamic>>? reactions,
+    List<Map<String, dynamic>>? suggestions,
     String? connectionStatus,
+    String? actionError,
   }) {
     return ConnectActive(
       sessionId: sessionId,
       inviteCode: inviteCode,
       isHost: isHost,
       participants: participants ?? this.participants,
+      reactions: reactions ?? this.reactions,
+      suggestions: suggestions ?? this.suggestions,
       connectionStatus: connectionStatus ?? this.connectionStatus,
-      actionError: actionError ?? this.actionError,
+      actionError: actionError,
     );
   }
 
@@ -48,6 +57,8 @@ class ConnectActive extends ConnectState {
         inviteCode,
         isHost,
         participants,
+        reactions,
+        suggestions,
         connectionStatus,
         actionError,
       ];
