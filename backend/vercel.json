@@ -18,5 +18,11 @@
       "src": "/(.*)",
       "dest": "sonoritiz_backend/asgi.py"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/health/",
+      "schedule": "0 8 * * *"
+    }
   ]
 }
