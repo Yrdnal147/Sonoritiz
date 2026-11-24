@@ -22,6 +22,8 @@ class VideoShortWidget extends StatefulWidget {
   final bool isMuted;
   final bool isActive;
   final VoidCallback? onAutoScrollTriggered;
+  final int clipDurationSeconds;
+  final bool focusHighlight;
 
   const VideoShortWidget({
     Key? key,
@@ -29,6 +31,8 @@ class VideoShortWidget extends StatefulWidget {
     required this.isMuted,
     required this.isActive,
     this.onAutoScrollTriggered,
+    this.clipDurationSeconds = 20,
+    this.focusHighlight = false,
   }) : super(key: key);
 
   @override
@@ -45,6 +49,7 @@ class _VideoShortWidgetState extends State<VideoShortWidget> {
   bool _isLoading = true;
   double _progress = 0.0;
   bool _showHeart = false;
+  int _highlightStartSeconds = 0;
   ImmersivePalette _palette = ImmersivePalette.fallback;
 
   @override
@@ -132,6 +137,20 @@ class _VideoShortWidgetState extends State<VideoShortWidget> {
 
       _videoPlayerController = ctrl;
       await _videoPlayerController!.setVolume(widget.isMuted ? 0.0 : 1.0);
+
+      final int totalSec = ctrl.value.duration.inSeconds > 0
+          ? ctrl.value.duration.inSeconds
+          : widget.track.durationSeconds;
+      final int clipDur = widget.clipDurationSeconds > 0 ? widget.clipDurationSeconds : 20;
+      if (widget.focusHighlight && totalSec > clipDur + 15) {
+        _highlightStartSeconds =
+            (totalSec * 0.30).round().clamp(24, totalSec - clipDur - 2);
+        await _videoPlayerController!
+            .seekTo(Duration(seconds: _highlightStartSeconds));
+      } else {
+        _highlightStartSeconds = 0;
+      }
+
       _initialized = true;
 
       setState(() => _isLoading = false);
@@ -144,16 +163,21 @@ class _VideoShortWidgetState extends State<VideoShortWidget> {
         if (!mounted || _videoPlayerController == null) return;
         final pos = _videoPlayerController!.value.position;
         final seconds = pos.inMilliseconds / 1000.0;
+        final double clipLen =
+            (widget.clipDurationSeconds > 0 ? widget.clipDurationSeconds : 20)
+                .toDouble();
+        final double elapsed = (seconds - _highlightStartSeconds).clamp(0.0, clipLen + 5.0);
 
-        if (seconds >= 20.0) {
-          _videoPlayerController!.seekTo(Duration.zero);
+        if (elapsed >= clipLen) {
+          _videoPlayerController!
+              .seekTo(Duration(seconds: _highlightStartSeconds));
           if (widget.isActive && _isPlaying) {
             _videoPlayerController!.play();
           }
           widget.onAutoScrollTriggered?.call();
         } else {
           setState(() {
-            _progress = (seconds / 20.0).clamp(0.0, 1.0);
+            _progress = (elapsed / clipLen).clamp(0.0, 1.0);
           });
         }
       });

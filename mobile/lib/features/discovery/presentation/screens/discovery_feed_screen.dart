@@ -14,9 +14,19 @@ import '../widgets/lyrics_short_widget.dart';
 
 class DiscoveryFeedScreen extends StatefulWidget {
   final String feedType; // 'audio', 'video', 'lyrics'
+  final List<TrackModel>? customTracks;
+  final String? artistName;
+  final int clipDurationSeconds;
+  final bool focusHighlight;
 
-  const DiscoveryFeedScreen({Key? key, required this.feedType})
-      : super(key: key);
+  const DiscoveryFeedScreen({
+    super.key,
+    required this.feedType,
+    this.customTracks,
+    this.artistName,
+    this.clipDurationSeconds = 20,
+    this.focusHighlight = false,
+  });
 
   @override
   State<DiscoveryFeedScreen> createState() => _DiscoveryFeedScreenState();
@@ -38,7 +48,9 @@ class _DiscoveryFeedScreenState extends State<DiscoveryFeedScreen> {
         context.read<PlayerCubit>().pause();
       }
     });
-    context.read<DiscoveryCubit>().loadDiscoveryFeeds();
+    if (widget.customTracks == null || widget.customTracks!.isEmpty) {
+      context.read<DiscoveryCubit>().loadDiscoveryFeeds();
+    }
   }
 
   @override
@@ -49,14 +61,17 @@ class _DiscoveryFeedScreenState extends State<DiscoveryFeedScreen> {
   }
 
   String _getTitle() {
+    final prefix = (widget.artistName != null && widget.artistName!.trim().isNotEmpty)
+        ? '${widget.artistName!.trim()} • '
+        : '';
     switch (widget.feedType) {
       case 'video':
-        return 'Sonorités vidéo';
+        return '${prefix}Clips Vidéo';
       case 'lyrics':
-        return 'Lyrics de sonorité';
+        return '${prefix}Karaoké Lyrics';
       case 'audio':
       default:
-        return 'Sonorités en audios';
+        return '${prefix}Shorts Audio';
     }
   }
 
@@ -119,15 +134,25 @@ class _DiscoveryFeedScreenState extends State<DiscoveryFeedScreen> {
       ),
       body: BlocBuilder<DiscoveryCubit, DiscoveryState>(
         builder: (context, state) {
-          if (state is DiscoveryLoading || state is DiscoveryInitial) {
+          final bool hasCustom =
+              widget.customTracks != null && widget.customTracks!.isNotEmpty;
+          final bool isMuted =
+              state is DiscoveryLoaded ? state.isMuted : false;
+
+          if (!hasCustom &&
+              (state is DiscoveryLoading || state is DiscoveryInitial)) {
             return const Center(
                 child: CircularProgressIndicator(color: AppColors.primary));
-          } else if (state is DiscoveryError) {
+          } else if (!hasCustom && state is DiscoveryError) {
             return Center(
                 child: Text(state.message,
                     style: const TextStyle(color: AppColors.error)));
+          }
+
+          List<TrackModel> tracks = [];
+          if (hasCustom) {
+            tracks = widget.customTracks!;
           } else if (state is DiscoveryLoaded) {
-            List<TrackModel> tracks;
             switch (widget.feedType) {
               case 'video':
                 tracks = state.videoTracks;
@@ -140,56 +165,60 @@ class _DiscoveryFeedScreenState extends State<DiscoveryFeedScreen> {
                 tracks = state.audioTracks;
                 break;
             }
-
-            if (tracks.isEmpty) {
-              return const Center(
-                  child: Text("Aucun contenu disponible",
-                      style: TextStyle(color: Colors.white)));
-            }
-
-            return PageView.builder(
-              controller: _pageController,
-              scrollDirection: Axis.vertical,
-              allowImplicitScrolling: false,
-              itemCount: tracks.length,
-              onPageChanged: (index) {
-                setState(() {
-                  _currentIndex = index;
-                });
-              },
-              itemBuilder: (context, index) {
-                final track = tracks[index];
-                final isMuted = state.isMuted;
-                final isActive = index == _currentIndex;
-
-                switch (widget.feedType) {
-                  case 'video':
-                    return VideoShortWidget(
-                      track: track,
-                      isMuted: isMuted,
-                      isActive: isActive,
-                      onAutoScrollTriggered: _handleAutoScroll,
-                    );
-                  case 'lyrics':
-                    return LyricsShortWidget(
-                      track: track,
-                      isMuted: isMuted,
-                      isActive: isActive,
-                      onAutoScrollTriggered: _handleAutoScroll,
-                    );
-                  case 'audio':
-                  default:
-                    return AudioShortWidget(
-                      track: track,
-                      isMuted: isMuted,
-                      isActive: isActive,
-                      onAutoScrollTriggered: _handleAutoScroll,
-                    );
-                }
-              },
-            );
           }
-          return const SizedBox.shrink();
+
+          if (tracks.isEmpty) {
+            return const Center(
+                child: Text("Aucun contenu disponible",
+                    style: TextStyle(color: Colors.white)));
+          }
+
+          return PageView.builder(
+            controller: _pageController,
+            scrollDirection: Axis.vertical,
+            allowImplicitScrolling: false,
+            itemCount: tracks.length,
+            onPageChanged: (index) {
+              setState(() {
+                _currentIndex = index;
+              });
+            },
+            itemBuilder: (context, index) {
+              final track = tracks[index];
+              final isActive = index == _currentIndex;
+
+              switch (widget.feedType) {
+                case 'video':
+                  return VideoShortWidget(
+                    track: track,
+                    isMuted: isMuted,
+                    isActive: isActive,
+                    onAutoScrollTriggered: _handleAutoScroll,
+                    clipDurationSeconds: widget.clipDurationSeconds,
+                    focusHighlight: widget.focusHighlight,
+                  );
+                case 'lyrics':
+                  return LyricsShortWidget(
+                    track: track,
+                    isMuted: isMuted,
+                    isActive: isActive,
+                    onAutoScrollTriggered: _handleAutoScroll,
+                    clipDurationSeconds: widget.clipDurationSeconds,
+                    focusHighlight: widget.focusHighlight,
+                  );
+                case 'audio':
+                default:
+                  return AudioShortWidget(
+                    track: track,
+                    isMuted: isMuted,
+                    isActive: isActive,
+                    onAutoScrollTriggered: _handleAutoScroll,
+                    clipDurationSeconds: widget.clipDurationSeconds,
+                    focusHighlight: widget.focusHighlight,
+                  );
+              }
+            },
+          );
         },
       ),
     );

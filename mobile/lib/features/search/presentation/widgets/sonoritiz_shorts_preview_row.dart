@@ -25,13 +25,110 @@ import '../../../player/presentation/widgets/player_components/immersive_player_
 /// - Extraits Signature : immersion audio animée sur la pochette du 1er titre
 /// - Karaoké Paroles : paroles synchronisées animées sur fond flouté du 1er titre
 class SonoritizShortsPreviewRow extends StatelessWidget {
-  const SonoritizShortsPreviewRow({super.key});
+  final List<TrackModel>? customVideoTracks;
+  final List<TrackModel>? customAudioTracks;
+  final List<TrackModel>? customLyricsTracks;
+  final bool? customIsLoading;
+  final bool compact;
+  final String? artistName;
+  final int clipDurationSeconds;
+  final bool focusHighlight;
+
+  const SonoritizShortsPreviewRow({
+    super.key,
+    this.customVideoTracks,
+    this.customAudioTracks,
+    this.customLyricsTracks,
+    this.customIsLoading,
+    this.compact = false,
+    this.artistName,
+    this.clipDurationSeconds = 20,
+    this.focusHighlight = false,
+  });
 
   static const double cardHeight = 330.0;
   static const double cardWidth = 208.0;
+  static const double compactCardHeight = 248.0;
+  static const double compactCardWidth = 160.0;
 
   @override
   Widget build(BuildContext context) {
+    final double effectiveHeight = compact ? compactCardHeight : cardHeight;
+    final double effectiveWidth = compact ? compactCardWidth : cardWidth;
+
+    if (customVideoTracks != null ||
+        customAudioTracks != null ||
+        customLyricsTracks != null) {
+      final vTracks = customVideoTracks ?? const <TrackModel>[];
+      final aTracks = customAudioTracks ?? const <TrackModel>[];
+      final lTracks = customLyricsTracks ?? const <TrackModel>[];
+      final bool isLoading = customIsLoading ?? false;
+
+      return SizedBox(
+        height: effectiveHeight,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          children: [
+            _VideoShortPreviewCard(
+              track: vTracks.isNotEmpty ? vTracks.first : null,
+              isLoading: isLoading,
+              cardWidth: effectiveWidth,
+              cardHeight: effectiveHeight,
+              compact: compact,
+              focusHighlight: focusHighlight,
+              countLabel: vTracks.isNotEmpty ? '${vTracks.length} SHORTS • 45S' : '45S',
+              onTap: () => context.push(
+                '/discovery/video',
+                extra: {
+                  'tracks': vTracks,
+                  'artistName': artistName,
+                  'clipDurationSeconds': clipDurationSeconds,
+                  'focusHighlight': focusHighlight,
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            _AudioImmersionPreviewCard(
+              track: aTracks.isNotEmpty ? aTracks.first : null,
+              isLoading: isLoading,
+              cardWidth: effectiveWidth,
+              cardHeight: effectiveHeight,
+              compact: compact,
+              countLabel: aTracks.isNotEmpty ? '${aTracks.length} SHORTS • 45S' : '45S',
+              onTap: () => context.push(
+                '/discovery/audio',
+                extra: {
+                  'tracks': aTracks,
+                  'artistName': artistName,
+                  'clipDurationSeconds': clipDurationSeconds,
+                  'focusHighlight': focusHighlight,
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            _LyricsKaraokePreviewCard(
+              track: lTracks.isNotEmpty ? lTracks.first : null,
+              isLoading: isLoading,
+              cardWidth: effectiveWidth,
+              cardHeight: effectiveHeight,
+              compact: compact,
+              countLabel: lTracks.isNotEmpty ? '${lTracks.length} SYNC • 45S' : 'SYNC 45S',
+              onTap: () => context.push(
+                '/discovery/lyrics',
+                extra: {
+                  'tracks': lTracks,
+                  'artistName': artistName,
+                  'clipDurationSeconds': clipDurationSeconds,
+                  'focusHighlight': focusHighlight,
+                },
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return BlocBuilder<DiscoveryCubit, DiscoveryState>(
       builder: (context, state) {
         TrackModel? firstAudio;
@@ -54,7 +151,7 @@ class SonoritizShortsPreviewRow extends StatelessWidget {
         }
 
         return SizedBox(
-          height: cardHeight,
+          height: effectiveHeight,
           child: ListView(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
@@ -62,18 +159,27 @@ class SonoritizShortsPreviewRow extends StatelessWidget {
               _VideoShortPreviewCard(
                 track: firstVideo,
                 isLoading: isLoading,
+                cardWidth: effectiveWidth,
+                cardHeight: effectiveHeight,
+                compact: compact,
                 onTap: () => context.push('/discovery/video'),
               ),
               const SizedBox(width: 14),
               _AudioImmersionPreviewCard(
                 track: firstAudio,
                 isLoading: isLoading,
+                cardWidth: effectiveWidth,
+                cardHeight: effectiveHeight,
+                compact: compact,
                 onTap: () => context.push('/discovery/audio'),
               ),
               const SizedBox(width: 14),
               _LyricsKaraokePreviewCard(
                 track: firstLyrics,
                 isLoading: isLoading,
+                cardWidth: effectiveWidth,
+                cardHeight: effectiveHeight,
+                compact: compact,
                 onTap: () => context.push('/discovery/lyrics'),
               ),
             ],
@@ -88,11 +194,21 @@ class _VideoShortPreviewCard extends StatefulWidget {
   final TrackModel? track;
   final bool isLoading;
   final VoidCallback onTap;
+  final double cardWidth;
+  final double cardHeight;
+  final bool compact;
+  final bool focusHighlight;
+  final String? countLabel;
 
   const _VideoShortPreviewCard({
     required this.track,
     required this.isLoading,
     required this.onTap,
+    this.cardWidth = SonoritizShortsPreviewRow.cardWidth,
+    this.cardHeight = SonoritizShortsPreviewRow.cardHeight,
+    this.compact = false,
+    this.focusHighlight = false,
+    this.countLabel,
   });
 
   @override
@@ -201,6 +317,13 @@ class _VideoShortPreviewCardState extends State<_VideoShortPreviewCard>
 
       await ctrl.setVolume(0.0);
       await ctrl.setLooping(true);
+      if (widget.focusHighlight) {
+        final totalSec = ctrl.value.duration.inSeconds;
+        if (totalSec > 60) {
+          final highlightStart = (totalSec * 0.30).round().clamp(25, totalSec - 45);
+          await ctrl.seekTo(Duration(seconds: highlightStart));
+        }
+      }
       await ctrl.play();
 
       _controller = ctrl;
@@ -226,10 +349,13 @@ class _VideoShortPreviewCardState extends State<_VideoShortPreviewCard>
 
     return _ShortPreviewCardShell(
       onTap: widget.onTap,
+      cardWidth: widget.cardWidth,
+      cardHeight: widget.cardHeight,
+      compact: widget.compact,
       background: _buildBackground(track),
       badgeText: 'Clips Vidéo',
       badgeIcon: Icons.play_arrow_rounded,
-      liveLabel: _isVideoReady ? 'EN COURS' : 'VIDÉO LIVE',
+      liveLabel: widget.countLabel ?? (_isVideoReady ? 'EN COURS' : 'VIDÉO LIVE'),
       title: track?.title ?? (widget.isLoading ? 'Chargement du clip...' : 'Clips Vidéo'),
       artist: track?.artistName ?? 'Vidéos plein écran',
     );
@@ -269,8 +395,8 @@ class _VideoShortPreviewCardState extends State<_VideoShortPreviewCard>
         },
         child: SonoritizArtwork(
           imageUrl: track.coverUrl,
-          width: SonoritizShortsPreviewRow.cardWidth,
-          height: SonoritizShortsPreviewRow.cardHeight,
+          width: widget.cardWidth,
+          height: widget.cardHeight,
           borderRadius: 0,
         ),
       );
@@ -292,11 +418,19 @@ class _AudioImmersionPreviewCard extends StatefulWidget {
   final TrackModel? track;
   final bool isLoading;
   final VoidCallback onTap;
+  final double cardWidth;
+  final double cardHeight;
+  final bool compact;
+  final String? countLabel;
 
   const _AudioImmersionPreviewCard({
     required this.track,
     required this.isLoading,
     required this.onTap,
+    this.cardWidth = SonoritizShortsPreviewRow.cardWidth,
+    this.cardHeight = SonoritizShortsPreviewRow.cardHeight,
+    this.compact = false,
+    this.countLabel,
   });
 
   @override
@@ -348,13 +482,16 @@ class _AudioImmersionPreviewCardState extends State<_AudioImmersionPreviewCard>
 
     return _ShortPreviewCardShell(
       onTap: widget.onTap,
+      cardWidth: widget.cardWidth,
+      cardHeight: widget.cardHeight,
+      compact: widget.compact,
       background: _buildImmersionBackground(track),
       centerOverlay: _buildCenterArtworkAndBars(track),
-      badgeText: 'Extraits Signature',
+      badgeText: widget.compact ? 'Shorts Audio' : 'Extraits Signature',
       badgeIcon: Icons.headphones_rounded,
-      liveLabel: 'IMMERSION',
+      liveLabel: widget.countLabel ?? 'IMMERSION',
       title: track?.title ??
-          (widget.isLoading ? 'Chargement audio...' : 'Extraits Signature'),
+          (widget.isLoading ? 'Chargement audio...' : 'Shorts Audio'),
       artist: track?.artistName ?? 'Le son en immersion',
     );
   }
@@ -368,8 +505,8 @@ class _AudioImmersionPreviewCardState extends State<_AudioImmersionPreviewCard>
             imageFilter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
             child: SonoritizArtwork(
               imageUrl: track.coverUrl,
-              width: SonoritizShortsPreviewRow.cardWidth,
-              height: SonoritizShortsPreviewRow.cardHeight,
+              width: widget.cardWidth,
+              height: widget.cardHeight,
               borderRadius: 0,
             ),
           )
@@ -399,9 +536,10 @@ class _AudioImmersionPreviewCardState extends State<_AudioImmersionPreviewCard>
   }
 
   Widget _buildCenterArtworkAndBars(TrackModel? track) {
+    final double discSize = widget.compact ? 82.0 : 108.0;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 34),
+        padding: EdgeInsets.only(bottom: widget.compact ? 24 : 34),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -412,7 +550,7 @@ class _AudioImmersionPreviewCardState extends State<_AudioImmersionPreviewCard>
                 return Transform.scale(scale: scale, child: child);
               },
               child: Container(
-                padding: const EdgeInsets.all(5),
+                padding: EdgeInsets.all(widget.compact ? 4 : 5),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
@@ -431,24 +569,24 @@ class _AudioImmersionPreviewCardState extends State<_AudioImmersionPreviewCard>
                   child: track != null && track.coverUrl.isNotEmpty
                       ? SonoritizArtwork(
                           imageUrl: track.coverUrl,
-                          width: 108,
-                          height: 108,
-                          borderRadius: 54,
+                          width: discSize,
+                          height: discSize,
+                          borderRadius: discSize / 2,
                         )
                       : Container(
-                          width: 108,
-                          height: 108,
+                          width: discSize,
+                          height: discSize,
                           color: const Color(0xFF222228),
-                          child: const Icon(
+                          child: Icon(
                             Icons.headphones_rounded,
                             color: Colors.white54,
-                            size: 38,
+                            size: widget.compact ? 28 : 38,
                           ),
                         ),
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: widget.compact ? 10 : 16),
             // Mini égaliseur animé sans clic
             AnimatedBuilder(
               animation: _pulseCtrl,
@@ -463,8 +601,9 @@ class _AudioImmersionPreviewCardState extends State<_AudioImmersionPreviewCard>
                         (0.35 + 0.65 * ((math.sin(t * 2 + i * 0.9) + 1) / 2)) *
                             multi[i];
                     return Container(
-                      width: 3.5,
-                      height: 8 + (wave * 18),
+                      width: widget.compact ? 3.0 : 3.5,
+                      height: (widget.compact ? 6 : 8) +
+                          (wave * (widget.compact ? 14 : 18)),
                       margin: const EdgeInsets.symmetric(horizontal: 2),
                       decoration: BoxDecoration(
                         color: i.isEven
@@ -488,11 +627,19 @@ class _LyricsKaraokePreviewCard extends StatefulWidget {
   final TrackModel? track;
   final bool isLoading;
   final VoidCallback onTap;
+  final double cardWidth;
+  final double cardHeight;
+  final bool compact;
+  final String? countLabel;
 
   const _LyricsKaraokePreviewCard({
     required this.track,
     required this.isLoading,
     required this.onTap,
+    this.cardWidth = SonoritizShortsPreviewRow.cardWidth,
+    this.cardHeight = SonoritizShortsPreviewRow.cardHeight,
+    this.compact = false,
+    this.countLabel,
   });
 
   @override
@@ -592,13 +739,16 @@ class _LyricsKaraokePreviewCardState extends State<_LyricsKaraokePreviewCard> {
 
     return _ShortPreviewCardShell(
       onTap: widget.onTap,
+      cardWidth: widget.cardWidth,
+      cardHeight: widget.cardHeight,
+      compact: widget.compact,
       background: _buildBackground(track),
       centerOverlay: _buildScrollingLyricsPreview(),
       badgeText: 'Karaoké Paroles',
       badgeIcon: Icons.lyrics_rounded,
-      liveLabel: 'KARAOKE',
+      liveLabel: widget.countLabel ?? 'KARAOKE',
       title: track?.title ??
-          (widget.isLoading ? 'Chargement paroles...' : 'Karaoké Paroles'),
+          (widget.isLoading ? 'Synchronisation...' : 'Karaoké Paroles'),
       artist: track?.artistName ?? 'Lyrics synchronisées',
     );
   }
@@ -612,8 +762,8 @@ class _LyricsKaraokePreviewCardState extends State<_LyricsKaraokePreviewCard> {
             imageFilter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
             child: SonoritizArtwork(
               imageUrl: track.coverUrl,
-              width: SonoritizShortsPreviewRow.cardWidth,
-              height: SonoritizShortsPreviewRow.cardHeight,
+              width: widget.cardWidth,
+              height: widget.cardHeight,
               borderRadius: 0,
             ),
           )
@@ -647,7 +797,12 @@ class _LyricsKaraokePreviewCardState extends State<_LyricsKaraokePreviewCard> {
     final int next2Idx = (_activeIndex + 2) % _lines.length;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 62, 16, 80),
+      padding: EdgeInsets.fromLTRB(
+        widget.compact ? 12 : 16,
+        widget.compact ? 48 : 62,
+        widget.compact ? 12 : 16,
+        widget.compact ? 64 : 80,
+      ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -655,47 +810,47 @@ class _LyricsKaraokePreviewCardState extends State<_LyricsKaraokePreviewCard> {
           if (_lines.length > 1)
             Text(
               _lines[prevIdx],
-              maxLines: 2,
+              maxLines: widget.compact ? 1 : 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.36),
-                fontSize: 13.5,
+                fontSize: widget.compact ? 11.5 : 13.5,
                 fontWeight: FontWeight.w600,
-                height: 1.25,
+                height: 1.22,
               ),
             ),
-          const SizedBox(height: 10),
+          SizedBox(height: widget.compact ? 6 : 10),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 350),
             switchInCurve: Curves.easeOutCubic,
             child: Text(
               _lines[_activeIndex],
               key: ValueKey('$_activeIndex-${_lines[_activeIndex]}'),
-              maxLines: 3,
+              maxLines: widget.compact ? 2 : 3,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 color: Colors.white,
-                fontSize: 17.5,
+                fontSize: widget.compact ? 14.5 : 17.5,
                 fontWeight: FontWeight.w800,
                 letterSpacing: -0.3,
-                height: 1.22,
+                height: 1.2,
               ),
             ),
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: widget.compact ? 6 : 10),
           if (_lines.length > 2)
             Text(
               _lines[nextIdx],
-              maxLines: 2,
+              maxLines: widget.compact ? 1 : 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.48),
-                fontSize: 14,
+                fontSize: widget.compact ? 12 : 14,
                 fontWeight: FontWeight.w600,
-                height: 1.25,
+                height: 1.22,
               ),
             ),
-          if (_lines.length > 3) ...[
+          if (!widget.compact && _lines.length > 3) ...[
             const SizedBox(height: 8),
             Text(
               _lines[next2Idx],
@@ -723,6 +878,9 @@ class _ShortPreviewCardShell extends StatelessWidget {
   final String liveLabel;
   final String title;
   final String artist;
+  final double cardWidth;
+  final double cardHeight;
+  final bool compact;
 
   const _ShortPreviewCardShell({
     required this.onTap,
@@ -733,20 +891,24 @@ class _ShortPreviewCardShell extends StatelessWidget {
     required this.liveLabel,
     required this.title,
     required this.artist,
+    this.cardWidth = SonoritizShortsPreviewRow.cardWidth,
+    this.cardHeight = SonoritizShortsPreviewRow.cardHeight,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final double radius = compact ? 16.0 : 20.0;
     return GestureDetector(
       onTap: onTap,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(radius),
         child: Container(
-          width: SonoritizShortsPreviewRow.cardWidth,
-          height: SonoritizShortsPreviewRow.cardHeight,
+          width: cardWidth,
+          height: cardHeight,
           decoration: BoxDecoration(
             color: const Color(0xFF141418),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(radius),
             border: Border.all(
               color: Colors.white.withValues(alpha: 0.14),
               width: 1,

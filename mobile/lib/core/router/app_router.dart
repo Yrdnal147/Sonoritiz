@@ -477,6 +477,24 @@ class AppRouter {
           path: '/discovery/:type',
           builder: (context, state) {
             final type = state.pathParameters['type'] ?? 'audio';
+            final extra = state.extra;
+            if (extra is Map<String, dynamic>) {
+              final rawTracks = extra['tracks'];
+              final List<TrackModel>? customTracks =
+                  rawTracks is List<TrackModel>
+                      ? rawTracks
+                      : (rawTracks is List
+                          ? rawTracks.whereType<TrackModel>().toList()
+                          : null);
+              return DiscoveryFeedScreen(
+                feedType: type,
+                customTracks: customTracks,
+                artistName: extra['artistName'] as String?,
+                clipDurationSeconds:
+                    (extra['clipDurationSeconds'] as int?) ?? 20,
+                focusHighlight: (extra['focusHighlight'] as bool?) ?? false,
+              );
+            }
             return DiscoveryFeedScreen(feedType: type);
           },
         ),

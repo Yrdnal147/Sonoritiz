@@ -22,6 +22,8 @@ class AudioShortWidget extends StatefulWidget {
   final bool isMuted;
   final bool isActive;
   final VoidCallback? onAutoScrollTriggered;
+  final int clipDurationSeconds;
+  final bool focusHighlight;
 
   const AudioShortWidget({
     Key? key,
@@ -29,6 +31,8 @@ class AudioShortWidget extends StatefulWidget {
     required this.isMuted,
     required this.isActive,
     this.onAutoScrollTriggered,
+    this.clipDurationSeconds = 20,
+    this.focusHighlight = false,
   }) : super(key: key);
 
   @override
@@ -46,6 +50,7 @@ class _AudioShortWidgetState extends State<AudioShortWidget>
   bool _isLoading = true;
   double _progress = 0.0;
   bool _showHeart = false;
+  int _highlightStartSeconds = 0;
 
   StreamSubscription? _positionSub;
   ImmersivePalette _palette = ImmersivePalette.fallback;
@@ -132,13 +137,13 @@ class _AudioShortWidgetState extends State<AudioShortWidget>
       String audioUrl = '';
       String fallbackUrl = '';
 
-      if (manifest.audioOnly.isNotEmpty) {
-        audioUrl = manifest.audioOnly.withHighestBitrate().url.toString();
-        if (manifest.muxed.isNotEmpty) {
-          fallbackUrl = manifest.muxed.withHighestBitrate().url.toString();
-        }
-      } else if (manifest.muxed.isNotEmpty) {
+      if (manifest.muxed.isNotEmpty) {
         audioUrl = manifest.muxed.withHighestBitrate().url.toString();
+        if (manifest.audioOnly.isNotEmpty) {
+          fallbackUrl = manifest.audioOnly.withHighestBitrate().url.toString();
+        }
+      } else if (manifest.audioOnly.isNotEmpty) {
+        audioUrl = manifest.audioOnly.withHighestBitrate().url.toString();
       }
 
       if (audioUrl.isEmpty || !mounted) {
@@ -146,14 +151,28 @@ class _AudioShortWidgetState extends State<AudioShortWidget>
         return;
       }
 
+      Duration? loadedDuration;
       try {
-        await _audioPlayer!.setUrl(audioUrl);
+        loadedDuration = await _audioPlayer!.setUrl(audioUrl);
       } catch (_) {
         if (fallbackUrl.isNotEmpty) {
-          await _audioPlayer!.setUrl(fallbackUrl);
+          loadedDuration = await _audioPlayer!.setUrl(fallbackUrl);
         } else {
           rethrow;
         }
+      }
+
+      final int totalSec = (loadedDuration != null && loadedDuration.inSeconds > 0)
+          ? loadedDuration.inSeconds
+          : widget.track.durationSeconds;
+      final int clipDur =
+          widget.clipDurationSeconds > 0 ? widget.clipDurationSeconds : 20;
+      if (widget.focusHighlight && totalSec > clipDur + 15) {
+        _highlightStartSeconds =
+            (totalSec * 0.30).round().clamp(24, totalSec - clipDur - 2);
+        await _audioPlayer!.seek(Duration(seconds: _highlightStartSeconds));
+      } else {
+        _highlightStartSeconds = 0;
       }
 
       await _audioPlayer!.setVolume(widget.isMuted ? 0.0 : 1.0);
@@ -171,15 +190,21 @@ class _AudioShortWidgetState extends State<AudioShortWidget>
       _positionSub = _audioPlayer!.positionStream.listen((pos) {
         if (!mounted) return;
         final seconds = pos.inMilliseconds / 1000.0;
-        if (seconds >= 20.0) {
-          _audioPlayer?.seek(Duration.zero);
+        final double clipLen =
+            (widget.clipDurationSeconds > 0 ? widget.clipDurationSeconds : 20)
+                .toDouble();
+        final double elapsed =
+            (seconds - _highlightStartSeconds).clamp(0.0, clipLen + 5.0);
+
+        if (elapsed >= clipLen) {
+          _audioPlayer?.seek(Duration(seconds: _highlightStartSeconds));
           if (widget.isActive && _isPlaying) {
             _audioPlayer?.play();
           }
           widget.onAutoScrollTriggered?.call();
         } else {
           setState(() {
-            _progress = (seconds / 20.0).clamp(0.0, 1.0);
+            _progress = (elapsed / clipLen).clamp(0.0, 1.0);
           });
         }
       });

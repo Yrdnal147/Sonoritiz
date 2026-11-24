@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -11,7 +13,9 @@ import '../../../player/presentation/cubit/player_cubit.dart';
 import '../../../player/presentation/cubit/player_state.dart';
 import '../../../player/presentation/widgets/player_components/immersive_player_widgets.dart';
 import '../../../player/data/models/track_model.dart';
+import '../../../player/data/services/lyrics_service.dart';
 import '../../../search/presentation/cubit/search_cubit.dart';
+import '../../../search/presentation/widgets/sonoritiz_shorts_preview_row.dart';
 import '../../../../core/widgets/sonoritiz_track_tile.dart';
 import '../widgets/artist_personalized_wordmark.dart';
 
@@ -29,6 +33,10 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
 
   Map<String, dynamic>? _artistDetails;
   List<TrackModel> _topTracks = [];
+  List<TrackModel> _artistVideoShorts = [];
+  List<TrackModel> _artistAudioShorts = [];
+  List<TrackModel> _artistSyncedLyricsShorts = [];
+  bool _isLoadingSyncedLyrics = true;
   List<Map<String, dynamic>> _albums = [];
   bool _isLoading = true;
   bool _isFollowed = false;
@@ -36,6 +44,7 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
   String? _errorMessage;
   ImmersivePalette _palette = ImmersivePalette.fallback;
   String _lastPaletteUrl = '';
+  final LyricsService _lyricsService = LyricsService();
 
   @override
   void initState() {
@@ -99,30 +108,51 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
         });
       }
 
-      List<TrackModel> top = [];
+      List<TrackModel> fetchedPool = [];
       List<Map<String, dynamic>> albums = [];
 
       if (artistId != 0) {
         final results = await Future.wait([
-          repository.getArtistTopTracksDeezer(artistId, limit: 10),
+          repository.getArtistTopTracksDeezer(artistId, limit: 30),
           repository.getArtistAlbumsDeezer(artistId),
         ]);
-        top = results[0] as List<TrackModel>;
+        fetchedPool = results[0] as List<TrackModel>;
         albums = results[1] as List<Map<String, dynamic>>;
       }
 
-      if (top.isEmpty) {
-        final ytTracks = await repository.searchTracks(query: '$_artistName official audio');
-        top = ytTracks.take(10).toList();
+      final String realName = (details['name'] ?? _artistName).toString();
+
+      // Compléter jusqu'à 25 sons de l'artiste si le top Deezer en renvoie moins
+      if (fetchedPool.length < 25) {
+        try {
+          final ytTracks = await repository.searchTracks(
+            query: '$realName official video',
+          );
+          final existingTitles = fetchedPool
+              .map((t) => t.title.toLowerCase().trim())
+              .toSet();
+          for (final yt in ytTracks) {
+            final normTitle = yt.title.toLowerCase().trim();
+            if (!existingTitles.contains(normTitle)) {
+              existingTitles.add(normTitle);
+              fetchedPool.add(yt);
+              if (fetchedPool.length >= 28) break;
+            }
+          }
+        } catch (_) {}
       }
 
+      final List<TrackModel> top = fetchedPool.take(10).toList();
+      final List<TrackModel> shortsPool = fetchedPool.take(25).toList();
+
       if (mounted) {
-        final realName = (details['name'] ?? _artistName).toString();
         final resolvedImage =
             (details['picture_xl'] ?? widget.artistInfo['imageUrl'] ?? '').toString();
         setState(() {
           _artistDetails = details;
           _topTracks = top;
+          _artistVideoShorts = List<TrackModel>.from(shortsPool);
+          _artistAudioShorts = List<TrackModel>.from(shortsPool);
           _albums = albums;
           _isFollowed = StorageService().isArtistFollowed(realName) ||
               StorageService().isArtistFollowed(_artistName);
@@ -131,6 +161,7 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
         if (resolvedImage.isNotEmpty) {
           _extractArtistPalette(resolvedImage);
         }
+        _filterSyncedLyricsShorts(shortsPool);
       }
     } catch (e) {
       if (mounted) {
@@ -139,6 +170,65 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
           _errorMessage = e.toString();
         });
       }
+    }
+  }
+
+  /// Filtre uniquement les sons de l'artiste qui possèdent des paroles synchronisées (LRC horodaté)
+  /// pour alimenter la carte Karaoké / Lyrics Shorts de l'artiste (jusqu'à 25 titres).
+  Future<void> _filterSyncedLyricsShorts(List<TrackModel> candidates) async {
+    if (candidates.isEmpty) {
+      if (mounted) {
+        setState(() => _isLoadingSyncedLyrics = false);
+      }
+      return;
+    }
+
+    final List<TrackModel> syncedOnly = [];
+    const int batchSize = 5;
+
+    for (int i = 0; i < candidates.length && syncedOnly.length < 25; i += batchSize) {
+      if (!mounted) return;
+      final end = (i + batchSize < candidates.length) ? i + batchSize : candidates.length;
+      final batch = candidates.sublist(i, end);
+
+      final results = await Future.wait(
+        batch.map((track) async {
+          try {
+            final lyrics = await _lyricsService.getLyrics(
+              track.id,
+              track.artistName,
+              track.title,
+              track.durationSeconds,
+            );
+            if (lyrics != null &&
+                lyrics.hasSynced &&
+                lyrics.parsedSyncedLyrics != null &&
+                lyrics.parsedSyncedLyrics!.isNotEmpty) {
+              return track;
+            }
+          } catch (_) {}
+          return null;
+        }),
+      );
+
+      for (final matched in results) {
+        if (matched != null && syncedOnly.length < 25) {
+          syncedOnly.add(matched);
+        }
+      }
+
+      if (mounted && syncedOnly.isNotEmpty) {
+        setState(() {
+          _artistSyncedLyricsShorts = List<TrackModel>.from(syncedOnly);
+        });
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _artistSyncedLyricsShorts = List<TrackModel>.from(syncedOnly);
+        _isLoadingSyncedLyrics = false;
+      });
     }
   }
 
@@ -198,10 +288,12 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
 
     final Color bgColor = _palette.deepColor;
     final Color accentColor = _palette.accentColor;
-    final Color playIconColor =
-        ThemeData.estimateBrightnessForColor(accentColor) == Brightness.light
-            ? Colors.black
-            : Colors.white;
+    // Règle chromatique unifiée (soulignement centré du nom & background des 3 boutons) :
+    // Orange primaire par défaut, ou Blanc / Noir selon la pochette si la photo est proche de l'Orange.
+    final Color adaptiveColor =
+        ArtistPersonalizedWordmark.resolveAdaptivePrimaryColor(_palette);
+    final Color adaptiveFgColor =
+        ArtistPersonalizedWordmark.resolveForegroundOn(adaptiveColor);
 
     return Scaffold(
       backgroundColor: bgColor,
@@ -212,7 +304,7 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
         child: CustomScrollView(
           physics: const BouncingScrollPhysics(),
           slivers: [
-            // Grand Header immersif avec photo de l'artiste, nom personnalisé et fondu atmosphérique
+            // Grand Header immersif avec photo de l'artiste, nom personnalisé souligné au milieu et fondu atmosphérique
             SliverAppBar(
               backgroundColor: bgColor.withValues(alpha: 0.90),
               expandedHeight: 370,
@@ -297,9 +389,10 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                             ArtistPersonalizedWordmark(
                               artistName: name,
                               accentColor: accentColor,
+                              underlineColor: adaptiveColor,
                             ),
                             if (nbFan > 0 || nbAlbum > 0) ...[
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 10),
                               Text(
                                 [
                                   if (nbFan > 0) "${_formatNumber(nbFan)} fans",
@@ -323,8 +416,10 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
               ),
             ),
 
-            // Barre d'actions unifiée Sonoritiz (identique aux pages Albums, Playlists et Listes) :
-            // [ ▶ Lire / ⏸ Pause ] + [ 🔀 Aléatoire ] + [ Suivre / Suivi ]
+            // Sous la photo : Cadre Glassmorphism transparent contenant les boutons
+            // - Lire et Aléatoire : uniquement en logo (icône seule)
+            // - Suivre : garde son identité (icône + texte)
+            // - Les 3 boutons appliquent le principe chromatique adaptatif sur leur background
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 14),
@@ -337,134 +432,234 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                               (t) => t.id == playerState.currentTrack!.id,
                             );
 
-                    return Row(
-                      children: [
-                        if (_topTracks.isNotEmpty) ...[
-                          Expanded(
-                            child: SizedBox(
-                              height: 48,
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: accentColor,
-                                  foregroundColor: playIconColor,
-                                  elevation: 0,
-                                  shape: const StadiumBorder(),
-                                ),
-                                onPressed: () {
-                                  final cubit = context.read<PlayerCubit>();
-                                  if (isThisArtistPlaying) {
-                                    cubit.togglePlayPause();
-                                  } else {
-                                    cubit.playTrack(
-                                      _topTracks.first,
-                                      queue: _topTracks,
-                                      source: sourceLabel,
-                                    );
-                                  }
-                                },
-                                icon: Icon(
-                                  isThisArtistPlaying
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                  size: 24,
-                                ),
-                                label: Text(
-                                  isThisArtistPlaying ? "Pause" : "Lire",
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
+                    return Center(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(32),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(32),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.20),
+                                width: 1.1,
                               ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.28),
+                                  blurRadius: 18,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_topTracks.isNotEmpty) ...[
+                                  // 1. Bouton Lire / Pause (uniquement en logo)
+                                  Tooltip(
+                                    message:
+                                        isThisArtistPlaying ? "Pause" : "Lire",
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        final cubit =
+                                            context.read<PlayerCubit>();
+                                        if (isThisArtistPlaying) {
+                                          cubit.togglePlayPause();
+                                        } else {
+                                          cubit.playTrack(
+                                            _topTracks.first,
+                                            queue: _topTracks,
+                                            source: sourceLabel,
+                                          );
+                                        }
+                                      },
+                                      child: AnimatedContainer(
+                                        duration:
+                                            const Duration(milliseconds: 220),
+                                        width: 48,
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                          color: adaptiveColor,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: adaptiveColor == Colors.black
+                                                ? Colors.white.withValues(
+                                                    alpha: 0.28,
+                                                  )
+                                                : adaptiveColor,
+                                            width: 1.1,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: adaptiveColor.withValues(
+                                                alpha: 0.35,
+                                              ),
+                                              blurRadius: 14,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Icon(
+                                          isThisArtistPlaying
+                                              ? Icons.pause_rounded
+                                              : Icons.play_arrow_rounded,
+                                          color: adaptiveFgColor,
+                                          size: 27,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  // 2. Bouton Aléatoire (uniquement en logo)
+                                  Tooltip(
+                                    message: "Lecture aléatoire",
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        final shuffled =
+                                            List<TrackModel>.from(_topTracks)
+                                              ..shuffle();
+                                        context.read<PlayerCubit>().playTrack(
+                                              shuffled.first,
+                                              queue: shuffled,
+                                              source: sourceLabel,
+                                            );
+                                      },
+                                      child: AnimatedContainer(
+                                        duration:
+                                            const Duration(milliseconds: 220),
+                                        width: 48,
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                          color: adaptiveColor,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: adaptiveColor == Colors.black
+                                                ? Colors.white.withValues(
+                                                    alpha: 0.28,
+                                                  )
+                                                : adaptiveColor,
+                                            width: 1.1,
+                                          ),
+                                        ),
+                                        child: Icon(
+                                          Icons.shuffle_rounded,
+                                          color: adaptiveFgColor,
+                                          size: 22,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                ],
+                                // 3. Bouton Suivre (garde son identité icône + texte avec le même principe de background)
+                                _buildFollowTrailingButton(
+                                  name: name,
+                                  adaptiveBgColor: adaptiveColor,
+                                  adaptiveFgColor: adaptiveFgColor,
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: SizedBox(
-                              height: 48,
-                              child: TextButton.icon(
-                                style: TextButton.styleFrom(
-                                  backgroundColor:
-                                      Colors.white.withValues(alpha: 0.10),
-                                  foregroundColor: Colors.white,
-                                  shape: const StadiumBorder(),
-                                ),
-                                onPressed: () {
-                                  final shuffled =
-                                      List<TrackModel>.from(_topTracks)
-                                        ..shuffle();
-                                  context.read<PlayerCubit>().playTrack(
-                                        shuffled.first,
-                                        queue: shuffled,
-                                        source: sourceLabel,
-                                      );
-                                },
-                                icon: const Icon(
-                                  Icons.shuffle_rounded,
-                                  size: 20,
-                                ),
-                                label: const Text(
-                                  "Aléatoire",
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                        ],
-                        _buildFollowTrailingButton(
-                          name: name,
-                          accentColor: accentColor,
-                          activeIconColor: playIconColor,
-                          expandWhenNoTracks: _topTracks.isEmpty,
                         ),
-                      ],
+                      ),
                     );
                   },
                 ),
               ),
             ),
 
-                // Section Titres Populaires
-                if (_topTracks.isNotEmpty) ...[
-                  const SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(20, 18, 20, 8),
-                      child: Text(
-                        "Titres populaires",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.4,
-                        ),
-                      ),
+            // Section Titres Populaires
+            if (_topTracks.isNotEmpty) ...[
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(20, 18, 20, 8),
+                  child: Text(
+                    "Titres populaires",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.4,
                     ),
                   ),
-                  _buildTopTracksList(sourceLabel),
-                ],
+                ),
+              ),
+              _buildTopTracksList(sourceLabel),
+            ],
 
-                // Section Discographie / Albums
-                if (_albums.isNotEmpty) ...[
-                  const SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(20, 24, 20, 12),
-                      child: Text(
-                        "Discographie",
-                        style: TextStyle(
+            // Section Discographie / Albums
+            if (_albums.isNotEmpty) ...[
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(20, 24, 20, 12),
+                  child: Text(
+                    "Discographie",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.4,
+                    ),
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(child: _buildAlbumsList(name)),
+            ],
+
+            // Section "<Nom de l'artiste> Shorts" (Clips Vidéo 25 • Audio 25 • Karaoké Lyrics synchrones 25 • 45s sur les moments forts)
+            if (_artistVideoShorts.isNotEmpty ||
+                _artistAudioShorts.isNotEmpty ||
+                _artistSyncedLyricsShorts.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 26, 20, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "$name Shorts",
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 22,
                           fontWeight: FontWeight.w900,
                           letterSpacing: -0.4,
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "Les Sonoritiz Shorts de $name • 45s sur les moments forts",
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.65),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
-                  SliverToBoxAdapter(child: _buildAlbumsList(name)),
-                ],
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: SonoritizShortsPreviewRow(
+                    compact: true,
+                    customVideoTracks: _artistVideoShorts,
+                    customAudioTracks: _artistAudioShorts,
+                    customLyricsTracks: _artistSyncedLyricsShorts,
+                    customIsLoading: _isLoadingSyncedLyrics,
+                    artistName: name,
+                    clipDurationSeconds: 45,
+                    focusHighlight: true,
+                  ),
+                ),
+              ),
+            ],
 
                 // Section Biographie ("À propos")
                 if (bio.isNotEmpty)
@@ -529,26 +724,23 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
 
   Widget _buildFollowTrailingButton({
     required String name,
-    required Color accentColor,
-    required Color activeIconColor,
-    required bool expandWhenNoTracks,
+    required Color adaptiveBgColor,
+    required Color adaptiveFgColor,
   }) {
-    final Color fillColor =
-        _isFollowed ? accentColor : Colors.white.withValues(alpha: 0.10);
-    final Color borderColor =
-        _isFollowed ? accentColor : Colors.white.withValues(alpha: 0.24);
-    final Color fgColor = _isFollowed ? activeIconColor : Colors.white;
+    final Color borderColor = adaptiveBgColor == Colors.black
+        ? Colors.white.withValues(alpha: 0.30)
+        : adaptiveBgColor;
 
-    final Widget button = GestureDetector(
+    return GestureDetector(
       onTap: () => _toggleFollow(name),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
         height: 48,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         decoration: BoxDecoration(
-          color: fillColor,
+          color: adaptiveBgColor,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: borderColor, width: 1.1),
+          border: Border.all(color: borderColor, width: 1.2),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -558,15 +750,15 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
               _isFollowed
                   ? Icons.check_rounded
                   : Icons.person_add_alt_1_rounded,
-              color: fgColor,
+              color: adaptiveFgColor,
               size: 19,
             ),
-            const SizedBox(width: 7),
+            const SizedBox(width: 8),
             Text(
               _isFollowed ? "Suivi" : "Suivre",
               style: TextStyle(
-                color: fgColor,
-                fontWeight: FontWeight.w700,
+                color: adaptiveFgColor,
+                fontWeight: FontWeight.w800,
                 fontSize: 14.5,
               ),
             ),
@@ -574,11 +766,6 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
         ),
       ),
     );
-
-    if (expandWhenNoTracks) {
-      return Expanded(child: button);
-    }
-    return button;
   }
 
   Widget _buildTopTracksList(String sourceLabel) {

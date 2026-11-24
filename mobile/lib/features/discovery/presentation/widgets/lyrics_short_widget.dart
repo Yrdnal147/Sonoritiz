@@ -25,6 +25,8 @@ class LyricsShortWidget extends StatefulWidget {
   final bool isMuted;
   final bool isActive;
   final VoidCallback? onAutoScrollTriggered;
+  final int clipDurationSeconds;
+  final bool focusHighlight;
 
   const LyricsShortWidget({
     Key? key,
@@ -32,6 +34,8 @@ class LyricsShortWidget extends StatefulWidget {
     required this.isMuted,
     required this.isActive,
     this.onAutoScrollTriggered,
+    this.clipDurationSeconds = 20,
+    this.focusHighlight = false,
   }) : super(key: key);
 
   @override
@@ -49,6 +53,7 @@ class _LyricsShortWidgetState extends State<LyricsShortWidget> {
   bool _isLoading = true;
   double _progress = 0.0;
   bool _showHeart = false;
+  int _highlightStartSeconds = 0;
 
   StreamSubscription? _positionSub;
   ImmersivePalette _palette = ImmersivePalette.fallback;
@@ -170,13 +175,13 @@ class _LyricsShortWidgetState extends State<LyricsShortWidget> {
       String audioUrl = '';
       String fallbackUrl = '';
 
-      if (manifest.audioOnly.isNotEmpty) {
-        audioUrl = manifest.audioOnly.withHighestBitrate().url.toString();
-        if (manifest.muxed.isNotEmpty) {
-          fallbackUrl = manifest.muxed.withHighestBitrate().url.toString();
-        }
-      } else if (manifest.muxed.isNotEmpty) {
+      if (manifest.muxed.isNotEmpty) {
         audioUrl = manifest.muxed.withHighestBitrate().url.toString();
+        if (manifest.audioOnly.isNotEmpty) {
+          fallbackUrl = manifest.audioOnly.withHighestBitrate().url.toString();
+        }
+      } else if (manifest.audioOnly.isNotEmpty) {
+        audioUrl = manifest.audioOnly.withHighestBitrate().url.toString();
       }
 
       if (audioUrl.isEmpty || !mounted) {
@@ -184,14 +189,40 @@ class _LyricsShortWidgetState extends State<LyricsShortWidget> {
         return;
       }
 
+      Duration? loadedDuration;
       try {
-        await _audioPlayer!.setUrl(audioUrl);
+        loadedDuration = await _audioPlayer!.setUrl(audioUrl);
       } catch (_) {
         if (fallbackUrl.isNotEmpty) {
-          await _audioPlayer!.setUrl(fallbackUrl);
+          loadedDuration = await _audioPlayer!.setUrl(fallbackUrl);
         } else {
           rethrow;
         }
+      }
+
+      final int totalSec = (loadedDuration != null && loadedDuration.inSeconds > 0)
+          ? loadedDuration.inSeconds
+          : widget.track.durationSeconds;
+      final int clipDur =
+          widget.clipDurationSeconds > 0 ? widget.clipDurationSeconds : 20;
+      if (widget.focusHighlight && totalSec > clipDur + 15) {
+        int candidateStart =
+            (totalSec * 0.30).round().clamp(24, totalSec - clipDur - 2);
+        // Si les paroles synchronisées sont déjà chargées, aligner le départ
+        // sur la ligne vocale la plus proche du moment fort (refrain)
+        if (_parsedLyrics.isNotEmpty) {
+          for (final item in _parsedLyrics) {
+            final lineSec = ((item['time'] as int) / 1000).floor();
+            if (lineSec >= 22 && lineSec <= totalSec - clipDur - 2) {
+              candidateStart = lineSec;
+              break;
+            }
+          }
+        }
+        _highlightStartSeconds = candidateStart;
+        await _audioPlayer!.seek(Duration(seconds: _highlightStartSeconds));
+      } else {
+        _highlightStartSeconds = 0;
       }
 
       await _audioPlayer!.setVolume(widget.isMuted ? 0.0 : 1.0);
@@ -210,9 +241,14 @@ class _LyricsShortWidgetState extends State<LyricsShortWidget> {
         if (!mounted) return;
         final ms = pos.inMilliseconds;
         final seconds = ms / 1000.0;
+        final double clipLen =
+            (widget.clipDurationSeconds > 0 ? widget.clipDurationSeconds : 20)
+                .toDouble();
+        final double elapsed =
+            (seconds - _highlightStartSeconds).clamp(0.0, clipLen + 5.0);
 
-        if (seconds >= 20.0) {
-          _audioPlayer?.seek(Duration.zero);
+        if (elapsed >= clipLen) {
+          _audioPlayer?.seek(Duration(seconds: _highlightStartSeconds));
           if (widget.isActive && _isPlaying) {
             _audioPlayer?.play();
           }
@@ -236,7 +272,7 @@ class _LyricsShortWidgetState extends State<LyricsShortWidget> {
             }
           }
           setState(() {
-            _progress = (seconds / 20.0).clamp(0.0, 1.0);
+            _progress = (elapsed / clipLen).clamp(0.0, 1.0);
           });
         }
       });

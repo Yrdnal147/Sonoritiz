@@ -4,18 +4,19 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../../core/theme/app_colors.dart';
 import '../../../home/domain/recommendation_engine.dart';
+import '../../../player/presentation/widgets/player_components/immersive_player_widgets.dart';
 
 /// Affiche le nom d'un artiste avec une identité visuelle personnalisée
-/// inspirée d'Apple Music :
-/// 1. Priorité 1 : Logo officiel transparent haute qualité (via TheAudioDB)
-///    avec vérification stricte du nom exact et mise en cache mémoire.
-/// 2. Priorité 2 (instantané pour 100 % des artistes) : Typographie expressive
-///    (Google Fonts) adaptée au genre musical et à l'empreinte unique de l'artiste,
-///    teintée avec une nuance lumineuse extraite de sa photo.
+/// et un soulignement centré au milieu :
+/// - Souligné en Orange (`AppColors.primary`) par défaut.
+/// - Si la photo de profil de l'artiste est proche de cet Orange, bascule
+///   automatiquement en Blanc ou en Noir en fonction de la luminosité de la photo.
 class ArtistPersonalizedWordmark extends StatefulWidget {
   final String artistName;
   final Color accentColor;
+  final Color underlineColor;
   final double maxHeight;
   final double maxWidth;
 
@@ -23,9 +24,54 @@ class ArtistPersonalizedWordmark extends StatefulWidget {
     super.key,
     required this.artistName,
     required this.accentColor,
+    this.underlineColor = AppColors.primary,
     this.maxHeight = 72,
     this.maxWidth = 290,
   });
+
+  /// Détermine si une couleur est proche de l'Orange primaire Sonoritiz (#FA7921).
+  static bool isCloseToPrimaryOrange(Color color) {
+    final hsl = HSLColor.fromColor(color);
+    final bool hueInOrangeBand = hsl.hue >= 6.0 && hsl.hue <= 48.0;
+    final bool hasWarmSaturation = hsl.saturation >= 0.28;
+    final bool hasVisibleLightness =
+        hsl.lightness >= 0.16 && hsl.lightness <= 0.85;
+    if (hueInOrangeBand && hasWarmSaturation && hasVisibleLightness) {
+      return true;
+    }
+
+    final int dr = (color.r * 255.0).round() - 250;
+    final int dg = (color.g * 255.0).round() - 121;
+    final int db = (color.b * 255.0).round() - 33;
+    final int distSq = (dr * dr) + (dg * dg) + (db * db);
+    return distSq <= (105 * 105);
+  }
+
+  /// Règle chromatique unifiée pour le soulignement du nom et le background des 3 boutons :
+  /// - Par défaut : Orange primaire (`AppColors.primary`).
+  /// - Si la photo de l'artiste est proche de cet Orange : Blanc ou Noir selon la pochette.
+  static Color resolveAdaptivePrimaryColor(ImmersivePalette palette) {
+    final bool nearOrange = isCloseToPrimaryOrange(palette.dominantColor) ||
+        isCloseToPrimaryOrange(palette.accentColor) ||
+        isCloseToPrimaryOrange(palette.midColor);
+
+    if (!nearOrange) {
+      return AppColors.primary;
+    }
+
+    // Si la pochette est claire -> Noir ; sinon -> Blanc pour un contraste optimal
+    final double lum = palette.dominantColor.computeLuminance();
+    return lum >= 0.42 ? Colors.black : Colors.white;
+  }
+
+  /// Couleur d'icône/texte contrastée sur le background adaptatif (Orange / Blanc / Noir).
+  static Color resolveForegroundOn(Color background) {
+    if (background == Colors.black) return Colors.white;
+    if (background == Colors.white) return Colors.black;
+    return ThemeData.estimateBrightnessForColor(background) == Brightness.light
+        ? Colors.black
+        : Colors.white;
+  }
 
   /// Calcule une teinte pastel/lumineuse haute lisibilité à partir de la couleur
   /// dominante de la photo de l'artiste (pour le texte ou les halos).
@@ -515,19 +561,50 @@ class _ArtistPersonalizedWordmarkState
   @override
   Widget build(BuildContext context) {
     final bool showLogo = _officialLogoUrl != null && !_logoFailed;
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 360),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      child: showLogo
-          ? KeyedSubtree(
-              key: ValueKey('logo:${widget.artistName}'),
-              child: _buildOfficialLogo(_officialLogoUrl!),
-            )
-          : KeyedSubtree(
-              key: ValueKey('text:${widget.artistName}'),
-              child: _buildStylizedText(),
+    return IntrinsicWidth(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 360),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            child: showLogo
+                ? KeyedSubtree(
+                    key: ValueKey('logo:${widget.artistName}'),
+                    child: _buildOfficialLogo(_officialLogoUrl!),
+                  )
+                : KeyedSubtree(
+                    key: ValueKey('text:${widget.artistName}'),
+                    child: _buildStylizedText(),
+                  ),
+          ),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.center,
+            child: FractionallySizedBox(
+              widthFactor: 0.5,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 260),
+                constraints: const BoxConstraints(minWidth: 44, maxWidth: 150),
+                height: 3.5,
+                decoration: BoxDecoration(
+                  color: widget.underlineColor,
+                  borderRadius: BorderRadius.circular(2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: widget.underlineColor.withValues(alpha: 0.45),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+              ),
             ),
+          ),
+        ],
+      ),
     );
   }
 }
