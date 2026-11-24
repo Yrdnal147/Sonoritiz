@@ -1133,21 +1133,100 @@ class CatalogRepository {
         }
       }
 
-      // 3. Recherche directe YouTube en parallèle (formats longs >= 8 min : émissions, interviews, vodcasts, livres audio complets)
+      // 3. Recherche directe YouTube en parallèle avec les meilleures sources par thématique
+      //    (formats longs >= 8 min : émissions, interviews, vodcasts, créateurs fun, foot, livres audio complets)
       final List<TrackModel> ytVideoEpisodes = [];
       if (!kIsWeb && offset == 0) {
-        final List<String> ytQueries = cleanQuery.isEmpty
-            ? [
-                'podcast interview épisode complet français',
-                'podcast amour couple relations histoire vraie épisode complet',
-              ]
-            : [
-                type == 'audiobook'
-                    ? '$cleanQuery livre audio complet français'
-                    : (type == 'podcast'
-                        ? '$cleanQuery podcast interview épisode complet'
-                        : '$cleanQuery podcast interview livre audio complet'),
-              ];
+        final String qLower = cleanQuery.toLowerCase();
+        List<String> ytQueries;
+
+        if (cleanQuery.isEmpty) {
+          ytQueries = [
+            'LEGEND Guillaume Pley interview podcast complet',
+            'Squeezie Darko MrBeast français vidéo concept complet',
+            'After Foot RMC Wiloo Zack Nani football débat complet',
+            'podcast amour couple relations histoire vraie épisode complet',
+          ];
+        } else if (type == 'fun' || qLower.contains('squeezie') || qLower.contains('mrbeast') || qLower.contains('darko')) {
+          ytQueries = [
+            'Squeezie qui est l imposteur thread vidéo complète',
+            'Darko Mcfly Carlito Joyca Mastu concept fun',
+            'MrBeast en français Amixem Inoxtag Michou défi',
+          ];
+        } else if (qLower.contains('foot') || qLower.contains('wiloo') || qLower.contains('rmc')) {
+          ytQueries = [
+            'After Foot RMC débrief football émission complète',
+            'Wiloo analyse football Ligue des Champions documentaire',
+            'Zack Nani Roue Libre interview football joueur complet',
+            'Pieds Carrés Onze Mondial Téléfoot reportage football',
+          ];
+        } else if (qLower.contains('amour') || qLower.contains('couple')) {
+          ytQueries = [
+            'podcast amour couple relations sentimentales témoignage complet',
+            'Darko couple amour débat relation histoire vraie',
+            'Le coeur sur la table relations amoureuses podcast',
+          ];
+        } else if (qLower.contains('mehdi') || qLower.contains('cko') || qLower.contains('musique')) {
+          ytQueries = [
+            'Mehdi Maïzi Le Code interview rap musique complet',
+            'CKO podcast interview artiste rap afro complet',
+            'Clique interview artiste musique légende complet',
+          ];
+        } else if (qLower.contains('afrique') || qLower.contains('ouihustle')) {
+          ytQueries = [
+            'OuiHustle interview entrepreneur afrique parcours complet',
+            'Investir au Pays afrique culture société débat complet',
+            'histoire empires africains culture documentaire complet',
+          ];
+        } else if (qLower.contains('crime') || qLower.contains('horreur') || qLower.contains('mcskyz')) {
+          ytQueries = [
+            'Squeezie thread horreur histoire vraie complet',
+            'McSkyz histoire vraie affaire criminelle enquête complet',
+            'Hondelatte raconte chroniques criminelles affaire complète',
+          ];
+        } else if (qLower.contains('underscore') || qLower.contains('business') || qLower.contains('gdiy')) {
+          ytQueries = [
+            'Underscore_ Micode tech hacker IA émission complète',
+            'GDIY Génération Do It Yourself entrepreneur podcast complet',
+            'Yomi Denzel Marketing Mania business histoire entreprise',
+          ];
+        } else if (type == 'audiobook' || qLower.contains('livre')) {
+          ytQueries = [
+            'livre audio complet français roman best seller',
+            'livre audio développement personnel philosophie complet français',
+          ];
+        } else if (qLower.contains('nota bene') || qLower.contains('histoire')) {
+          ytQueries = [
+            'Nota Bene histoire documentaire récit complet',
+            'Questions d Histoire ARTE documentaire histoire complet',
+          ];
+        } else if (qLower.contains('science') || qLower.contains('jamy')) {
+          ytQueries = [
+            'Science Etonnante Balade Mentale espace univers complet',
+            'Jamy Epicurieux AstronoGeek science découverte documentaire',
+          ];
+        } else if (qLower.contains('montreux') || qLower.contains('humour') || qLower.contains('floodcast')) {
+          ytQueries = [
+            'Montreux Comedy spectacle stand up humour complet',
+            'FloodCast Un Bon Moment podcast humour complet',
+          ];
+        } else if (qLower.contains('précepteur') || qLower.contains('philosophie')) {
+          ytQueries = [
+            'Le Précepteur philosophie podcast épisode complet',
+            'Cyrus North psychologie développement personnel philosophie',
+          ];
+        } else {
+          ytQueries = [
+            type == 'audiobook'
+                ? '$cleanQuery livre audio complet français'
+                : '$cleanQuery podcast interview vidéo complète français',
+          ];
+        }
+
+        final bool isFunCategory = type == 'fun' ||
+            qLower.contains('squeezie') ||
+            qLower.contains('mrbeast') ||
+            qLower.contains('darko');
 
         for (final ytQuery in ytQueries) {
           futures.add(
@@ -1171,12 +1250,13 @@ class CatalogRepository {
                     titleLower.contains('livre') ||
                     titleLower.contains('roman') ||
                     titleLower.contains('audiobook');
+                final String genreLabel = isFunCategory
+                    ? 'Fun & Vidéo'
+                    : (isBookHint ? 'Livre audio Vidéo' : 'Podcast Vidéo');
                 ytVideoEpisodes.add(
-                  mapped.copyWith(
-                    genre: isBookHint ? 'Livre audio Vidéo' : 'Podcast Vidéo',
-                  ),
+                  mapped.copyWith(genre: genreLabel),
                 );
-                if (ytVideoEpisodes.length >= 20) break;
+                if (ytVideoEpisodes.length >= 26) break;
               }
             }).catchError((_) {}),
           );

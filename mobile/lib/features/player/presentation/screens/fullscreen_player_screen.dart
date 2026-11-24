@@ -140,7 +140,14 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
         String youtubeId = track.id;
 
         if (track.id.startsWith('local_') || track.id.startsWith('deezer_') || !RegExp(r'^[a-zA-Z0-9_-]{11}$').hasMatch(track.id)) {
-          final query = "${track.artistName} ${track.title} official video";
+          final genreLower = track.genre.toLowerCase();
+          final bool isBook = track.id.startsWith('deezer_book_') || genreLower.contains('livre');
+          final bool isPodcast = track.id.startsWith('deezer_podcast_') || genreLower.contains('podcast');
+          final query = isBook
+              ? "${track.title} ${track.artistName} livre audio complet"
+              : (isPodcast
+                  ? "${track.title} ${track.artistName} podcast épisode"
+                  : "${track.artistName} ${track.title} official video");
           final searchResults = await _yt.search.search(query);
           if (searchResults.isNotEmpty) {
             youtubeId = searchResults.first.id.value;

@@ -567,6 +567,70 @@ class PlayerCubit extends Cubit<PlayerState> {
     await _startTrack(track);
   }
 
+  /// Synchronise un podcast, livre audio ou vidéo long format avec le Mini-Lecteur
+  /// et le Lecteur principal (`PlayerCubit` + `SonoritizAudioHandler`).
+  /// Si `resumeAudioPlayback` est vrai, le flux continue immédiatement en arrière-plan
+  /// à la seconde exacte (`position`).
+  Future<void> syncExternalMediaTrack(
+    TrackModel track, {
+    required Duration position,
+    required bool resumeAudioPlayback,
+    String source = 'Podcasts & Livres',
+  }) async {
+    final totalDur = track.durationSeconds > 0
+        ? Duration(seconds: track.durationSeconds)
+        : (state.duration > Duration.zero
+            ? state.duration
+            : const Duration(minutes: 30));
+
+    StorageService().recordLifetimeTrackPlay(track.toJson());
+    if (position.inSeconds > 0) {
+      unawaited(
+        StorageService().saveLastPlaybackPosition(track.id, position.inSeconds),
+      );
+    }
+
+    if (resumeAudioPlayback) {
+      _consecutiveErrors = 0;
+      _isResolving = true;
+      emit(state.copyWith(
+        queue: [track],
+        currentIndex: 0,
+        duration: totalDur,
+        position: position,
+        playbackSource: source,
+        isBuffering: true,
+        isPlaying: true,
+        clearError: true,
+      ));
+      await _audioHandler.playTrack(
+        track.toMediaItem(),
+        resumePosition: position > Duration.zero ? position : null,
+      );
+    } else {
+      try {
+        if (_audioHandler.player.playing) {
+          await _audioHandler.pause();
+        }
+      } catch (_) {}
+      _audioHandler.prepareIdleMediaItem(
+        track.toMediaItem(),
+        resumePosition: position > Duration.zero ? position : null,
+      );
+      emit(state.copyWith(
+        queue: [track],
+        currentIndex: 0,
+        duration: totalDur,
+        position: position,
+        playbackSource: source,
+        isBuffering: false,
+        isPlaying: false,
+        clearError: true,
+      ));
+    }
+    _syncWidgetPlaybackState(force: true);
+  }
+
   static final Map<String, String> _resolvedFeatCache = <String, String>{};
   static final Set<String> _inFlightEnrichIds = <String>{};
 

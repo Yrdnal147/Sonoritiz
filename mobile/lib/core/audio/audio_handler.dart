@@ -682,16 +682,7 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
       }
 
       // 2. Recherche directe sur YouTube à partir de l'artiste et du titre
-      final cleanTitle = item.title
-          .replaceAll(RegExp(r'\s*[\(\[][^\)\]]*(?:feat|ft|officiel|clip|video)[^\)\]]*[\)\]]', caseSensitive: false), '')
-          .trim();
-      final cleanArtist = (item.artist ?? '')
-          .split(RegExp(r',|&|feat\.|ft\.', caseSensitive: false))
-          .first
-          .trim();
-
-      final query = '$cleanArtist $cleanTitle'.trim();
-      final searchQuery = query.isNotEmpty ? query : item.title;
+      final searchQuery = _buildYoutubeSearchQuery(item);
 
       debugPrint('[playback] Searching YouTube for: "$searchQuery"');
       final searchResults = await _yt.search.search(searchQuery).timeout(const Duration(seconds: 8));
@@ -717,6 +708,15 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
   static const String _localWebRelayBase = 'http://127.0.0.1:8765';
 
   String _buildYoutubeSearchQuery(MediaItem item) {
+    final genreLower = (item.genre ?? '').toLowerCase();
+    if (item.id.startsWith('deezer_book_') || genreLower.contains('livre')) {
+      return '${item.title} ${item.artist ?? ''} livre audio complet'.trim();
+    }
+    if (item.id.startsWith('deezer_podcast_') ||
+        genreLower.contains('podcast')) {
+      return '${item.title} ${item.artist ?? ''} podcast épisode'.trim();
+    }
+
     final cleanTitle = item.title
         .replaceAll(
           RegExp(r'\s*[\(\[][^\)\]]*(?:feat|ft|officiel|clip|video)[^\)\]]*[\)\]]',

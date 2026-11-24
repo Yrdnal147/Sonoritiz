@@ -24,16 +24,21 @@ class PodcastPlayerScreen extends StatefulWidget {
 class _PodcastPlayerScreenState extends State<PodcastPlayerScreen> {
   VideoPlayerController? _controller;
   final YoutubeExplode _yt = YoutubeExplode();
+  PlayerCubit? _playerCubit;
+  late TrackModel _resolvedTrack;
+  Duration _lastKnownPosition = Duration.zero;
   bool _isLoading = true;
   bool _hasError = false;
   bool _isVideoMode = false;
   bool _isPlaying = false;
   bool _isLiked = false;
   bool _isFullScreen = false;
+  bool _handedOffToMainPlayer = false;
 
   @override
   void initState() {
     super.initState();
+    _resolvedTrack = widget.track;
     // Si l'épisode est directement un podcast vidéo YouTube, activer l'affichage vidéo par défaut
     final bool isDirectYoutubeVideo = !widget.track.id.startsWith('deezer_') &&
         RegExp(r'^[a-zA-Z0-9_-]{11}$').hasMatch(widget.track.id);
@@ -43,10 +48,26 @@ class _PodcastPlayerScreenState extends State<PodcastPlayerScreen> {
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        context.read<PlayerCubit>().pause();
+        _playerCubit = context.read<PlayerCubit>();
+        _playerCubit!.syncExternalMediaTrack(
+          _resolvedTrack,
+          position: Duration.zero,
+          resumeAudioPlayback: false,
+          source: _resolvedTrack.genre.isNotEmpty
+              ? _resolvedTrack.genre
+              : 'Podcasts & Livres',
+        );
       }
     });
     _initPlayer();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    try {
+      _playerCubit ??= context.read<PlayerCubit>();
+    } catch (_) {}
   }
 
   Future<void> _initPlayer() async {
@@ -103,6 +124,38 @@ class _PodcastPlayerScreenState extends State<PodcastPlayerScreen> {
 
       _controller = ctrl;
       _controller!.addListener(_playerListener);
+
+      final int resolvedDurSec = ctrl.value.duration.inSeconds > 0
+          ? ctrl.value.duration.inSeconds
+          : widget.track.durationSeconds;
+      _resolvedTrack = widget.track.copyWith(
+        id: videoId,
+        durationSeconds: resolvedDurSec,
+      );
+
+      // Si le même épisode était déjà en cours dans le Mini-Lecteur / PlayerCubit,
+      // reprendre à sa position exacte
+      final cubit = _playerCubit;
+      if (cubit != null &&
+          cubit.state.currentTrack?.id == videoId &&
+          cubit.state.position.inSeconds > 2) {
+        _lastKnownPosition = cubit.state.position;
+        await _controller!.seekTo(_lastKnownPosition);
+      }
+
+      if (cubit != null) {
+        unawaited(
+          cubit.syncExternalMediaTrack(
+            _resolvedTrack,
+            position: _lastKnownPosition,
+            resumeAudioPlayback: false,
+            source: _resolvedTrack.genre.isNotEmpty
+                ? _resolvedTrack.genre
+                : 'Podcasts & Livres',
+          ),
+        );
+      }
+
       await _controller!.play();
 
       if (mounted) {
@@ -124,15 +177,43 @@ class _PodcastPlayerScreenState extends State<PodcastPlayerScreen> {
 
   void _playerListener() {
     if (!mounted || _controller == null) return;
-    if (_controller!.value.isPlaying != _isPlaying) {
+    final val = _controller!.value;
+    if (val.isInitialized && val.position > Duration.zero) {
+      _lastKnownPosition = val.position;
+    }
+    if (val.isPlaying != _isPlaying) {
       setState(() {
-        _isPlaying = _controller!.value.isPlaying;
+        _isPlaying = val.isPlaying;
       });
     }
   }
 
+  void _handOffToMainPlayerIfNeeded() {
+    if (_handedOffToMainPlayer) return;
+    _handedOffToMainPlayer = true;
+    final cubit = _playerCubit;
+    if (cubit == null) return;
+
+    final pos = (_controller != null && _controller!.value.isInitialized)
+        ? _controller!.value.position
+        : _lastKnownPosition;
+    final bool shouldKeepPlaying = _isPlaying;
+
+    unawaited(
+      cubit.syncExternalMediaTrack(
+        _resolvedTrack,
+        position: pos,
+        resumeAudioPlayback: shouldKeepPlaying,
+        source: _resolvedTrack.genre.isNotEmpty
+            ? _resolvedTrack.genre
+            : 'Podcasts & Livres',
+      ),
+    );
+  }
+
   @override
   void dispose() {
+    _handOffToMainPlayerIfNeeded();
     _controller?.removeListener(_playerListener);
     _controller?.dispose();
     _yt.close();

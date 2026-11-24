@@ -37,17 +37,18 @@ class _PodcastScreenState extends State<PodcastScreen> {
 
   static const List<Map<String, String>> _themes = [
     {'id': 'all', 'label': 'À la une', 'query': '', 'type': 'all'},
+    {'id': 'fun', 'label': 'Fun & Créateurs', 'query': 'Squeezie Darko MrBeast Amixem Mcfly Carlito Joyca Mastu Inoxtag', 'type': 'fun'},
+    {'id': 'foot', 'label': 'Football & Sport', 'query': 'After Foot RMC Wiloo Zack Nani football débrief', 'type': 'podcast'},
     {'id': 'amour', 'label': 'Amour & Relations', 'query': 'amour couple relations sentimentales histoire d amour', 'type': 'podcast'},
-    {'id': 'musique', 'label': 'Musique & Interviews', 'query': 'interview artiste musique rap afro podcast', 'type': 'podcast'},
-    {'id': 'afrique', 'label': 'Afrique & Société', 'query': 'afrique culture société interview débat', 'type': 'podcast'},
-    {'id': 'crime', 'label': 'Enquêtes & True Crime', 'query': 'enquête histoire vraie affaire criminelle récit', 'type': 'podcast'},
-    {'id': 'foot', 'label': 'Football & Sport', 'query': 'football sport after foot débrief', 'type': 'podcast'},
-    {'id': 'business', 'label': 'Business & Tech', 'query': 'business entrepreneuriat tech intelligence artificielle', 'type': 'podcast'},
-    {'id': 'books', 'label': 'Livres Audio', 'query': 'livre audio roman complet', 'type': 'audiobook'},
-    {'id': 'histoire', 'label': 'Histoire & Récits', 'query': 'histoire culture récit documentaire', 'type': 'podcast'},
-    {'id': 'science', 'label': 'Sciences & Découvertes', 'query': 'science espace univers découverte documentaire', 'type': 'podcast'},
-    {'id': 'humour', 'label': 'Humour & Stand-up', 'query': 'humour comédie stand up spectacle podcast', 'type': 'podcast'},
-    {'id': 'dev', 'label': 'Développement & Philo', 'query': 'développement personnel philosophie psychologie', 'type': 'all'},
+    {'id': 'musique', 'label': 'Musique & Interviews', 'query': 'Mehdi Maizi CKO Clique interview artiste musique rap afro', 'type': 'podcast'},
+    {'id': 'afrique', 'label': 'Afrique & Société', 'query': 'OuiHustle Investir au Pays afrique culture société interview', 'type': 'podcast'},
+    {'id': 'crime', 'label': 'Enquêtes & True Crime', 'query': 'Squeezie thread horreur McSkyz Hondelatte enquête affaire criminelle', 'type': 'podcast'},
+    {'id': 'business', 'label': 'Business & Tech', 'query': 'Underscore_ Micode GDIY Yomi Denzel business tech IA', 'type': 'podcast'},
+    {'id': 'books', 'label': 'Livres Audio', 'query': 'livre audio roman complet français', 'type': 'audiobook'},
+    {'id': 'histoire', 'label': 'Histoire & Récits', 'query': 'Nota Bene Questions d Histoire ARTE documentaire récit', 'type': 'podcast'},
+    {'id': 'science', 'label': 'Sciences & Découvertes', 'query': 'Science Etonnante Balade Mentale Jamy espace univers découverte', 'type': 'podcast'},
+    {'id': 'humour', 'label': 'Humour & Stand-up', 'query': 'Montreux Comedy FloodCast Un Bon Moment stand up humour', 'type': 'podcast'},
+    {'id': 'dev', 'label': 'Développement & Philo', 'query': 'Le Précepteur Cyrus North philosophie développement personnel psychologie', 'type': 'all'},
   ];
 
   String _formatEpisodeDuration(int seconds) {
@@ -477,9 +478,11 @@ class _PodcastScreenState extends State<PodcastScreen> {
                                                                 const SizedBox(width: 4),
                                                               ],
                                                               Text(
-                                                                isVideoEpisode
-                                                                    ? (isBook ? "Livre Vidéo" : "Podcast Vidéo")
-                                                                    : (isBook ? "Livre audio" : "Podcast"),
+                                                                _activeType == 'fun' || item.genre.toLowerCase().contains('fun')
+                                                                    ? "Fun & Vidéo"
+                                                                    : (isVideoEpisode
+                                                                        ? (isBook ? "Livre Vidéo" : "Podcast Vidéo")
+                                                                        : (isBook ? "Livre audio" : "Podcast")),
                                                                 style: TextStyle(
                                                                   color: isVideoEpisode
                                                                       ? Colors.black
