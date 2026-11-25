@@ -108,7 +108,8 @@ def _sanitize_track(value):
         cover_url = ''
     album_name = str(value.get('album_name') or value.get('albumName') or '')[:255]
     genre = str(value.get('genre') or '')[:100]
-    return {
+    yt_vid = str(value.get('youtube_video_id') or '').strip()[:16]
+    result = {
         'id': track_id[:64],
         'title': title[:255],
         'artist_name': artist_name[:255],
@@ -119,6 +120,58 @@ def _sanitize_track(value):
         'genre': genre,
         'license_ccurl': '',
     }
+    if yt_vid:
+        result['youtube_video_id'] = yt_vid
+    return result
+
+
+def _sanitize_track_list(raw_list, max_items: int = 35) -> list:
+    if not isinstance(raw_list, list):
+        return []
+    cleaned = []
+    seen = set()
+    for item in raw_list:
+        t = _sanitize_track(item)
+        if t is not None and t['id'] not in seen:
+            seen.add(t['id'])
+            cleaned.append(t)
+            if len(cleaned) >= max_items:
+                break
+    return cleaned
+
+
+def _sort_suggestion_threads(threads: list, avatars: dict) -> list:
+    """Trie les threads de suggestions multi-participants par ordre de priorité :
+    1) Nombre de votes/soutiens décroissant (-votes_count),
+    2) Équité Round-Robin entre participants (la 1re suggestion de chaque invité passe avant la 2e/3e d'un même invité),
+    3) Ordre chronologique d'arrivée (created_ts FIFO).
+    """
+    if not isinstance(threads, list):
+        return []
+    valid = [dict(t) for t in threads if isinstance(t, dict) and t.get('id')]
+    valid.sort(key=lambda x: float(x.get('created_ts', 0.0)))
+
+    per_user_slot = {}
+    for t in valid:
+        uid = str(t.get('user_id') or t.get('username') or '')
+        slot = per_user_slot.get(uid, 0)
+        t['priority_slot'] = slot
+        per_user_slot[uid] = slot + 1
+        voter_ids = t.get('voter_ids') if isinstance(t.get('voter_ids'), list) else []
+        t['votes_count'] = max(1, len(voter_ids))
+        if uid in avatars and not t.get('user_avatar'):
+            t['user_avatar'] = avatars[uid]
+
+    valid.sort(
+        key=lambda x: (
+            -int(x.get('votes_count', 1)),
+            int(x.get('priority_slot', 0)),
+            float(x.get('created_ts', 0.0)),
+        )
+    )
+    for idx, t in enumerate(valid):
+        t['priority_rank'] = idx + 1
+    return valid
 
 
 def _enrich_session_response(session: ConnectSession, state_dict: dict) -> dict:
@@ -136,14 +189,26 @@ def _enrich_session_response(session: ConnectSession, state_dict: dict) -> dict:
             p['is_host'] = (uid == str(session.host_user_id))
             if isinstance(u, dict):
                 u['avatar'] = avatar
+
+    raw_threads = state_dict.get('suggestion_threads')
+    if not isinstance(raw_threads, list):
+        raw_threads = state_dict.get('suggestions', [])
+    sorted_threads = _sort_suggestion_threads(raw_threads, avatars)
+
     data['playback_state'] = {
+        'seq': int(state_dict.get('seq', 0)),
         'track': state_dict.get('track'),
         'position': state_dict.get('position', 0.0),
         'is_playing': bool(state_dict.get('is_playing', False)),
+        'is_buffering': bool(state_dict.get('is_buffering', False)),
         'server_timestamp': state_dict.get('server_timestamp', time.time()),
+        'shared_playlist_title': str(state_dict.get('shared_playlist_title') or 'File du salon'),
+        'shared_queue': state_dict.get('shared_queue', []),
         'reactions': state_dict.get('reactions', []),
-        'suggestions': state_dict.get('suggestions', []),
+        'suggestion_threads': sorted_threads,
+        'suggestions': sorted_threads,
     }
+    data['max_participants'] = 20
     data['server_now'] = time.time()
     return data
 
@@ -175,7 +240,14 @@ class ConnectSessionCreateView(APIView):
             user=request.user
         )
 
-        state_dict = {'avatars': {}, 'reactions': [], 'suggestions': []}
+        state_dict = {
+            'seq': 1,
+            'avatars': {},
+            'reactions': [],
+            'suggestion_threads': [],
+            'shared_playlist_title': str(request.data.get('shared_playlist_title') or 'File du salon')[:120],
+            'shared_queue': _sanitize_track_list(request.data.get('shared_queue'), max_items=35),
+        }
         avatar = _sanitize_avatar(request.data.get('avatar'))
         if avatar:
             state_dict['avatars'][str(request.user.id)] = avatar
@@ -184,7 +256,10 @@ class ConnectSessionCreateView(APIView):
             state_dict['track'] = initial_track
             state_dict['position'] = float(request.data.get('position') or 0.0)
             state_dict['is_playing'] = bool(request.data.get('is_playing', False))
+            state_dict['is_buffering'] = bool(request.data.get('is_buffering', False))
             state_dict['server_timestamp'] = time.time()
+            if not state_dict['shared_queue']:
+                state_dict['shared_queue'] = [initial_track]
         _write_session_state(session.pk, state_dict)
 
         return Response(_enrich_session_response(session, state_dict), status=status.HTTP_201_CREATED)
@@ -283,33 +358,66 @@ class ConnectSessionSyncView(APIView):
                 state_dict['avatars'] = avatars
                 changed = True
 
-        # 2. Si c'est l'hôte, mise à jour de l'état de lecture
+        # 2. Si c'est l'hôte, mise à jour de l'état de lecture (avec numéro de séquence monotone `seq`)
         if session.host_user_id == request.user.id:
-            if 'position' in request.data or 'is_playing' in request.data or 'track' in request.data:
-                pos = request.data.get('position', state_dict.get('position', 0.0))
+            incoming_seq = request.data.get('seq')
+            current_seq = int(state_dict.get('seq', 0))
+            is_stale_host_packet = False
+            if incoming_seq is not None:
                 try:
-                    pos = max(0.0, float(pos))
+                    incoming_seq_int = int(incoming_seq)
+                    if incoming_seq_int < current_seq:
+                        is_stale_host_packet = True
+                    else:
+                        state_dict['seq'] = incoming_seq_int
                 except (TypeError, ValueError):
-                    pos = 0.0
-                state_dict['position'] = pos
-                if 'is_playing' in request.data:
-                    state_dict['is_playing'] = bool(request.data.get('is_playing'))
-                state_dict['server_timestamp'] = now
-                track = _sanitize_track(request.data.get('track'))
-                if track is not None:
-                    state_dict['track'] = track
-                    if session.current_jamendo_track_id != track['id']:
-                        session.current_jamendo_track_id = track['id']
-                        session.save(update_fields=['current_jamendo_track_id'])
-                changed = True
+                    pass
+
+            if not is_stale_host_packet:
+                if 'position' in request.data or 'is_playing' in request.data or 'track' in request.data:
+                    pos = request.data.get('position', state_dict.get('position', 0.0))
+                    try:
+                        pos = max(0.0, float(pos))
+                    except (TypeError, ValueError):
+                        pos = 0.0
+                    state_dict['position'] = pos
+                    if 'is_playing' in request.data:
+                        state_dict['is_playing'] = bool(request.data.get('is_playing'))
+                    if 'is_buffering' in request.data:
+                        state_dict['is_buffering'] = bool(request.data.get('is_buffering'))
+                    state_dict['server_timestamp'] = now
+                    track = _sanitize_track(request.data.get('track'))
+                    if track is not None:
+                        state_dict['track'] = track
+                        if session.current_jamendo_track_id != track['id']:
+                            session.current_jamendo_track_id = track['id']
+                            session.save(update_fields=['current_jamendo_track_id'])
+                    changed = True
+
+                if 'shared_playlist_title' in request.data:
+                    state_dict['shared_playlist_title'] = str(
+                        request.data.get('shared_playlist_title') or 'File du salon'
+                    )[:120]
+                    changed = True
+
+                if 'shared_queue' in request.data:
+                    state_dict['shared_queue'] = _sanitize_track_list(
+                        request.data.get('shared_queue'),
+                        max_items=35,
+                    )
+                    changed = True
 
             clear_suggestion_id = request.data.get('clear_suggestion_id')
             if isinstance(clear_suggestion_id, str) and clear_suggestion_id.strip():
-                suggestions = state_dict.get('suggestions') if isinstance(state_dict.get('suggestions'), list) else []
-                state_dict['suggestions'] = [
-                    s for s in suggestions
-                    if isinstance(s, dict) and s.get('id') != clear_suggestion_id.strip()
+                target_sid = clear_suggestion_id.strip()
+                threads = state_dict.get('suggestion_threads')
+                if not isinstance(threads, list):
+                    threads = state_dict.get('suggestions', [])
+                state_dict['suggestion_threads'] = [
+                    s for s in threads
+                    if isinstance(s, dict) and str(s.get('id')) != target_sid
                 ]
+                state_dict.pop('suggestions', None)
                 changed = True
 
         # 3. Réaction en direct (hôte ou invité)
@@ -328,16 +436,90 @@ class ConnectSessionSyncView(APIView):
             state_dict['reactions'] = reactions[-12:]
             changed = True
 
-        # 4. Suggestion de son par un participant
-        suggested_track = _sanitize_track(request.data.get('suggested_track'))
-        if suggested_track is not None:
-            suggestions = state_dict.get('suggestions') if isinstance(state_dict.get('suggestions'), list) else []
-            if not any(isinstance(s, dict) and s.get('id') == suggested_track['id'] for s in suggestions):
-                suggested_entry = dict(suggested_track)
-                suggested_entry['suggested_by'] = request.user.username
-                suggestions.append(suggested_entry)
-                state_dict['suggestions'] = suggestions[-10:]
-                changed = True
+        # 4. Vote / Soutien (+1) sur un thread de suggestion existant
+        upvote_id = request.data.get('upvote_suggestion_id')
+        if isinstance(upvote_id, str) and upvote_id.strip():
+            threads = state_dict.get('suggestion_threads')
+            if not isinstance(threads, list):
+                threads = state_dict.get('suggestions', [])
+            for t in threads:
+                if isinstance(t, dict) and str(t.get('id')) == upvote_id.strip():
+                    voter_ids = t.get('voter_ids') if isinstance(t.get('voter_ids'), list) else []
+                    if request.user.id not in voter_ids:
+                        voter_ids.append(request.user.id)
+                        t['voter_ids'] = voter_ids
+                        changed = True
+                    break
+            state_dict['suggestion_threads'] = threads
+
+        # 5. Création d'un thread de suggestion (Son, Album ou Playlist) par un participant
+        suggestion_payload = request.data.get('suggestion_payload')
+        legacy_track = _sanitize_track(request.data.get('suggested_track'))
+        if not isinstance(suggestion_payload, dict) and legacy_track is not None:
+            suggestion_payload = {
+                'kind': 'track',
+                'title': legacy_track['title'],
+                'subtitle': legacy_track['artist_name'],
+                'cover_url': legacy_track['cover_url'],
+                'tracks': [legacy_track],
+            }
+
+        if isinstance(suggestion_payload, dict):
+            kind = str(suggestion_payload.get('kind') or 'track').strip().lower()
+            if kind not in ('track', 'album', 'playlist'):
+                kind = 'track'
+            tracks = _sanitize_track_list(suggestion_payload.get('tracks'), max_items=30)
+            if tracks:
+                title = str(suggestion_payload.get('title') or tracks[0]['title']).strip()[:180]
+                subtitle = str(
+                    suggestion_payload.get('subtitle')
+                    or (tracks[0]['artist_name'] if kind == 'track' else f"{len(tracks)} titres")
+                ).strip()[:180]
+                cover_url = str(suggestion_payload.get('cover_url') or tracks[0].get('cover_url') or '').strip()[:500]
+                uname = request.user.username or 'Un participant'
+                if kind == 'album':
+                    action_label = f"{uname} a suggéré cet album"
+                elif kind == 'playlist':
+                    action_label = f"{uname} a suggéré cette playlist"
+                else:
+                    action_label = f"{uname} a suggéré ce son"
+
+                threads = state_dict.get('suggestion_threads')
+                if not isinstance(threads, list):
+                    threads = state_dict.get('suggestions', [])
+
+                dedup_key = f"{kind}:{title.lower()}:{tracks[0]['id']}"
+                existing = next(
+                    (t for t in threads if isinstance(t, dict) and t.get('dedup_key') == dedup_key),
+                    None,
+                )
+                if existing is not None:
+                    voter_ids = existing.get('voter_ids') if isinstance(existing.get('voter_ids'), list) else []
+                    if request.user.id not in voter_ids:
+                        voter_ids.append(request.user.id)
+                        existing['voter_ids'] = voter_ids
+                        changed = True
+                else:
+                    avatars = state_dict.get('avatars') if isinstance(state_dict.get('avatars'), dict) else {}
+                    threads.append({
+                        'id': f"sug_{int(now * 1000)}_{request.user.id}",
+                        'dedup_key': dedup_key,
+                        'kind': kind,
+                        'title': title,
+                        'subtitle': subtitle,
+                        'cover_url': cover_url,
+                        'tracks': tracks,
+                        'label': action_label,
+                        'username': uname,
+                        'user_id': request.user.id,
+                        'user_avatar': avatars.get(str(request.user.id), ''),
+                        'voter_ids': [request.user.id],
+                        'votes_count': 1,
+                        'created_ts': now,
+                    })
+                    state_dict['suggestion_threads'] = threads[-24:]
+                    state_dict.pop('suggestions', None)
+                    changed = True
 
         if changed:
             _write_session_state(session.pk, state_dict)

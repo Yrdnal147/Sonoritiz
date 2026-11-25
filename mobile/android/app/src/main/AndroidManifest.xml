@@ -14,6 +14,7 @@
         android:label="Sonoritiz"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon"
+        android:extractNativeLibs="true"
         android:usesCleartextTraffic="true">
         <!-- Google-provided test App ID. Replace with the AdMob App ID before release. -->
         <meta-data

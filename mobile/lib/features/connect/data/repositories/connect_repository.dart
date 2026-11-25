@@ -11,6 +11,9 @@ class ConnectRepository {
     Map<String, dynamic>? initialTrack,
     double? position,
     bool? isPlaying,
+    bool? isBuffering,
+    String? sharedPlaylistTitle,
+    List<Map<String, dynamic>>? sharedQueue,
   }) async {
     final response = await apiClient.post(
       ApiConstants.connectSessions,
@@ -19,6 +22,10 @@ class ConnectRepository {
         if (initialTrack != null) 'track': initialTrack,
         if (position != null) 'position': position,
         if (isPlaying != null) 'is_playing': isPlaying,
+        if (isBuffering != null) 'is_buffering': isBuffering,
+        if (sharedPlaylistTitle != null && sharedPlaylistTitle.isNotEmpty)
+          'shared_playlist_title': sharedPlaylistTitle,
+        if (sharedQueue != null) 'shared_queue': sharedQueue,
       },
     );
     return Map<String, dynamic>.from(response.data as Map);
@@ -41,22 +48,36 @@ class ConnectRepository {
   Future<Map<String, dynamic>> syncSession(
     int sessionId, {
     String? avatar,
+    int? seq,
     Map<String, dynamic>? track,
     double? position,
     bool? isPlaying,
+    bool? isBuffering,
+    String? sharedPlaylistTitle,
+    List<Map<String, dynamic>>? sharedQueue,
     String? reaction,
     Map<String, dynamic>? suggestedTrack,
+    Map<String, dynamic>? suggestionPayload,
+    String? upvoteSuggestionId,
     String? clearSuggestionId,
   }) async {
     final response = await apiClient.post(
       '${ApiConstants.connectSessions}$sessionId/sync/',
       data: <String, dynamic>{
         if (avatar != null && avatar.isNotEmpty) 'avatar': avatar,
+        if (seq != null) 'seq': seq,
         if (track != null) 'track': track,
         if (position != null) 'position': position,
         if (isPlaying != null) 'is_playing': isPlaying,
+        if (isBuffering != null) 'is_buffering': isBuffering,
+        if (sharedPlaylistTitle != null)
+          'shared_playlist_title': sharedPlaylistTitle,
+        if (sharedQueue != null) 'shared_queue': sharedQueue,
         if (reaction != null && reaction.isNotEmpty) 'reaction': reaction,
         if (suggestedTrack != null) 'suggested_track': suggestedTrack,
+        if (suggestionPayload != null) 'suggestion_payload': suggestionPayload,
+        if (upvoteSuggestionId != null && upvoteSuggestionId.isNotEmpty)
+          'upvote_suggestion_id': upvoteSuggestionId,
         if (clearSuggestionId != null && clearSuggestionId.isNotEmpty)
           'clear_suggestion_id': clearSuggestionId,
       },
@@ -68,4 +89,3 @@ class ConnectRepository {
     await apiClient.post('${ApiConstants.connectSessions}$sessionId/leave/');
   }
 }
-

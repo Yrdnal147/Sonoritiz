@@ -27,11 +27,33 @@ class MainShellScreen extends StatefulWidget {
 
 class _MainShellScreenState extends State<MainShellScreen> {
   int _lastKnownTab = 0;
+  String _lastRouteLocation = '';
   String? _lastRecordedHistoryTrackId;
   bool _isBottomNavVisible = true;
 
+  bool _handleScrollMetricsNotification(
+      ScrollMetricsNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) return false;
+    // Si la page n'est pas scrollable (ou tient entièrement à l'écran),
+    // toujours forcer l'affichage de la barre de navigation !
+    if (notification.metrics.maxScrollExtent <= 28.0 && !_isBottomNavVisible) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_isBottomNavVisible) {
+          setState(() => _isBottomNavVisible = true);
+        }
+      });
+    }
+    return false;
+  }
+
   bool _handleScrollNotification(ScrollNotification notification) {
     if (notification.metrics.axis != Axis.vertical) return false;
+    if (notification.metrics.maxScrollExtent <= 28.0) {
+      if (!_isBottomNavVisible) {
+        setState(() => _isBottomNavVisible = true);
+      }
+      return false;
+    }
     if (notification is ScrollUpdateNotification) {
       final delta = notification.scrollDelta ?? 0.0;
       final pixels = notification.metrics.pixels;
@@ -177,15 +199,22 @@ class _MainShellScreenState extends State<MainShellScreen> {
   Widget _buildMobileLayout(BuildContext context) {
     final int currentIndex = _calculateSelectedIndex(context);
     final String location = GoRouterState.of(context).uri.path;
+    if (_lastRouteLocation != location) {
+      _lastRouteLocation = location;
+      _isBottomNavVisible = true;
+    }
     final bool hideMiniPlayer = _shouldHideMiniPlayer(location);
     final bool isNarrowFoldCover = ResponsiveUtils.isCompactNarrow(context);
     final double labelFontSize = isNarrowFoldCover ? 10.5 : 12.0;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0B0B0C),
-      body: NotificationListener<ScrollNotification>(
-        onNotification: _handleScrollNotification,
-        child: widget.child,
+      body: NotificationListener<ScrollMetricsNotification>(
+        onNotification: _handleScrollMetricsNotification,
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _handleScrollNotification,
+          child: widget.child,
+        ),
       ),
       extendBody: true,
       bottomNavigationBar: Column(

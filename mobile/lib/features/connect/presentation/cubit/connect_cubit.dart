@@ -5,6 +5,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/storage/storage_service.dart';
+import '../../../library/data/repositories/library_repository.dart'
+    show PlaylistModel;
 import '../../../player/data/models/track_model.dart';
 import '../../../player/presentation/cubit/player_cubit.dart';
 import '../../../player/presentation/cubit/player_state.dart';
@@ -17,16 +19,24 @@ class ConnectCubit extends Cubit<ConnectState> {
   final ConnectRepository repository;
   final PlayerCubit playerCubit;
   final ConnectWebSocketService webSocketService = ConnectWebSocketService();
+
   StreamSubscription? _wsSubscription;
   StreamSubscription<PlayerState>? _playerSubscription;
   Timer? _syncTimer;
   Timer? _httpSyncTimer;
+  Timer? _hostPublishDebounce;
+
   PlayerState? _lastPlayerState;
   bool _httpSyncHealthy = false;
   bool _isSyncInFlight = false;
+  bool _pendingUrgentHostSync = false;
+
+  int _hostSeq = 1;
+  int _lastAppliedRemoteSeq = -1;
+  String _sharedPlaylistTitle = 'File du salon';
+
   String? _cachedMyAvatarPayload;
   String? _lastAvatarSourcePath;
-  final Set<String> _consumedSuggestionIds = <String>{};
 
   ConnectCubit({
     required this.storageService,
@@ -35,11 +45,9 @@ class ConnectCubit extends Cubit<ConnectState> {
   }) : super(ConnectInitial());
 
   /// Résout la photo de profil de l'utilisateur courant :
-  /// 1. Si l'utilisateur a choisi une photo dans sa galerie (`getProfileImagePath()`),
-  ///    la redimensionne en miniature 72x72 (`data:image/png;base64,...`, ~8 Ko)
-  ///    afin que tous les autres participants voient sa vraie photo sur leur téléphone.
-  /// 2. Sinon, si c'est une URL http/https, l'utilise directement.
-  /// 3. Sinon, utilise la photo de son 1er artiste consulté/suivi comme avatar musical.
+  /// 1. Miniature 72x72 (`data:image/png;base64,...`) depuis sa galerie locale,
+  /// 2. Sinon URL http/https directe,
+  /// 3. Sinon photo de son 1er artiste suivi/consulté.
   Future<String> _resolveMyAvatarPayload() async {
     try {
       final rawPath = (storageService.getProfileImagePath() ?? '').trim();
@@ -151,6 +159,25 @@ class ConnectCubit extends Cubit<ConnectState> {
         .toList();
   }
 
+  List<TrackModel> _tracksFromRaw(dynamic raw) {
+    if (raw is! List) return const [];
+    final List<TrackModel> parsed = [];
+    for (final item in raw) {
+      if (item is Map) {
+        try {
+          final map = Map<String, dynamic>.from(item);
+          final ytVid = (map['youtube_video_id'] ?? '').toString().trim();
+          final track = TrackModel.fromJson(map);
+          if (ytVid.isNotEmpty) {
+            playerCubit.seedResolvedVideoId(track.id, ytVid);
+          }
+          parsed.add(track);
+        } catch (_) {}
+      }
+    }
+    return parsed;
+  }
+
   int? _extractHostUserId(Map<String, dynamic> data) {
     final hostUser = data['host_user'];
     if (hostUser is Map && hostUser['id'] != null) {
@@ -161,20 +188,62 @@ class ConnectCubit extends Cubit<ConnectState> {
     return null;
   }
 
+  List<TrackModel> _extractHostWindowQueue(PlayerState pState) {
+    final full = pState.queue;
+    if (full.isEmpty) {
+      return pState.currentTrack != null ? [pState.currentTrack!] : const [];
+    }
+    if (full.length <= 30) return List<TrackModel>.from(full);
+    final int start = (pState.currentIndex - 4).clamp(0, full.length - 30);
+    return full.sublist(start, start + 30);
+  }
+
+  Map<String, dynamic> _shareableTrack(TrackModel track) {
+    final resolvedVid = playerCubit.getResolvedVideoId(track.id);
+    return <String, dynamic>{
+      'id': track.id,
+      'title': track.title,
+      'artist_name': track.artistName,
+      'album_name': track.albumName,
+      'cover_url': track.coverUrl,
+      'duration_seconds': track.durationSeconds,
+      'genre': track.genre,
+      'license_ccurl': track.licenseCcUrl,
+      if (resolvedVid != null && resolvedVid.isNotEmpty)
+        'youtube_video_id': resolvedVid,
+    };
+  }
+
   Future<void> createSession() async {
     emit(ConnectLoading());
     try {
       final avatar = await _resolveMyAvatarPayload();
-      final currentTrack = playerCubit.state.currentTrack;
+      final pState = playerCubit.state;
+      final currentTrack = pState.currentTrack;
+      final initialQueue = _extractHostWindowQueue(pState);
+      final sourceLabel = pState.playbackSource.trim();
+      _sharedPlaylistTitle = (sourceLabel.isNotEmpty &&
+              sourceLabel != 'Reprise d’écoute' &&
+              sourceLabel != 'Sonoritiz Mix')
+          ? sourceLabel
+          : 'File du salon';
+      _hostSeq = 1;
+      _lastAppliedRemoteSeq = -1;
+
       final data = await repository.createSession(
         avatar: avatar,
         initialTrack:
             currentTrack != null ? _shareableTrack(currentTrack) : null,
-        position: playerCubit.state.position.inMilliseconds / 1000.0,
-        isPlaying: playerCubit.state.isPlaying,
+        position: pState.position.inMilliseconds / 1000.0,
+        isPlaying: pState.isPlaying,
+        isBuffering: pState.isBuffering,
+        sharedPlaylistTitle: _sharedPlaylistTitle,
+        sharedQueue: initialQueue.map(_shareableTrack).toList(),
       );
       final int sessionId = data['id'] as int;
       final String inviteCode = (data['invite_code'] ?? '').toString();
+      final int maxParticipants =
+          data['max_participants'] is int ? data['max_participants'] as int : 20;
       final int? hostId = _extractHostUserId(data);
       final participants =
           _participantsFrom(data['participants'], hostUserId: hostId);
@@ -183,7 +252,10 @@ class ConnectCubit extends Cubit<ConnectState> {
           : const <String, dynamic>{};
 
       _httpSyncHealthy = true;
-      _consumedSuggestionIds.clear();
+      final threads = _mapListFrom(
+        playbackState['suggestion_threads'] ?? playbackState['suggestions'],
+      );
+      final sharedTracks = _tracksFromRaw(playbackState['shared_queue']);
 
       emit(ConnectActive(
         sessionId: sessionId,
@@ -191,7 +263,13 @@ class ConnectCubit extends Cubit<ConnectState> {
         isHost: true,
         participants: participants,
         reactions: _mapListFrom(playbackState['reactions']),
-        suggestions: _mapListFrom(playbackState['suggestions']),
+        suggestions: threads,
+        suggestionThreads: threads,
+        sharedPlaylistTitle:
+            (playbackState['shared_playlist_title'] ?? _sharedPlaylistTitle)
+                .toString(),
+        sharedQueue: sharedTracks.isNotEmpty ? sharedTracks : initialQueue,
+        maxParticipants: maxParticipants,
         connectionStatus: 'connected',
       ));
 
@@ -211,6 +289,8 @@ class ConnectCubit extends Cubit<ConnectState> {
         avatar: avatar,
       );
       final int sessionId = data['id'] as int;
+      final int maxParticipants =
+          data['max_participants'] is int ? data['max_participants'] as int : 20;
       final int? hostId = _extractHostUserId(data);
       final String hostUsername = (data['host_user'] is Map
               ? (data['host_user']['username'] ?? '')
@@ -229,7 +309,14 @@ class ConnectCubit extends Cubit<ConnectState> {
           : const <String, dynamic>{};
 
       _httpSyncHealthy = true;
-      _consumedSuggestionIds.clear();
+      _lastAppliedRemoteSeq = -1;
+      final threads = _mapListFrom(
+        playbackState['suggestion_threads'] ?? playbackState['suggestions'],
+      );
+      final sharedTracks = _tracksFromRaw(playbackState['shared_queue']);
+      final sharedTitle =
+          (playbackState['shared_playlist_title'] ?? 'File du salon')
+              .toString();
 
       emit(ConnectActive(
         sessionId: sessionId,
@@ -237,15 +324,20 @@ class ConnectCubit extends Cubit<ConnectState> {
         isHost: isHost,
         participants: participants,
         reactions: _mapListFrom(playbackState['reactions']),
-        suggestions: _mapListFrom(playbackState['suggestions']),
+        suggestions: threads,
+        suggestionThreads: threads,
+        sharedPlaylistTitle: sharedTitle,
+        sharedQueue: sharedTracks,
+        maxParticipants: maxParticipants,
         connectionStatus: 'connected',
       ));
 
       _startListening(sessionId);
 
       if (!isHost && playbackState.isNotEmpty) {
-        final double? serverNow =
-            data['server_now'] is num ? (data['server_now'] as num).toDouble() : null;
+        final double? serverNow = data['server_now'] is num
+            ? (data['server_now'] as num).toDouble()
+            : null;
         await _applyHttpPlaybackState(playbackState, serverNow: serverNow);
       }
     } catch (_) {
@@ -274,8 +366,6 @@ class ConnectCubit extends Cubit<ConnectState> {
         return;
       }
 
-      // Sur Vercel Serverless, le WebSocket se ferme immédiatement :
-      // si la synchro HTTP fonctionne (_httpSyncHealthy), on reste en 'connected' !
       if (eventType == 'disconnected' || eventType == 'error') {
         if (!_httpSyncHealthy) {
           emit(currentState.copyWith(connectionStatus: 'disconnected'));
@@ -283,15 +373,12 @@ class ConnectCubit extends Cubit<ConnectState> {
         return;
       }
 
-      if (eventType == 'participant_joined' ||
-          eventType == 'participant_left') {
-        unawaited(_performHttpSync());
-      }
-
       if (eventType == 'participant_joined' && currentState.isHost) {
-        _publishPlayerState(playerCubit.state);
-      } else if (!currentState.isHost) {
-        unawaited(_applyRemotePlaybackEvent(data));
+        _hostSeq++;
+        unawaited(_performHttpSync(forceHostState: true));
+      } else {
+        // Chemin unique idempotent via snapshot séquencé
+        unawaited(_performHttpSync());
       }
     });
 
@@ -305,24 +392,33 @@ class ConnectCubit extends Cubit<ConnectState> {
 
   void _startHttpSyncLoop() {
     _httpSyncTimer?.cancel();
-    _httpSyncTimer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
+    _httpSyncTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
       unawaited(_performHttpSync());
     });
   }
 
   Future<void> _performHttpSync({
     String? reaction,
-    Map<String, dynamic>? suggestedTrack,
+    Map<String, dynamic>? suggestionPayload,
+    String? upvoteSuggestionId,
     String? clearSuggestionId,
     bool forceHostState = false,
   }) async {
     if (state is! ConnectActive) return;
-    if (_isSyncInFlight &&
-        reaction == null &&
-        suggestedTrack == null &&
-        clearSuggestionId == null &&
-        !forceHostState) {
-      return;
+
+    final bool hasExplicitAction = reaction != null ||
+        suggestionPayload != null ||
+        upvoteSuggestionId != null ||
+        clearSuggestionId != null;
+
+    if (_isSyncInFlight) {
+      if (forceHostState && !hasExplicitAction) {
+        _pendingUrgentHostSync = true;
+        return;
+      }
+      if (!hasExplicitAction && !forceHostState) {
+        return;
+      }
     }
 
     final currentState = state as ConnectActive;
@@ -331,10 +427,13 @@ class ConnectCubit extends Cubit<ConnectState> {
       final avatar = await _resolveMyAvatarPayload();
       final pState = playerCubit.state;
       final curTrack = pState.currentTrack;
+      final hostWindowQueue =
+          currentState.isHost ? _extractHostWindowQueue(pState) : null;
 
       final data = await repository.syncSession(
         currentState.sessionId,
         avatar: avatar,
+        seq: currentState.isHost ? _hostSeq : null,
         track: (currentState.isHost && curTrack != null)
             ? _shareableTrack(curTrack)
             : null,
@@ -342,8 +441,13 @@ class ConnectCubit extends Cubit<ConnectState> {
             ? pState.position.inMilliseconds / 1000.0
             : null,
         isPlaying: currentState.isHost ? pState.isPlaying : null,
+        isBuffering: currentState.isHost ? pState.isBuffering : null,
+        sharedPlaylistTitle:
+            currentState.isHost ? _sharedPlaylistTitle : null,
+        sharedQueue: hostWindowQueue?.map(_shareableTrack).toList(),
         reaction: reaction,
-        suggestedTrack: suggestedTrack,
+        suggestionPayload: suggestionPayload,
+        upvoteSuggestionId: upvoteSuggestionId,
         clearSuggestionId: clearSuggestionId,
       );
 
@@ -356,6 +460,9 @@ class ConnectCubit extends Cubit<ConnectState> {
       }
 
       _httpSyncHealthy = true;
+      final int maxParticipants = data['max_participants'] is int
+          ? data['max_participants'] as int
+          : latestState.maxParticipants;
       final int? hostId = _extractHostUserId(data);
       final participants =
           _participantsFrom(data['participants'], hostUserId: hostId);
@@ -363,32 +470,30 @@ class ConnectCubit extends Cubit<ConnectState> {
           ? Map<String, dynamic>.from(data['playback_state'] as Map)
           : const <String, dynamic>{};
       final reactions = _mapListFrom(playbackState['reactions']);
-      final suggestions = _mapListFrom(playbackState['suggestions']);
+      final threads = _mapListFrom(
+        playbackState['suggestion_threads'] ?? playbackState['suggestions'],
+      );
+      final remoteQueue = _tracksFromRaw(playbackState['shared_queue']);
+      final remoteTitle =
+          (playbackState['shared_playlist_title'] ?? 'File du salon')
+              .toString();
 
       emit(latestState.copyWith(
         participants:
             participants.isNotEmpty ? participants : latestState.participants,
         reactions: reactions,
-        suggestions: suggestions,
+        suggestions: threads,
+        suggestionThreads: threads,
+        sharedPlaylistTitle:
+            latestState.isHost ? _sharedPlaylistTitle : remoteTitle,
+        sharedQueue: latestState.isHost
+            ? (hostWindowQueue ?? latestState.sharedQueue)
+            : remoteQueue,
+        maxParticipants: maxParticipants,
         connectionStatus: 'connected',
       ));
 
-      if (latestState.isHost) {
-        // Ajouter automatiquement les nouveaux sons suggérés par les participants à la file d'attente de l'hôte
-        for (final s in suggestions) {
-          final sid = (s['id'] ?? '').toString();
-          if (sid.isNotEmpty && _consumedSuggestionIds.add(sid)) {
-            try {
-              final track = TrackModel.fromJson(s);
-              playerCubit.addToQueue(track);
-              unawaited(repository.syncSession(
-                latestState.sessionId,
-                clearSuggestionId: sid,
-              ));
-            } catch (_) {}
-          }
-        }
-      } else if (playbackState.isNotEmpty) {
+      if (!latestState.isHost && playbackState.isNotEmpty) {
         final double? serverNow = data['server_now'] is num
             ? (data['server_now'] as num).toDouble()
             : null;
@@ -398,35 +503,292 @@ class ConnectCubit extends Cubit<ConnectState> {
       _httpSyncHealthy = false;
     } finally {
       _isSyncInFlight = false;
+      if (_pendingUrgentHostSync && state is ConnectActive) {
+        _pendingUrgentHostSync = false;
+        unawaited(_performHttpSync(forceHostState: true));
+      }
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // ACTIONS MUSICALES DE L'HÔTE (PLAYLISTS, ALBUMS, SONS & GESTION DES THREADS)
+  // ---------------------------------------------------------------------------
+
+  /// Lance une playlist ou un album côté hôte et l'affiche en direct chez tous les participants.
+  Future<void> hostPlayTrackList(
+    List<TrackModel> tracks, {
+    required String title,
+    int startIndex = 0,
+  }) async {
+    if (tracks.isEmpty) return;
+    final cleanTitle = title.trim().isEmpty ? 'Playlist du salon' : title.trim();
+    final safeIndex = startIndex.clamp(0, tracks.length - 1);
+    _sharedPlaylistTitle = cleanTitle;
+    _hostSeq++;
+
+    if (state is ConnectActive) {
+      final cur = state as ConnectActive;
+      emit(cur.copyWith(
+        sharedPlaylistTitle: cleanTitle,
+        sharedQueue: tracks.take(30).toList(),
+      ));
+    }
+
+    await playerCubit.playTrack(
+      tracks[safeIndex],
+      queue: tracks,
+      source: cleanTitle,
+    );
+    await _performHttpSync(forceHostState: true);
+  }
+
+  /// Lance directement un son cliqué par l'hôte dans la playlist partagée du salon.
+  Future<void> hostJumpToSharedTrack(TrackModel track) async {
+    if (state is! ConnectActive) return;
+    final cur = state as ConnectActive;
+    if (!cur.isHost) return;
+
+    _hostSeq++;
+    final queueIdx =
+        playerCubit.state.queue.indexWhere((t) => t.id == track.id);
+    if (queueIdx >= 0) {
+      if (queueIdx == playerCubit.state.currentIndex) {
+        await playerCubit.seek(Duration.zero);
+        await playerCubit.play();
+      } else {
+        await playerCubit.skipToQueueItem(queueIdx);
+      }
+    } else {
+      final baseQueue = cur.sharedQueue.isNotEmpty
+          ? List<TrackModel>.from(cur.sharedQueue)
+          : [track];
+      if (!baseQueue.any((t) => t.id == track.id)) {
+        baseQueue.add(track);
+      }
+      await playerCubit.playTrack(
+        track,
+        queue: baseQueue,
+        source: _sharedPlaylistTitle,
+      );
+    }
+    await _performHttpSync(forceHostState: true);
+  }
+
+  /// Ajoute un son recherché par l'hôte juste après le morceau en cours dans le salon.
+  Future<void> hostAddTrackNext(TrackModel track) async {
+    if (state is! ConnectActive) return;
+    final cur = state as ConnectActive;
+    if (!cur.isHost) return;
+
+    playerCubit.playTrackNext(track);
+    _hostSeq++;
+    emit(cur.copyWith(sharedQueue: _extractHostWindowQueue(playerCubit.state)));
+    await _performHttpSync(forceHostState: true);
+  }
+
+  /// Accepte immédiatement un thread de suggestion (son, album ou playlist) et le lance dans le salon.
+  Future<void> hostAcceptSuggestionNow(Map<String, dynamic> thread) async {
+    if (state is! ConnectActive) return;
+    final cur = state as ConnectActive;
+    if (!cur.isHost) return;
+
+    final String sid = (thread['id'] ?? '').toString();
+    final String kind = (thread['kind'] ?? 'track').toString();
+    final String title = (thread['title'] ?? 'Suggestion').toString();
+    final List<TrackModel> tracks = _tracksFromRaw(thread['tracks']);
+    if (tracks.isEmpty) {
+      await hostDismissSuggestion(sid);
+      return;
+    }
+
+    final remainingThreads = cur.suggestionThreads
+        .where((t) => (t['id'] ?? '').toString() != sid)
+        .toList();
+    emit(cur.copyWith(
+      suggestions: remainingThreads,
+      suggestionThreads: remainingThreads,
+    ));
+
+    _hostSeq++;
+    if (kind == 'album' || kind == 'playlist' || tracks.length > 1) {
+      _sharedPlaylistTitle = title;
+      await playerCubit.playTrack(
+        tracks.first,
+        queue: tracks,
+        source: title,
+      );
+    } else {
+      final single = tracks.first;
+      if (playerCubit.state.queue.isEmpty) {
+        await playerCubit.playTrack(
+          single,
+          queue: [single],
+          source: _sharedPlaylistTitle,
+        );
+      } else {
+        playerCubit.playTrackNext(single);
+        final nextIdx =
+            playerCubit.state.queue.indexWhere((t) => t.id == single.id);
+        if (nextIdx >= 0) {
+          await playerCubit.skipToQueueItem(nextIdx);
+        }
+      }
+    }
+
+    await _performHttpSync(
+      clearSuggestionId: sid.isNotEmpty ? sid : null,
+      forceHostState: true,
+    );
+  }
+
+  /// Ajoute les titres d'un thread de suggestion à la suite du morceau en cours dans le salon.
+  Future<void> hostQueueSuggestionNext(Map<String, dynamic> thread) async {
+    if (state is! ConnectActive) return;
+    final cur = state as ConnectActive;
+    if (!cur.isHost) return;
+
+    final String sid = (thread['id'] ?? '').toString();
+    final List<TrackModel> tracks = _tracksFromRaw(thread['tracks']);
+    if (tracks.isEmpty) {
+      await hostDismissSuggestion(sid);
+      return;
+    }
+
+    final remainingThreads = cur.suggestionThreads
+        .where((t) => (t['id'] ?? '').toString() != sid)
+        .toList();
+
+    for (final track in tracks.reversed) {
+      playerCubit.playTrackNext(track);
+    }
+    _hostSeq++;
+
+    emit(cur.copyWith(
+      suggestions: remainingThreads,
+      suggestionThreads: remainingThreads,
+      sharedQueue: _extractHostWindowQueue(playerCubit.state),
+    ));
+
+    await _performHttpSync(
+      clearSuggestionId: sid.isNotEmpty ? sid : null,
+      forceHostState: true,
+    );
+  }
+
+  /// Ignore/ferme un thread de suggestion côté hôte.
+  Future<void> hostDismissSuggestion(String suggestionId) async {
+    if (state is! ConnectActive || suggestionId.trim().isEmpty) return;
+    final cur = state as ConnectActive;
+    final remaining = cur.suggestionThreads
+        .where((t) => (t['id'] ?? '').toString() != suggestionId)
+        .toList();
+    emit(cur.copyWith(
+      suggestions: remaining,
+      suggestionThreads: remaining,
+    ));
+    await _performHttpSync(clearSuggestionId: suggestionId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // SUGGESTIONS & RÉACTIONS DES PARTICIPANTS (AVEC THREADS DE PRIORITÉ)
+  // ---------------------------------------------------------------------------
 
   Future<void> sendReaction(String emoji) async {
     if (state is! ConnectActive) return;
     await _performHttpSync(reaction: emoji);
   }
 
+  Future<void> suggestTrack(TrackModel track) async {
+    if (state is! ConnectActive) return;
+    await _performHttpSync(
+      suggestionPayload: <String, dynamic>{
+        'kind': 'track',
+        'title': track.title,
+        'subtitle': track.artistName,
+        'cover_url': track.coverUrl,
+        'tracks': [_shareableTrack(track)],
+      },
+    );
+  }
+
+  Future<void> suggestAlbum({
+    required String title,
+    required String artistName,
+    required String coverUrl,
+    required List<TrackModel> tracks,
+  }) async {
+    if (state is! ConnectActive || tracks.isEmpty) return;
+    await _performHttpSync(
+      suggestionPayload: <String, dynamic>{
+        'kind': 'album',
+        'title': title,
+        'subtitle': '$artistName • ${tracks.length} titres',
+        'cover_url': coverUrl.isNotEmpty ? coverUrl : tracks.first.coverUrl,
+        'tracks': tracks.take(30).map(_shareableTrack).toList(),
+      },
+    );
+  }
+
+  Future<void> suggestPlaylist(PlaylistModel playlist) async {
+    if (state is! ConnectActive || playlist.tracks.isEmpty) return;
+    await _performHttpSync(
+      suggestionPayload: <String, dynamic>{
+        'kind': 'playlist',
+        'title': playlist.name,
+        'subtitle': '${playlist.tracks.length} titres',
+        'cover_url': playlist.coverUrl.startsWith('http')
+            ? playlist.coverUrl
+            : playlist.tracks.first.coverUrl,
+        'tracks': playlist.tracks.take(30).map(_shareableTrack).toList(),
+      },
+    );
+  }
+
   Future<void> suggestCurrentTrackToHost() async {
     if (state is! ConnectActive) return;
     final currentTrack = playerCubit.state.currentTrack;
     if (currentTrack == null) return;
-    await _performHttpSync(suggestedTrack: _shareableTrack(currentTrack));
+    await suggestTrack(currentTrack);
   }
+
+  Future<void> upvoteSuggestion(String suggestionId) async {
+    if (state is! ConnectActive || suggestionId.trim().isEmpty) return;
+    await _performHttpSync(upvoteSuggestionId: suggestionId.trim());
+  }
+
+  // ---------------------------------------------------------------------------
+  // APPLICATION IDEMPOTENTE CÔTÉ INVITÉ (ZÉRO REJEU D'ACTIONS PRÉCÉDENTES)
+  // ---------------------------------------------------------------------------
 
   Future<void> _applyHttpPlaybackState(
     Map<String, dynamic> playbackState, {
     double? serverNow,
   }) async {
+    final int incomingSeq = playbackState['seq'] is num
+        ? (playbackState['seq'] as num).toInt()
+        : 0;
+    if (incomingSeq > 0 && incomingSeq < _lastAppliedRemoteSeq) {
+      // Paquet réseau plus ancien que le dernier état déjà appliqué : ignoré !
+      return;
+    }
+    if (incomingSeq > 0) {
+      _lastAppliedRemoteSeq = incomingSeq;
+    }
+
     final rawTrack = playbackState['track'];
     if (rawTrack is! Map) return;
 
+    final trackMap = Map<String, dynamic>.from(rawTrack);
+    final String? ytVid = trackMap['youtube_video_id']?.toString().trim();
+
     TrackModel? track;
     try {
-      track = TrackModel.fromJson(Map<String, dynamic>.from(rawTrack));
+      track = TrackModel.fromJson(trackMap);
     } catch (_) {}
     if (track == null) return;
 
     final bool hostIsPlaying = playbackState['is_playing'] == true;
+    final bool hostIsBuffering = playbackState['is_buffering'] == true;
     double hostPos = playbackState['position'] is num
         ? (playbackState['position'] as num).toDouble()
         : 0.0;
@@ -434,37 +796,37 @@ class ConnectCubit extends Cubit<ConnectState> {
         ? (playbackState['server_timestamp'] as num).toDouble()
         : null;
 
-    if (hostIsPlaying && serverNow != null && serverTs != null) {
-      final double elapsed = (serverNow - serverTs).clamp(0.0, 12.0);
+    // Ne compenser le temps écoulé que lorsque le flux de l'hôte joue réellement (hors buffering)
+    if (hostIsPlaying &&
+        !hostIsBuffering &&
+        serverNow != null &&
+        serverTs != null) {
+      final double elapsed = (serverNow - serverTs).clamp(0.0, 6.0);
       hostPos += elapsed;
     }
 
-    final bool isDifferentTrack =
-        playerCubit.state.currentTrack?.id != track.id;
-    if (isDifferentTrack) {
-      final queue = List<TrackModel>.from(playerCubit.state.queue);
-      final existingIndex = queue.indexWhere((item) => item.id == track!.id);
-      if (existingIndex < 0) {
-        queue.add(track);
-      } else {
-        queue[existingIndex] = track;
-      }
-      await playerCubit.playTrack(track, queue: queue, source: 'Connect');
-    }
+    final List<TrackModel> remoteQueue =
+        _tracksFromRaw(playbackState['shared_queue']);
+    final String sharedTitle =
+        (playbackState['shared_playlist_title'] ?? 'Sonoritiz Connect')
+            .toString();
 
-    if (playerCubit.state.hasTrack && hostPos >= 0) {
-      final target = Duration(milliseconds: (hostPos * 1000).round());
-      final diffMs = (playerCubit.state.position - target).inMilliseconds.abs();
-      if (diffMs > 3200) {
-        await playerCubit.seek(target);
-      }
-    }
+    final Duration targetDuration =
+        Duration(milliseconds: (hostPos * 1000).round().clamp(0, 86400000));
 
-    if (hostIsPlaying && !playerCubit.state.isPlaying) {
-      await playerCubit.play();
-    } else if (!hostIsPlaying && playerCubit.state.isPlaying) {
-      await playerCubit.pause();
-    }
+    // Tant que l'hôte est en train de charger le flux (is_buffering), l'invité pré-charge
+    // immédiatement au même point sans démarrer le son en avance.
+    final bool effectiveShouldPlay = hostIsPlaying && !hostIsBuffering;
+
+    await playerCubit.syncConnectTargetState(
+      track: track,
+      queue: remoteQueue.isNotEmpty ? remoteQueue : [track],
+      targetPosition: targetDuration,
+      shouldPlay: effectiveShouldPlay,
+      source: sharedTitle,
+      preResolvedYoutubeId:
+          (ytVid != null && ytVid.isNotEmpty) ? ytVid : null,
+    );
   }
 
   void _terminateLocalSession(String message) {
@@ -472,6 +834,8 @@ class ConnectCubit extends Cubit<ConnectState> {
     _wsSubscription = null;
     _httpSyncTimer?.cancel();
     _httpSyncTimer = null;
+    _hostPublishDebounce?.cancel();
+    _hostPublishDebounce = null;
     webSocketService.disconnect();
     _stopWatchingPlayer();
     emit(ConnectError(message));
@@ -490,12 +854,12 @@ class ConnectCubit extends Cubit<ConnectState> {
     _playerSubscription?.cancel();
     _syncTimer?.cancel();
     _lastPlayerState = playerCubit.state;
-    _publishPlayerState(playerCubit.state);
+    _publishPlayerStateImmediate(playerCubit.state);
     _playerSubscription = playerCubit.stream.listen(_onHostPlayerChanged);
     _syncTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       final current = state;
       if (current is ConnectActive && current.isHost) {
-        _publishPlayerState(playerCubit.state);
+        unawaited(_performHttpSync(forceHostState: true));
       }
     });
   }
@@ -507,21 +871,14 @@ class ConnectCubit extends Cubit<ConnectState> {
     _syncTimer = null;
     _httpSyncTimer?.cancel();
     _httpSyncTimer = null;
+    _hostPublishDebounce?.cancel();
+    _hostPublishDebounce = null;
     _lastPlayerState = null;
   }
 
-  Map<String, dynamic> _shareableTrack(TrackModel track) => {
-        'id': track.id,
-        'title': track.title,
-        'artist_name': track.artistName,
-        'album_name': track.albumName,
-        'cover_url': track.coverUrl,
-        'duration_seconds': track.durationSeconds,
-        'genre': track.genre,
-        'license_ccurl': track.licenseCcUrl,
-      };
-
-  void _publishPlayerState(PlayerState playerState) {
+  void _publishPlayerStateImmediate(PlayerState playerState) {
+    _hostPublishDebounce?.cancel();
+    _hostSeq++;
     final track = playerState.currentTrack;
     webSocketService.sendSyncState(
       positionSeconds: playerState.position.inMilliseconds / 1000,
@@ -532,105 +889,59 @@ class ConnectCubit extends Cubit<ConnectState> {
     unawaited(_performHttpSync(forceHostState: true));
   }
 
+  /// Coalesce les clics rapides Play -> Pause -> Play en un seul état final séquencé (160 ms).
+  void _scheduleDebouncedHostPublish() {
+    _hostPublishDebounce?.cancel();
+    _hostPublishDebounce = Timer(const Duration(milliseconds: 160), () {
+      if (isClosed || state is! ConnectActive) return;
+      final cur = state as ConnectActive;
+      if (!cur.isHost) return;
+      _publishPlayerStateImmediate(playerCubit.state);
+    });
+  }
+
   void _onHostPlayerChanged(PlayerState next) {
     if (state is! ConnectActive || !(state as ConnectActive).isHost) return;
     final previous = _lastPlayerState;
     _lastPlayerState = next;
     if (previous == null) {
-      _publishPlayerState(next);
+      _publishPlayerStateImmediate(next);
       return;
     }
 
     final nextTrack = next.currentTrack;
     final previousTrackId = previous.currentTrack?.id;
+
+    // 1. Changement de morceau : publier immédiatement pour lancer le pré-chargement chez les invités
     if (nextTrack?.id != previousTrackId) {
       if (nextTrack != null) {
-        webSocketService.sendTrackChanged(
-          nextTrack.id,
-          track: _shareableTrack(nextTrack),
-          positionSeconds: next.position.inMilliseconds / 1000,
-          isPlaying: next.isPlaying,
-        );
-        unawaited(_performHttpSync(forceHostState: true));
+        _publishPlayerStateImmediate(next);
       }
       return;
     }
 
+    // 2. Fin du buffering sur l'hôte : l'ID vidéo YouTube est maintenant résolu et le son démarre réellement !
+    if (previous.isBuffering != next.isBuffering && !next.isBuffering) {
+      _publishPlayerStateImmediate(next);
+      return;
+    }
+
+    // 3. Mise à jour de la file d'attente de l'hôte
+    if (next.queue.length != previous.queue.length) {
+      _scheduleDebouncedHostPublish();
+      return;
+    }
+
+    // 4. Play / Pause (avec anti-rebond 160ms pour éviter tout rejeu d'actions successives)
     if (next.isPlaying != previous.isPlaying) {
-      if (next.isPlaying) {
-        webSocketService.sendPlay(next.position.inMilliseconds / 1000);
-      } else {
-        webSocketService.sendPause(next.position.inMilliseconds / 1000);
-      }
-      unawaited(_performHttpSync(forceHostState: true));
+      _scheduleDebouncedHostPublish();
       return;
     }
 
+    // 5. Saut de position (Seek manuel > 2.5s)
     if (nextTrack != null &&
-        (next.position - previous.position).inMilliseconds.abs() > 3000) {
-      webSocketService.sendSeek(next.position.inMilliseconds / 1000);
-      unawaited(_performHttpSync(forceHostState: true));
-    }
-  }
-
-  Future<void> _applyRemotePlaybackEvent(Map<String, dynamic> event) async {
-    final type = event['event'];
-    final playerState = playerCubit.state;
-    final trackId = event['track_id']?.toString();
-    TrackModel? track;
-    final rawTrack = event['track'];
-    if (rawTrack is Map) {
-      try {
-        track = TrackModel.fromJson(Map<String, dynamic>.from(rawTrack));
-      } catch (_) {}
-    }
-
-    if (track == null && trackId != null) {
-      for (final queuedTrack in playerState.queue) {
-        if (queuedTrack.id == trackId) {
-          track = queuedTrack;
-          break;
-        }
-      }
-    }
-
-    if ((type == 'track_changed' || type == 'sync_state') && track != null) {
-      if (playerCubit.state.currentTrack?.id != track.id) {
-        final queue = List<TrackModel>.from(playerCubit.state.queue);
-        final existingIndex = queue.indexWhere((item) => item.id == track!.id);
-        if (existingIndex < 0) {
-          queue.add(track);
-        } else {
-          queue[existingIndex] = track;
-        }
-        await playerCubit.playTrack(track, queue: queue, source: 'Connect');
-      }
-    }
-
-    final positionValue = event['position'];
-    final positionSeconds =
-        positionValue is num ? positionValue.toDouble() : 0.0;
-    if ((type == 'play' ||
-            type == 'pause' ||
-            type == 'seek' ||
-            type == 'sync_state' ||
-            (type == 'track_changed' && event.containsKey('position'))) &&
-        playerCubit.state.hasTrack &&
-        positionSeconds >= 0) {
-      final target = Duration(milliseconds: (positionSeconds * 1000).round());
-      if ((playerCubit.state.position - target).inMilliseconds.abs() > 2000) {
-        await playerCubit.seek(target);
-      }
-    }
-
-    if (type == 'play' ||
-        ((type == 'sync_state' || type == 'track_changed') &&
-            event['is_playing'] == true)) {
-      await playerCubit.play();
-    } else if (type == 'pause' ||
-        ((type == 'sync_state' || type == 'track_changed') &&
-            event['is_playing'] == false)) {
-      await playerCubit.pause();
+        (next.position - previous.position).inMilliseconds.abs() > 2500) {
+      _scheduleDebouncedHostPublish();
     }
   }
 

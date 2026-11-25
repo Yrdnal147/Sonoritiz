@@ -12,19 +12,19 @@ import '../../../core/widgets/sonoritiz_dynamic_background.dart';
 import '../../../core/widgets/sonoritiz_page_title.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/storage/storage_service.dart';
+import '../../player/data/models/track_model.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
 import '../../player/presentation/cubit/player_state.dart';
 import '../data/repositories/connect_repository.dart';
 import 'cubit/connect_cubit.dart';
 import 'cubit/connect_state.dart';
+import 'widgets/connect_music_picker_sheet.dart';
 
 class ConnectScreen extends StatelessWidget {
   const ConnectScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Utilise le ConnectCubit global (persistant entre les onglets) s'il est présent,
-    // ou en crée un localement pour les tests isolés.
     ConnectCubit? existingCubit;
     try {
       existingCubit = BlocProvider.of<ConnectCubit>(context, listen: false);
@@ -75,6 +75,13 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
         const SnackBar(content: Text('Saisissez les 6 caractères du code.')),
       );
     }
+  }
+
+  String _formatDuration(int seconds) {
+    if (seconds <= 0) return '';
+    final m = seconds ~/ 60;
+    final s = (seconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   @override
@@ -137,20 +144,26 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
     return BlocBuilder<PlayerCubit, PlayerState>(
       buildWhen: (prev, cur) =>
           prev.currentTrack != cur.currentTrack ||
-          prev.isPlaying != cur.isPlaying,
+          prev.isPlaying != cur.isPlaying ||
+          prev.isBuffering != cur.isBuffering,
       builder: (context, playerState) {
         final track = playerState.currentTrack;
         if (track == null) return const SizedBox.shrink();
 
+        final bool isBuffering = playerState.isBuffering;
+        final String statusText = isBuffering
+            ? "Synchronisation…"
+            : (playerState.isPlaying ? "En direct" : "En pause");
+
         return Padding(
-          padding: const EdgeInsets.only(bottom: 24),
+          padding: const EdgeInsets.only(bottom: 22),
           child: Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: const Color(0xFF16161A),
               borderRadius: BorderRadius.circular(18),
               border: Border.all(
-                color: AppColors.primary.withValues(alpha: 0.26),
+                color: AppColors.primary.withValues(alpha: 0.28),
                 width: 1.0,
               ),
               boxShadow: [
@@ -165,7 +178,7 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  "EN ÉCOUTE ACTUELLEMENT",
+                  "EN ÉCOUTE DANS LE SALON",
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.50),
                     fontSize: 10.5,
@@ -229,16 +242,26 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            playerState.isPlaying
-                                ? Icons.graphic_eq_rounded
-                                : Icons.pause_rounded,
-                            size: 14,
-                            color: AppColors.primary,
-                          ),
+                          if (isBuffering)
+                            const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.8,
+                                color: AppColors.primary,
+                              ),
+                            )
+                          else
+                            Icon(
+                              playerState.isPlaying
+                                  ? Icons.graphic_eq_rounded
+                                  : Icons.pause_rounded,
+                              size: 14,
+                              color: AppColors.primary,
+                            ),
                           const SizedBox(width: 5),
                           Text(
-                            playerState.isPlaying ? "En direct" : "En pause",
+                            statusText,
                             style: const TextStyle(
                               color: AppColors.primary,
                               fontSize: 11.5,
@@ -277,7 +300,7 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
           ),
           const SizedBox(height: 8),
           Text(
-            "Lancez un salon d'écoute synchronisé ou rejoignez celui d'un ami avec son code à 6 caractères.",
+            "Lancez un salon d'écoute synchronisé jusqu'à 20 participants ou rejoignez celui d'un ami avec son code à 6 caractères.",
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.58),
               fontSize: 14,
@@ -286,10 +309,8 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
           ),
           const SizedBox(height: 28),
 
-          // Aperçu du titre en cours s'il y en a un
           _buildNowPlayingPreview(),
 
-          // 1. Démarrer une session
           GestureDetector(
             onTap: () => context.read<ConnectCubit>().createSession(),
             child: Container(
@@ -322,7 +343,7 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
                         ),
                         SizedBox(height: 2),
                         Text(
-                          "Génère un code instantané à partager",
+                          "Partagez vos playlists, albums et sons en direct",
                           style: TextStyle(
                             color: Colors.black54,
                             fontSize: 12.5,
@@ -344,7 +365,6 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
 
           const SizedBox(height: 32),
 
-          // 2. Rejoindre directement avec un code (sans popup)
           Text(
             "REJOINDRE UNE SESSION",
             style: TextStyle(
@@ -428,33 +448,29 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
     );
   }
 
-  /// Construit la photo de profil d'un participant (Data URI base64, fichier local ou URL réseau).
-  Widget _buildParticipantPhoto(
-    Map<String, dynamic> participant,
-    String initial,
-  ) {
-    final String rawAvatar = (participant['avatar'] ?? '').toString().trim();
-
+  Widget _buildAvatarWidget(
+    String rawAvatar,
+    String initial, {
+    double size = 54,
+  }) {
     Widget fallback() {
       return Container(
-        width: 54,
-        height: 54,
+        width: size,
+        height: size,
         color: const Color(0xFF1E1E24),
         alignment: Alignment.center,
         child: Text(
           initial,
-          style: const TextStyle(
+          style: TextStyle(
             color: Colors.white,
-            fontSize: 19,
+            fontSize: size * 0.36,
             fontWeight: FontWeight.w800,
           ),
         ),
       );
     }
 
-    if (rawAvatar.isEmpty) {
-      return fallback();
-    }
+    if (rawAvatar.isEmpty) return fallback();
 
     if (rawAvatar.startsWith('data:image/')) {
       try {
@@ -464,8 +480,8 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
           final Uint8List bytes = base64Decode(b64);
           return Image.memory(
             bytes,
-            width: 54,
-            height: 54,
+            width: size,
+            height: size,
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => fallback(),
           );
@@ -478,9 +494,9 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
     if (rawAvatar.startsWith('http://') || rawAvatar.startsWith('https://')) {
       return SonoritizArtwork(
         imageUrl: rawAvatar,
-        width: 54,
-        height: 54,
-        borderRadius: 27,
+        width: size,
+        height: size,
+        borderRadius: size / 2,
         fit: BoxFit.cover,
       );
     }
@@ -492,8 +508,8 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
         if (file.existsSync()) {
           return Image.file(
             file,
-            width: 54,
-            height: 54,
+            width: size,
+            height: size,
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => fallback(),
           );
@@ -509,18 +525,175 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 125),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _ConnectionStatus(
-            status: state.connectionStatus,
-            onRetry: () => context.read<ConnectCubit>().reconnect(),
+          Row(
+            children: [
+              Expanded(
+                child: _ConnectionStatus(
+                  status: state.connectionStatus,
+                  onRetry: () => context.read<ConnectCubit>().reconnect(),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.10),
+                  ),
+                ),
+                child: Text(
+                  state.isHost ? "Hôte du salon" : "Invité",
+                  style: TextStyle(
+                    color: state.isHost
+                        ? AppColors.primary
+                        : Colors.white.withValues(alpha: 0.78),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
 
           // Titre synchronisé en direct
           _buildNowPlayingPreview(),
+
+          // Bouton principal ADN Sonoritiz : lancer (Hôte) ou suggérer (Invité) une playlist / un album / un son
+          _buildMusicPickerBanner(context, state),
+          const SizedBox(height: 24),
+
+          // Fil des threads de suggestions (ordonnés par priorité : votes > round-robin > arrivée)
+          if (state.suggestionThreads.isNotEmpty) ...[
+            _buildSuggestionThreadsSection(context, state),
+            const SizedBox(height: 26),
+          ],
+
+          // Playlist partagée du salon visible par l'hôte et tous les participants
+          if (state.sharedQueue.isNotEmpty) ...[
+            _buildSharedSalonPlaylistSection(context, state),
+            const SizedBox(height: 28),
+          ],
+
+          // Participants avec leur vraie photo de profil et capacité simultanée
+          Text(
+            "PARTICIPANTS (${state.participants.length}/${state.maxParticipants})",
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          SizedBox(
+            height: 92,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: state.participants.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 16),
+              itemBuilder: (context, index) {
+                final p = state.participants[index];
+                final username = (p['username'] ?? 'Auditeur').toString();
+                final rawAvatar = (p['avatar'] ?? '').toString().trim();
+                final isParticipantHost = p['is_host'] == true || index == 0;
+                final initial = username.trim().isEmpty
+                    ? 'A'
+                    : username.trim()[0].toUpperCase();
+
+                return SizedBox(
+                  width: 68,
+                  child: Column(
+                    children: [
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            width: 56,
+                            height: 56,
+                            padding: const EdgeInsets.all(1.5),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isParticipantHost
+                                    ? AppColors.primary
+                                    : Colors.white.withValues(alpha: 0.24),
+                                width: isParticipantHost ? 2.0 : 1.2,
+                              ),
+                            ),
+                            child: ClipOval(
+                              child: _buildAvatarWidget(rawAvatar, initial),
+                            ),
+                          ),
+                          if (isParticipantHost)
+                            Positioned(
+                              left: -2,
+                              top: -2,
+                              child: Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.black,
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.stars_rounded,
+                                  color: Colors.black,
+                                  size: 11,
+                                ),
+                              ),
+                            ),
+                          Positioned(
+                            right: 0,
+                            bottom: 0,
+                            child: Container(
+                              width: 14,
+                              height: 14,
+                              decoration: BoxDecoration(
+                                color: AppColors.success,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.black,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        username,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.88),
+                          fontSize: 12,
+                          fontWeight: isParticipantHost
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+
+          const SizedBox(height: 24),
 
           // Code d'invitation + Copier + Inviter
           Text(
@@ -534,7 +707,7 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
           ),
           const SizedBox(height: 10),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(16),
@@ -549,9 +722,9 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
                     state.inviteCode,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 28,
+                      fontSize: 26,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: 4.5,
+                      letterSpacing: 4.2,
                     ),
                   ),
                 ),
@@ -618,119 +791,6 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
                   ),
                 ),
               ],
-            ),
-          ),
-
-          const SizedBox(height: 28),
-
-          // Participants avec leur vraie photo de profil
-          Text(
-            "PARTICIPANTS (${state.participants.length})",
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.45),
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.1,
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          SizedBox(
-            height: 92,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              itemCount: state.participants.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 16),
-              itemBuilder: (context, index) {
-                final p = state.participants[index];
-                final username = (p['username'] ?? 'Auditeur').toString();
-                final isParticipantHost = p['is_host'] == true || index == 0;
-                final initial = username.trim().isEmpty
-                    ? 'A'
-                    : username.trim()[0].toUpperCase();
-
-                return SizedBox(
-                  width: 68,
-                  child: Column(
-                    children: [
-                      Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Container(
-                            width: 56,
-                            height: 56,
-                            padding: const EdgeInsets.all(1.5),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: isParticipantHost
-                                    ? AppColors.primary
-                                    : Colors.white.withValues(alpha: 0.24),
-                                width: isParticipantHost ? 2.0 : 1.2,
-                              ),
-                            ),
-                            child: ClipOval(
-                              child: _buildParticipantPhoto(p, initial),
-                            ),
-                          ),
-                          if (isParticipantHost)
-                            Positioned(
-                              left: -2,
-                              top: -2,
-                              child: Container(
-                                padding: const EdgeInsets.all(3),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: Colors.black,
-                                    width: 1.5,
-                                  ),
-                                ),
-                                child: const Icon(
-                                  Icons.stars_rounded,
-                                  color: Colors.black,
-                                  size: 11,
-                                ),
-                              ),
-                            ),
-                          Positioned(
-                            right: 0,
-                            bottom: 0,
-                            child: Container(
-                              width: 14,
-                              height: 14,
-                              decoration: BoxDecoration(
-                                color: AppColors.success,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.black,
-                                  width: 2,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 7),
-                      Text(
-                        username,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.88),
-                          fontSize: 12,
-                          fontWeight: isParticipantHost
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
             ),
           ),
 
@@ -806,53 +866,7 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
             ),
           ],
 
-          if (!state.isHost) ...[
-            const SizedBox(height: 22),
-            GestureDetector(
-              onTap: () {
-                context.read<ConnectCubit>().suggestCurrentTrackToHost();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                        "Votre son a été envoyé à la file d'attente de l'hôte !"),
-                  ),
-                );
-              },
-              child: Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.07),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.16),
-                  ),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.playlist_add_check_circle_rounded,
-                      color: AppColors.primary,
-                      size: 20,
-                    ),
-                    SizedBox(width: 8),
-                    Text(
-                      "Suggérer mon son à la file du salon",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 32),
+          const SizedBox(height: 30),
           GestureDetector(
             onTap: () => context.read<ConnectCubit>().leaveSession(),
             child: Container(
@@ -878,6 +892,643 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMusicPickerBanner(BuildContext context, ConnectActive state) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        ConnectMusicPickerSheet.show(context, isHost: state.isHost);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppColors.primary.withValues(alpha: 0.20),
+              const Color(0xFF16161C),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: AppColors.primary.withValues(alpha: 0.42),
+            width: 1.0,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Icon(
+                state.isHost
+                    ? Icons.library_music_rounded
+                    : Icons.auto_awesome_rounded,
+                color: Colors.black,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    state.isHost
+                        ? "Choisir une playlist, un album ou un son"
+                        : "Suggérer un son, un album ou une playlist",
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    state.isHost
+                        ? "Créez une playlist ou recherchez dans tout le catalogue"
+                        : "Envoyez votre suggestion sur l'écran de l'hôte",
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.62),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.primary,
+              size: 22,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSuggestionThreadsSection(
+    BuildContext context,
+    ConnectActive state,
+  ) {
+    final threads = state.suggestionThreads;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(
+              Icons.forum_rounded,
+              size: 14,
+              color: AppColors.primary,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                "SUGGESTIONS PAR ORDRE DE PRIORITÉ (${threads.length})",
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.72),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.0,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 11),
+        ...List.generate(threads.length, (idx) {
+          final thread = threads[idx];
+          final String sid = (thread['id'] ?? '').toString();
+          final String kind = (thread['kind'] ?? 'track').toString();
+          final String username =
+              (thread['username'] ?? 'Un participant').toString();
+          final String userAvatar =
+              (thread['user_avatar'] ?? '').toString().trim();
+          final String defaultLabel = kind == 'album'
+              ? "$username a suggéré cet album"
+              : (kind == 'playlist'
+                  ? "$username a suggéré cette playlist"
+                  : "$username a suggéré ce son");
+          final String label =
+              (thread['label'] ?? defaultLabel).toString().trim();
+          final String title = (thread['title'] ?? 'Suggestion').toString();
+          final String subtitle = (thread['subtitle'] ?? '').toString();
+          final String coverUrl = (thread['cover_url'] ?? '').toString();
+          final int votes = thread['votes_count'] is int
+              ? thread['votes_count'] as int
+              : int.tryParse((thread['votes_count'] ?? '1').toString()) ?? 1;
+          final int rank = thread['priority_rank'] is int
+              ? thread['priority_rank'] as int
+              : (idx + 1);
+          final bool isTopPriority = rank == 1;
+          final String kindBadge = kind == 'album'
+              ? 'ALBUM'
+              : (kind == 'playlist' ? 'PLAYLIST' : 'SON');
+          final String initial = username.trim().isEmpty
+              ? 'P'
+              : username.trim()[0].toUpperCase();
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Container(
+              padding: const EdgeInsets.all(13),
+              decoration: BoxDecoration(
+                color: const Color(0xFF16161C),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: isTopPriority
+                      ? AppColors.primary.withValues(alpha: 0.55)
+                      : Colors.white.withValues(alpha: 0.10),
+                  width: isTopPriority ? 1.2 : 1.0,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // En-tête du thread : rang de priorité + photo + "[Nom] a suggéré ce son / cet album / cette playlist"
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isTopPriority
+                              ? AppColors.primary
+                              : Colors.white.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          "#$rank",
+                          style: TextStyle(
+                            color: isTopPriority ? Colors.black : Colors.white,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ClipOval(
+                        child: _buildAvatarWidget(
+                          userAvatar,
+                          initial,
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      if (votes > 1 || state.participants.length > 2)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.07),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            "🔥 $votes",
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 11),
+
+                  // Contenu suggéré (Pochette + Titre + Badge type)
+                  Row(
+                    children: [
+                      SonoritizArtwork(
+                        imageUrl: coverUrl,
+                        width: 48,
+                        height: 48,
+                        borderRadius: 10,
+                        cacheMaxDimension: 140,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  margin: const EdgeInsets.only(right: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.09),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    kindBadge,
+                                    style: TextStyle(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.78),
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.6,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14.5,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (subtitle.isNotEmpty) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                subtitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.58),
+                                  fontSize: 12.2,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Actions Hôte vs Invité (soutien de priorité multi-utilisateurs)
+                  if (state.isHost)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              HapticFeedback.mediumImpact();
+                              context
+                                  .read<ConnectCubit>()
+                                  .hostAcceptSuggestionNow(thread);
+                            },
+                            child: Container(
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                borderRadius: BorderRadius.circular(11),
+                              ),
+                              alignment: Alignment.center,
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.play_arrow_rounded,
+                                    color: Colors.black,
+                                    size: 18,
+                                  ),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    "Lancer",
+                                    style: TextStyle(
+                                      color: Colors.black,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              context
+                                  .read<ConnectCubit>()
+                                  .hostQueueSuggestionNext(thread);
+                            },
+                            child: Container(
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.09),
+                                borderRadius: BorderRadius.circular(11),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.14),
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.playlist_add_rounded,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                                  SizedBox(width: 5),
+                                  Text(
+                                    "Lire ensuite",
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => context
+                              .read<ConnectCubit>()
+                              .hostDismissSuggestion(sid),
+                          child: Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(11),
+                            ),
+                            child: Icon(
+                              Icons.close_rounded,
+                              color: Colors.white.withValues(alpha: 0.65),
+                              size: 17,
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          context.read<ConnectCubit>().upvoteSuggestion(sid);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: AppColors.primary.withValues(alpha: 0.35),
+                            ),
+                          ),
+                          child: const Text(
+                            "🔥 Soutenir (+1 priorité)",
+                            style: TextStyle(
+                              color: AppColors.primary,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildSharedSalonPlaylistSection(
+    BuildContext context,
+    ConnectActive state,
+  ) {
+    return BlocBuilder<PlayerCubit, PlayerState>(
+      buildWhen: (prev, cur) =>
+          prev.currentTrack?.id != cur.currentTrack?.id ||
+          prev.isPlaying != cur.isPlaying,
+      builder: (context, playerState) {
+        final activeTrackId = playerState.currentTrack?.id;
+        final tracks = state.sharedQueue;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.queue_music_rounded,
+                  size: 16,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    "PLAYLIST DU SALON • ${state.sharedPlaylistTitle.toUpperCase()}",
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.72),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                ),
+                Text(
+                  "${tracks.length} titres",
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.45),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            if (!state.isHost) ...[
+              const SizedBox(height: 4),
+              Text(
+                "Touchez un titre pour le suggérer directement à l'hôte.",
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.45),
+                  fontSize: 11.5,
+                ),
+              ),
+            ],
+            const SizedBox(height: 11),
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF15151A),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+              ),
+              child: ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                itemCount: tracks.length,
+                separatorBuilder: (_, __) => Divider(
+                  height: 1,
+                  indent: 68,
+                  endIndent: 14,
+                  color: Colors.white.withValues(alpha: 0.05),
+                ),
+                itemBuilder: (context, index) {
+                  final TrackModel t = tracks[index];
+                  final bool isCurrent = t.id == activeTrackId;
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      if (state.isHost) {
+                        context.read<ConnectCubit>().hostJumpToSharedTrack(t);
+                      } else if (!isCurrent) {
+                        context.read<ConnectCubit>().suggestTrack(t);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              "« ${t.title} » a été suggéré à l'hôte !",
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 9,
+                      ),
+                      color: isCurrent
+                          ? AppColors.primary.withValues(alpha: 0.11)
+                          : Colors.transparent,
+                      child: Row(
+                        children: [
+                          SonoritizArtwork(
+                            imageUrl: t.coverUrl,
+                            width: 44,
+                            height: 44,
+                            borderRadius: 9,
+                            cacheMaxDimension: 130,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  t.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: isCurrent
+                                        ? AppColors.primary
+                                        : Colors.white,
+                                    fontSize: 13.8,
+                                    fontWeight: isCurrent
+                                        ? FontWeight.w800
+                                        : FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  t.artistName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.56),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (isCurrent)
+                            Icon(
+                              playerState.isPlaying
+                                  ? Icons.graphic_eq_rounded
+                                  : Icons.pause_circle_filled_rounded,
+                              color: AppColors.primary,
+                              size: 19,
+                            )
+                          else if (!state.isHost)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.07),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Text(
+                                "Suggérer",
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            )
+                          else
+                            Text(
+                              _formatDuration(t.durationSeconds),
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.42),
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -919,12 +1570,15 @@ class _ConnectionStatus extends StatelessWidget {
               color: color,
             ),
             const SizedBox(width: 7),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
             if (!connected && status != 'connecting') ...[

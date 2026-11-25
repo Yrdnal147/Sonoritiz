@@ -46,12 +46,11 @@ android {
             isMinifyEnabled = false
             isShrinkResources = false
         }
-
     }
 
     packaging {
         jniLibs {
-            keepDebugSymbols += "**/*.so"
+            useLegacyPackaging = true
         }
     }
 }

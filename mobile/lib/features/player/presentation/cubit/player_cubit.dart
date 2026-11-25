@@ -567,6 +567,117 @@ class PlayerCubit extends Cubit<PlayerState> {
     await _startTrack(track);
   }
 
+  String? getResolvedVideoId(String trackId) =>
+      _audioHandler.getResolvedVideoId(trackId);
+
+  void seedResolvedVideoId(String trackId, String videoId) =>
+      _audioHandler.seedResolvedVideoId(trackId, videoId);
+
+  bool? _pendingConnectAutoPlay;
+  Duration? _pendingConnectSeek;
+
+  /// Charge et synchronise un titre reçu d'un hôte Connect directement au statut final
+  /// (`autoPlay` + `initialPosition`) sans rejouer d'états intermédiaires.
+  Future<void> syncConnectTargetState({
+    required TrackModel track,
+    required List<TrackModel> queue,
+    required Duration targetPosition,
+    required bool shouldPlay,
+    String source = 'Sonoritiz Connect',
+    String? preResolvedYoutubeId,
+  }) async {
+    if (preResolvedYoutubeId != null && preResolvedYoutubeId.isNotEmpty) {
+      _audioHandler.seedResolvedVideoId(track.id, preResolvedYoutubeId);
+    }
+
+    final effectiveQueue = queue.isNotEmpty ? queue : [track];
+    final idx = effectiveQueue.indexWhere((t) => t.id == track.id);
+    final targetIndex = idx >= 0 ? idx : 0;
+
+    final bool sameTrack = state.currentTrack?.id == track.id;
+    if (!sameTrack) {
+      _consecutiveErrors = 0;
+      _isResolving = true;
+      _pendingConnectAutoPlay = shouldPlay;
+      _pendingConnectSeek = targetPosition;
+      emit(state.copyWith(
+        queue: effectiveQueue,
+        currentIndex: targetIndex,
+        duration: Duration(seconds: track.durationSeconds),
+        position: targetPosition,
+        playbackSource: source,
+        isBuffering: true,
+        isPlaying: shouldPlay,
+        clearError: true,
+      ));
+      await _audioHandler.playTrack(
+        track.toMediaItem(),
+        resumePosition: targetPosition > Duration.zero ? targetPosition : null,
+        autoPlay: shouldPlay,
+      );
+      if (isClosed || state.currentTrack?.id != track.id) return;
+      final bool finalShouldPlay = _pendingConnectAutoPlay ?? shouldPlay;
+      final Duration? finalSeek = _pendingConnectSeek;
+      _pendingConnectAutoPlay = null;
+      _pendingConnectSeek = null;
+      if (finalSeek != null &&
+          (state.position - finalSeek).inMilliseconds.abs() > 1400) {
+        await _audioHandler.seek(finalSeek);
+      }
+      if (finalShouldPlay && !_audioHandler.player.playing) {
+        await _audioHandler.play();
+        emit(state.copyWith(isPlaying: true));
+      } else if (!finalShouldPlay && _audioHandler.player.playing) {
+        await _audioHandler.pause();
+        emit(state.copyWith(isPlaying: false));
+      }
+      unawaited(_fetchHighResCover(track));
+      _fetchLyrics(track);
+      _schedulePrefetchOfNext(track);
+      return;
+    }
+
+    // Même titre : mettre à jour la file partagée si elle a changé sans interrompre le flux
+    final bool queueChanged = state.queue.length != effectiveQueue.length ||
+        (effectiveQueue.isNotEmpty &&
+            state.queue.isNotEmpty &&
+            state.queue.first.id != effectiveQueue.first.id);
+    if (queueChanged) {
+      emit(state.copyWith(
+        queue: effectiveQueue,
+        currentIndex: targetIndex,
+        playbackSource: source,
+      ));
+    }
+
+    // Si le flux est encore en cours de chargement initial, mémoriser uniquement le statut cible final
+    if (_isResolving) {
+      _pendingConnectAutoPlay = shouldPlay;
+      _pendingConnectSeek = targetPosition;
+      if (state.isPlaying != shouldPlay) {
+        emit(state.copyWith(isPlaying: shouldPlay, position: targetPosition));
+      }
+      return;
+    }
+
+    // Ne recaler la position que s'il y a un écart significatif (> 2.2s en lecture, > 0.8s en pause)
+    final int thresholdMs = shouldPlay ? 2200 : 800;
+    if ((state.position - targetPosition).inMilliseconds.abs() > thresholdMs) {
+      await _audioHandler.seek(targetPosition);
+      emit(state.copyWith(position: targetPosition));
+    }
+
+    // Placer directement au statut final (Play ou Pause), peu importe les actions précédentes
+    final bool currentlyPlaying = _audioHandler.player.playing;
+    if (shouldPlay && !currentlyPlaying) {
+      await _audioHandler.play();
+      emit(state.copyWith(isPlaying: true));
+    } else if (!shouldPlay && (currentlyPlaying || state.isPlaying)) {
+      await _audioHandler.pause();
+      emit(state.copyWith(isPlaying: false));
+    }
+  }
+
   /// Synchronise un podcast, livre audio ou vidéo long format avec le Mini-Lecteur
   /// et le Lecteur principal (`PlayerCubit` + `SonoritizAudioHandler`).
   /// Si `resumeAudioPlayback` est vrai, le flux continue immédiatement en arrière-plan

@@ -1348,6 +1348,43 @@ class CatalogRepository {
     return [];
   }
 
+  Future<List<Map<String, dynamic>>> searchAlbums(String query, {int limit = 24}) async {
+    final cleanQ = query.trim();
+    if (cleanQ.isEmpty) return [];
+    try {
+      final dioClient = _externalDio;
+      final response = await dioClient.get(
+        'https://api.deezer.com/search/album?q=${Uri.encodeComponent(cleanQ)}&limit=$limit',
+      );
+      if (response.statusCode == 200 &&
+          response.data is Map &&
+          response.data['data'] is List) {
+        final data = response.data['data'] as List;
+        return data
+            .whereType<Map>()
+            .map((a) {
+              final artist = a['artist'] is Map ? a['artist'] as Map : const {};
+              return <String, dynamic>{
+                'id': a['id'],
+                'title': (a['title'] ?? '').toString(),
+                'artist_name': (artist['name'] ?? 'Artiste').toString(),
+                'cover': (a['cover_xl'] ??
+                        a['cover_big'] ??
+                        a['cover_medium'] ??
+                        a['cover'] ??
+                        '')
+                    .toString(),
+                'nb_tracks': int.tryParse(a['nb_tracks']?.toString() ?? '0') ?? 0,
+                'record_type': (a['record_type'] ?? 'album').toString(),
+              };
+            })
+            .where((m) => (m['title'] as String).isNotEmpty && m['id'] != null)
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
   Future<List<TrackModel>> searchTracks({String query = '', String genre = '', int limit = 50, int offset = 0}) async {
     try {
       final dioClient = _externalDio;

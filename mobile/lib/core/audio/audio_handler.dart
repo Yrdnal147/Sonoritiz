@@ -221,6 +221,25 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Cache ID du morceau -> ID vidéo YouTube (11 caractères).
   final Map<String, String> _videoIdCache = {};
 
+  /// Retourne l'ID vidéo YouTube (11 caractères) déjà résolu pour un titre (utile pour Connect).
+  String? getResolvedVideoId(String trackId) {
+    final clean = trackId.trim();
+    if (clean.isEmpty) return null;
+    if (!clean.startsWith('deezer_') && _youtubeIdRegex.hasMatch(clean)) {
+      return clean;
+    }
+    return _videoIdCache[clean] ?? offlineRepository?.getYoutubeMapping(clean);
+  }
+
+  /// Injecte un ID vidéo YouTube déjà résolu par l'hôte Connect afin d'éviter toute recherche côté invité.
+  void seedResolvedVideoId(String trackId, String videoId) {
+    final cleanTrack = trackId.trim();
+    final cleanVid = videoId.trim();
+    if (cleanTrack.isEmpty || !_youtubeIdRegex.hasMatch(cleanVid)) return;
+    _videoIdCache[cleanTrack] = cleanVid;
+    offlineRepository?.saveYoutubeMapping(cleanTrack, cleanVid);
+  }
+
   /// Cache ID du son -> lien de stream résolu.
   final Map<String, _CachedStreamUrl> _streamUrlCache = {};
 
@@ -443,6 +462,7 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
     MediaItem item, {
     bool preferMuxed = true,
     Duration? resumePosition,
+    bool autoPlay = true,
   }) async {
     final requestId = ++_playRequestId;
     bool isStale() => requestId != _playRequestId;
@@ -478,7 +498,9 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
           );
           if (isStale()) return;
           _setResolving(false);
-          unawaited(_player.play());
+          if (autoPlay) {
+            unawaited(_player.play());
+          }
           return;
         }
       }
@@ -499,7 +521,9 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
         );
         if (isStale()) return;
         _setResolving(false);
-        unawaited(_player.play());
+        if (autoPlay) {
+          unawaited(_player.play());
+        }
         return;
       }
 
@@ -571,8 +595,10 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
       if (isStale()) return;
 
       _setResolving(false);
-      await _audioSession?.setActive(true);
-      unawaited(_player.play());
+      if (autoPlay) {
+        await _audioSession?.setActive(true);
+        unawaited(_player.play());
+      }
     } on PlayerInterruptedException {
       // Chargement interrompu par un changement de morceau : normal.
     } catch (e, stack) {
