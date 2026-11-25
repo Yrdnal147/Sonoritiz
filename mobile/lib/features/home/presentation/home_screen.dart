@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -6,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../../../core/storage/storage_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/services/palette_service.dart';
@@ -32,6 +34,7 @@ import 'cubit/home_cubit.dart';
 import 'cubit/home_state.dart';
 import 'widgets/home_skeleton.dart';
 import 'widgets/new_releases_carousel_widget.dart';
+import 'widgets/sonoritiz_home_lyrics_carousel.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -59,6 +62,11 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
   void initState() {
     super.initState();
     _lyricSeed = DateTime.now().millisecondsSinceEpoch;
+    final storage = StorageService();
+    StorageService.recentPodcastsNotifier.value =
+        storage.getRecentPodcastsRaw();
+    StorageService.connectRecommendationsNotifier.value =
+        storage.getConnectGuestRecommendationsRaw();
   }
 
   String _getRandomLyricSnippet(
@@ -135,6 +143,17 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
                               _buildRecentlyPlayedSection(context, state),
                               const SizedBox(height: AppDimensions.spacingXl),
                             ],
+
+                            // 2b. Podcasts écoutés récemment (Gros cadres en Glassmorphism + jauge de reprise)
+                            _buildRecentPodcastsGlassSection(context),
+
+                            // 2c. Recommandation Sonoritiz Connect (uniquement si les invités ont proposé des sons)
+                            _buildConnectRecommendationsSection(context),
+
+                            // 2d. Sonoritiz Lyrics (10 sons aimés/superlikés • extraits 30s synchronisés • rotation 5 jours)
+                            SonoritizHomeLyricsCarousel(
+                              fallbackFavorites: state.userFavorites,
+                            ),
 
                             // 3. Sons basés sur vos écoutes (5 playlists personnalisées 16:9, régénération 7 jours)
                             if (state.weeklyCuratedPlaylists.isNotEmpty) ...[
@@ -764,7 +783,10 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
 
   // --- 2. ÉCOUTÉ RÉCEMMENT ---
   Widget _buildRecentlyPlayedSection(BuildContext context, HomeLoaded state) {
-    final recentTracks = state.recentlyPlayed.take(15).toList();
+    final recentTracks = state.recentlyPlayed
+        .where((t) => !t.isPodcastOrBook)
+        .take(15)
+        .toList();
     if (recentTracks.isEmpty) return const SizedBox.shrink();
 
     return Column(
@@ -781,6 +803,355 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
           source: "Écouté récemment",
         ),
       ],
+    );
+  }
+
+  String _formatPodcastRemainingLabel(int resumeSec, int totalSec) {
+    if (resumeSec > 5 && totalSec > resumeSec) {
+      final remMin = math.max(1, (totalSec - resumeSec) ~/ 60);
+      if (remMin >= 60) {
+        final h = remMin ~/ 60;
+        final m = remMin % 60;
+        return "Reprendre • ${h}h ${m.toString().padLeft(2, '0')}m rest.";
+      }
+      return "Reprendre • $remMin min rest.";
+    }
+    if (resumeSec > 5) {
+      final playedMin = math.max(1, resumeSec ~/ 60);
+      return "Reprendre à $playedMin min";
+    }
+    if (totalSec > 0) {
+      final totalMin = math.max(1, totalSec ~/ 60);
+      if (totalMin >= 60) {
+        final h = totalMin ~/ 60;
+        final m = totalMin % 60;
+        return "${h}h ${m.toString().padLeft(2, '0')}m";
+      }
+      return "$totalMin min";
+    }
+    return "Podcast";
+  }
+
+  // --- 2b. PODCASTS ÉCOUTÉS RÉCEMMENT (GROS CADRES GLASSMORPHISM + JAUGE DE REPRISE) ---
+  Widget _buildRecentPodcastsGlassSection(BuildContext context) {
+    return ValueListenableBuilder<List<Map<String, dynamic>>>(
+      valueListenable: StorageService.recentPodcastsNotifier,
+      builder: (context, rawPodcasts, _) {
+        final podcasts = rawPodcasts
+            .map((m) => TrackModel.fromJson(m))
+            .where((t) => t.id.trim().isNotEmpty && t.title.trim().isNotEmpty)
+            .toList();
+        if (podcasts.isEmpty) return const SizedBox.shrink();
+
+        final storage = StorageService();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SonoritizSectionHeader(
+              title: "Podcasts écoutés récemment",
+              onSeeAll: () => context.push('/podcasts'),
+            ),
+            const SizedBox(height: AppDimensions.spacingSm),
+            SizedBox(
+              height: 288,
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppDimensions.spacingMd,
+                ),
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                itemCount: podcasts.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 14),
+                itemBuilder: (context, index) {
+                  final ep = podcasts[index];
+                  final int resumeSec = storage.getPodcastResumeSeconds(ep.id);
+                  final double progressRatio = (ep.durationSeconds > 0 &&
+                          resumeSec > 0)
+                      ? (resumeSec / ep.durationSeconds).clamp(0.03, 1.0)
+                      : 0.0;
+                  final String statusLabel = _formatPodcastRemainingLabel(
+                    resumeSec,
+                    ep.durationSeconds,
+                  );
+
+                  return GestureDetector(
+                    onTap: () {
+                      final cubit = context.read<PlayerCubit>();
+                      if (resumeSec > 5) {
+                        cubit.syncExternalMediaTrack(
+                          ep,
+                          position: Duration(seconds: resumeSec),
+                          resumeAudioPlayback: true,
+                          source: ep.genre.isNotEmpty
+                              ? ep.genre
+                              : "Podcasts écoutés récemment",
+                        );
+                      } else {
+                        cubit.playTrack(
+                          ep,
+                          queue: podcasts,
+                          source: ep.genre.isNotEmpty
+                              ? ep.genre
+                              : "Podcasts écoutés récemment",
+                        );
+                      }
+                    },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                        child: Container(
+                          width: 226,
+                          padding: const EdgeInsets.all(13),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(24),
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Colors.white.withValues(alpha: 0.13),
+                                Colors.white.withValues(alpha: 0.05),
+                              ],
+                            ),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              width: 1.1,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.34),
+                                blurRadius: 16,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      SonoritizArtwork(
+                                        imageUrl: ep.coverUrl,
+                                        width: double.infinity,
+                                        height: double.infinity,
+                                        borderRadius: 16,
+                                        fit: BoxFit.cover,
+                                        cacheMaxDimension: 380,
+                                      ),
+                                      Positioned(
+                                        right: 8,
+                                        bottom: progressRatio > 0 ? 12 : 8,
+                                        child: GestureDetector(
+                                          onTap: () {
+                                            context.push(
+                                              '/podcast_player',
+                                              extra: <String, dynamic>{
+                                                'track': ep,
+                                                'initialVideoMode': true,
+                                                'initialPositionSeconds':
+                                                    resumeSec,
+                                              },
+                                            );
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 9,
+                                              vertical: 5,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black
+                                                  .withValues(alpha: 0.72),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: Colors.white
+                                                    .withValues(alpha: 0.22),
+                                                width: 0.8,
+                                              ),
+                                            ),
+                                            child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.videocam_rounded,
+                                                  color: AppColors.primary,
+                                                  size: 14,
+                                                ),
+                                                SizedBox(width: 4),
+                                                Text(
+                                                  "Vidéo",
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 10.5,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      if (progressRatio > 0)
+                                        Positioned(
+                                          left: 0,
+                                          right: 0,
+                                          bottom: 0,
+                                          child: Container(
+                                            height: 4,
+                                            color: Colors.black
+                                                .withValues(alpha: 0.55),
+                                            alignment: Alignment.centerLeft,
+                                            child: FractionallySizedBox(
+                                              widthFactor: progressRatio,
+                                              child: Container(
+                                                height: 4,
+                                                decoration: const BoxDecoration(
+                                                  color: AppColors.primary,
+                                                  borderRadius:
+                                                      BorderRadius.horizontal(
+                                                    right: Radius.circular(3),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 11),
+                              Text(
+                                ep.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                ep.artistName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.66),
+                                  fontSize: 12.0,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(
+                                    resumeSec > 5
+                                        ? Icons.play_circle_fill_rounded
+                                        : Icons.podcasts_rounded,
+                                    size: 13,
+                                    color: AppColors.primary,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Expanded(
+                                    child: Text(
+                                      statusLabel,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: resumeSec > 5
+                                            ? AppColors.primary
+                                            : Colors.white
+                                                .withValues(alpha: 0.52),
+                                        fontSize: 11.2,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: AppDimensions.spacingXl),
+          ],
+        );
+      },
+    );
+  }
+
+  // --- 2c. RECOMMANDATION SONORITIZ CONNECT (SONS PROPOSÉS PAR LES INVITÉS) ---
+  Widget _buildConnectRecommendationsSection(BuildContext context) {
+    return ValueListenableBuilder<List<Map<String, dynamic>>>(
+      valueListenable: StorageService.connectRecommendationsNotifier,
+      builder: (context, rawRecs, _) {
+        // Règle stricte : si les invités n'ont proposé aucun son durant les sessions Connect, ne rien ajouter !
+        if (rawRecs.isEmpty) return const SizedBox.shrink();
+
+        final tracks = rawRecs
+            .map((m) => TrackModel.fromJson(m))
+            .where((t) =>
+                t.id.trim().isNotEmpty &&
+                t.title.trim().isNotEmpty &&
+                !t.isPodcastOrBook)
+            .toList();
+        if (tracks.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SonoritizSectionHeader(
+              title: "Recommandation Sonoritiz Connect",
+              onSeeAll: () => context.go('/connect'),
+            ),
+            const SizedBox(height: AppDimensions.spacingSm),
+            SizedBox(
+              height: 200,
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppDimensions.spacingMd,
+                ),
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                itemCount: tracks.length,
+                itemBuilder: (context, index) {
+                  final track = tracks[index];
+                  return Padding(
+                    padding:
+                        const EdgeInsets.only(right: AppDimensions.spacingMd),
+                    child: SonoritizTrackCard(
+                      imageUrl: track.coverUrl,
+                      title: track.title,
+                      subtitle: track.artistName,
+                      width: 140.0,
+                      trackId: track.id,
+                      showConnectCenterLogo: true,
+                      onTap: () => context.read<PlayerCubit>().playTrack(
+                            track,
+                            queue: tracks,
+                            source: "Recommandation Sonoritiz Connect",
+                          ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: AppDimensions.spacingXl),
+          ],
+        );
+      },
     );
   }
 

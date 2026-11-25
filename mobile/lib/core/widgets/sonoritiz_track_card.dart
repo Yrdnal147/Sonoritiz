@@ -21,6 +21,7 @@ class SonoritizTrackCard extends StatelessWidget {
   final String? trackId;
   final int? rank;
   final bool showCenterLogo;
+  final bool showConnectCenterLogo;
 
   const SonoritizTrackCard({
     Key? key,
@@ -33,6 +34,7 @@ class SonoritizTrackCard extends StatelessWidget {
     this.trackId,
     this.rank,
     this.showCenterLogo = false,
+    this.showConnectCenterLogo = false,
   }) : super(key: key);
 
   @override
@@ -88,7 +90,35 @@ class SonoritizTrackCard extends StatelessWidget {
           );
         }
 
-        if (showCenterLogo) {
+        if (showConnectCenterLogo) {
+          overlayWidgets.add(
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: Container(
+                    width: width * 0.36,
+                    height: width * 0.36,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.30),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.22),
+                        width: 0.9,
+                      ),
+                    ),
+                    child: Opacity(
+                      opacity: 0.86,
+                      child: CustomPaint(
+                        painter: _ConnectIntertwinedRingsPainter(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        } else if (showCenterLogo) {
           overlayWidgets.add(
             Positioned.fill(
               child: IgnorePointer(
@@ -238,4 +268,28 @@ class SonoritizTrackCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Dessine le logo signature Sonoritiz Connect (les deux anneaux entrelacés de la page Connect).
+class _ConnectIntertwinedRingsPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.92)
+      ..strokeWidth = 2.1
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+
+    final r = w * 0.27;
+    final leftCenter = Offset(w * 0.36, h * 0.50);
+    final rightCenter = Offset(w * 0.64, h * 0.50);
+    canvas.drawCircle(leftCenter, r, paint);
+    canvas.drawCircle(rightCenter, r, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

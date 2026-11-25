@@ -13,6 +13,7 @@ import '../../../../../core/widgets/artist_name_display.dart';
 import '../../../../home/data/repositories/catalog_repository.dart';
 import '../../../../offline/presentation/cubit/download_cubit.dart';
 import '../../../data/models/track_model.dart';
+import '../../cubit/player_cubit.dart';
 import 'immersive_player_widgets.dart';
 import 'player_favorite_button.dart';
 
@@ -1140,6 +1141,15 @@ class _SonoritizTrackArtistsFramesState
   }
 
   void _syncArtistsForCurrentTrack() {
+    if (widget.track.isPodcastOrBook) {
+      _artists = const [];
+      _resolvedUrls.clear();
+      _resolvedIds.clear();
+      if (mounted) {
+        setState(() {});
+      }
+      return;
+    }
     final parsed =
         _parseTrackArtists(widget.track.artistName, widget.track.title);
     _artists = parsed;
@@ -1333,8 +1343,81 @@ class _SonoritizTrackArtistsFramesState
     );
   }
 
+  void _openPodcastVideoPage(BuildContext context) {
+    HapticFeedback.mediumImpact();
+    Duration resumePos = Duration.zero;
+    try {
+      final cubit = context.read<PlayerCubit>();
+      resumePos = cubit.state.position;
+      cubit.pause();
+    } catch (_) {}
+
+    final router = import_go_router.GoRouter.of(context);
+    Navigator.of(context, rootNavigator: true)
+        .popUntil((route) => route is! PopupRoute);
+    router.push(
+      '/podcast_player',
+      extra: <String, dynamic>{
+        'track': widget.track,
+        'initialVideoMode': true,
+        'initialPositionSeconds': resumePos.inSeconds,
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Uniquement pour les Podcasts & Livres audio (jamais pour les sons musicaux) :
+    // remplacer la photo de profil d'artiste par le bouton qui lance la page vidéo du podcast !
+    if (widget.track.isPodcastOrBook) {
+      return Tooltip(
+        message: 'Lancer la vidéo',
+        child: GestureDetector(
+          onTap: () => _openPodcastVideoPage(context),
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            height: 50,
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1B20).withValues(alpha: 0.88),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: widget.palette.accentColor.withValues(alpha: 0.55),
+                width: 1.25,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.36),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.videocam_rounded,
+                  color: widget.palette.accentColor,
+                  size: 24,
+                ),
+                const SizedBox(width: 9),
+                const Text(
+                  'Voir la vidéo',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,

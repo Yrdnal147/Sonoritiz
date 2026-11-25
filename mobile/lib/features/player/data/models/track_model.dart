@@ -78,6 +78,26 @@ class TrackModel extends Equatable {
     );
   }
 
+  /// Indique strictement si l'élément est un Podcast ou un Livre audio (et non un son musical).
+  bool get isPodcastOrBook {
+    final lowerId = id.trim().toLowerCase();
+    if (lowerId.startsWith('deezer_podcast_') ||
+        lowerId.startsWith('deezer_pod_') ||
+        lowerId.startsWith('deezer_book_') ||
+        lowerId.startsWith('itunes_pod_') ||
+        lowerId.startsWith('itunes_book_')) {
+      return true;
+    }
+    final lowerGenre = genre.trim().toLowerCase();
+    if (lowerGenre.contains('podcast') ||
+        lowerGenre.contains('livre') ||
+        lowerGenre.contains('audiobook') ||
+        lowerGenre == 'fun & vidéo') {
+      return true;
+    }
+    return false;
+  }
+
   TrackModel copyWith({
     String? id,
     String? title,

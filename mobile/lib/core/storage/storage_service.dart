@@ -12,6 +12,11 @@ class StorageService {
       ValueNotifier<String>('vertical');
   static final ValueNotifier<List<String>> favoriteArtistsNotifier =
       ValueNotifier<List<String>>(<String>[]);
+  static final ValueNotifier<List<Map<String, dynamic>>> recentPodcastsNotifier =
+      ValueNotifier<List<Map<String, dynamic>>>(<Map<String, dynamic>>[]);
+  static final ValueNotifier<List<Map<String, dynamic>>>
+      connectRecommendationsNotifier =
+      ValueNotifier<List<Map<String, dynamic>>>(<Map<String, dynamic>>[]);
 
   /// Hooks optionnels enregistrés au démarrage de l'app pour synchroniser les
   /// préférences avec le backend Django sans coupler StorageService aux tests unitaires.
@@ -78,6 +83,8 @@ class StorageService {
     if (!(_prefsInitialized)) return;
     playerStyleNotifier.value = playerStyle;
     favoriteArtistsNotifier.value = getFavoriteArtists();
+    recentPodcastsNotifier.value = getRecentPodcastsRaw();
+    connectRecommendationsNotifier.value = getConnectGuestRecommendationsRaw();
   }
 
   bool get _prefsInitialized {
@@ -525,6 +532,26 @@ class StorageService {
       'play_timestamps': timestamps,
     };
     await _prefs.setString(_lifetimePlaysKey, jsonEncode(current));
+    if (_isPodcastOrBookJson(trackJson)) {
+      await recordRecentPodcastPlay(trackJson);
+    }
+  }
+
+  static bool _isPodcastOrBookJson(Map<String, dynamic> map) {
+    final lowerId =
+        (map['id'] ?? map['youtube_id'] ?? '').toString().trim().toLowerCase();
+    if (lowerId.startsWith('deezer_podcast_') ||
+        lowerId.startsWith('deezer_pod_') ||
+        lowerId.startsWith('deezer_book_') ||
+        lowerId.startsWith('itunes_pod_') ||
+        lowerId.startsWith('itunes_book_')) {
+      return true;
+    }
+    final lowerGenre = (map['genre'] ?? '').toString().trim().toLowerCase();
+    return lowerGenre.contains('podcast') ||
+        lowerGenre.contains('livre') ||
+        lowerGenre.contains('audiobook') ||
+        lowerGenre == 'fun & vidéo';
   }
 
   // --- SONORITIZ SUPERLIKES (MAX 20, isolés par compte) ---
@@ -742,18 +769,225 @@ class StorageService {
   // --- REPRISE EXACTE DE LA POSITION DE LECTURE (isolée par compte) ---
   String get _lastPlaybackPosTrackKey => _scopedKey('last_playback_track_id');
   String get _lastPlaybackPosSecKey => _scopedKey('last_playback_position_sec');
+  String get _podcastResumeMapKey => _scopedKey('podcast_resume_positions_v1');
 
   Future<void> saveLastPlaybackPosition(String trackId, int seconds) async {
     final cleanId = trackId.trim();
     if (cleanId.isEmpty || seconds < 0) return;
     await _prefs.setString(_lastPlaybackPosTrackKey, cleanId);
     await _prefs.setInt(_lastPlaybackPosSecKey, seconds);
+
+    // Mémoriser aussi la position propre à chaque podcast/livre écouté récemment
+    final rawRecent = _prefs.getString(_recentPodcastsKey);
+    if (rawRecent != null && rawRecent.contains(cleanId)) {
+      try {
+        final rawMap = _prefs.getString(_podcastResumeMapKey);
+        final Map<String, dynamic> map = (rawMap != null && rawMap.isNotEmpty)
+            ? Map<String, dynamic>.from(jsonDecode(rawMap) as Map)
+            : <String, dynamic>{};
+        map[cleanId] = seconds;
+        if (map.length > 40) {
+          map.remove(map.keys.first);
+        }
+        await _prefs.setString(_podcastResumeMapKey, jsonEncode(map));
+      } catch (_) {}
+    }
   }
 
   int getLastPlaybackPositionSeconds(String trackId) {
     final savedId = _prefs.getString(_lastPlaybackPosTrackKey);
     if (savedId != trackId.trim()) return 0;
     return _prefs.getInt(_lastPlaybackPosSecKey) ?? 0;
+  }
+
+  int getPodcastResumeSeconds(String trackId) {
+    if (!_prefsInitialized) return 0;
+    final cleanId = trackId.trim();
+    if (cleanId.isEmpty) return 0;
+    try {
+      final rawMap = _prefs.getString(_podcastResumeMapKey);
+      if (rawMap != null && rawMap.isNotEmpty) {
+        final decoded = jsonDecode(rawMap);
+        if (decoded is Map && decoded[cleanId] is num) {
+          return (decoded[cleanId] as num).toInt();
+        }
+      }
+    } catch (_) {}
+    return getLastPlaybackPositionSeconds(cleanId);
+  }
+
+  // --- PODCASTS ÉCOUTÉS RÉCEMMENT (isolés par compte) ---
+  String get _recentPodcastsKey => _scopedKey('recent_podcasts_v1');
+
+  List<Map<String, dynamic>> getRecentPodcastsRaw({int limit = 16}) {
+    if (!_prefsInitialized) return const [];
+    final List<Map<String, dynamic>> result = [];
+    final Set<String> seenKeys = {};
+
+    void addIfPodcast(Map<String, dynamic> rawTrack) {
+      final id = (rawTrack['id'] ?? rawTrack['youtube_id'] ?? '')
+          .toString()
+          .trim();
+      final title = (rawTrack['title'] ?? '').toString().trim();
+      if (id.isEmpty || title.isEmpty) return;
+      final dedup = '${id}__${title.toLowerCase()}';
+      if (seenKeys.contains(id) || seenKeys.contains(dedup)) return;
+      seenKeys.add(id);
+      seenKeys.add(dedup);
+      result.add(Map<String, dynamic>.from(rawTrack));
+    }
+
+    final raw = _prefs.getString(_recentPodcastsKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          for (final item in decoded) {
+            if (item is Map) {
+              addIfPodcast(Map<String, dynamic>.from(item));
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Compléter avec les podcasts éventuellement déjà présents dans l'historique local
+    for (final entry in getRecentLocalTrackEntries()) {
+      final trackMap = entry['track'];
+      if (trackMap is Map<String, dynamic> && _isPodcastOrBookJson(trackMap)) {
+        addIfPodcast(trackMap);
+      }
+      if (result.length >= limit) break;
+    }
+
+    return result.take(limit).toList();
+  }
+
+  Future<void> recordRecentPodcastPlay(Map<String, dynamic> trackJson) async {
+    if (!_prefsInitialized) return;
+    final id = (trackJson['id'] ?? trackJson['youtube_id'] ?? '')
+        .toString()
+        .trim();
+    final title = (trackJson['title'] ?? '').toString().trim();
+    if (id.isEmpty || title.isEmpty) return;
+
+    final existing = getRecentPodcastsRaw(limit: 24);
+    existing.removeWhere((item) {
+      final itemId =
+          (item['id'] ?? item['youtube_id'] ?? '').toString().trim();
+      final itemTitle = (item['title'] ?? '').toString().trim().toLowerCase();
+      return itemId == id || itemTitle == title.toLowerCase();
+    });
+
+    final enriched = Map<String, dynamic>.from(trackJson);
+    if ((enriched['genre'] ?? '').toString().trim().isEmpty) {
+      enriched['genre'] = 'Podcast';
+    }
+    existing.insert(0, enriched);
+    final capped = existing.take(20).toList();
+    await _prefs.setString(_recentPodcastsKey, jsonEncode(capped));
+    recentPodcastsNotifier.value = capped;
+  }
+
+  // --- RECOMMANDATIONS SONORITIZ CONNECT (sons proposés par les invités uniquement) ---
+  String get _connectGuestRecsKey =>
+      _scopedKey('connect_guest_recommendations_v1');
+
+  List<Map<String, dynamic>> getConnectGuestRecommendationsRaw({
+    int limit = 24,
+  }) {
+    if (!_prefsInitialized) return const [];
+    final raw = _prefs.getString(_connectGuestRecsKey);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .where((m) =>
+                (m['id'] ?? '').toString().trim().isNotEmpty &&
+                (m['title'] ?? '').toString().trim().isNotEmpty)
+            .take(limit)
+            .toList();
+      }
+    } catch (_) {}
+    return const [];
+  }
+
+  Future<void> recordConnectGuestRecommendations(
+    List<Map<String, dynamic>> guestTracks,
+  ) async {
+    if (!_prefsInitialized || guestTracks.isEmpty) return;
+    final current = List<Map<String, dynamic>>.from(
+      getConnectGuestRecommendationsRaw(limit: 30),
+    );
+    bool changed = false;
+
+    for (final rawTrack in guestTracks.reversed) {
+      final id = (rawTrack['id'] ?? '').toString().trim();
+      final title = (rawTrack['title'] ?? '').toString().trim();
+      if (id.isEmpty || title.isEmpty) continue;
+      final existingIdx =
+          current.indexWhere((t) => (t['id'] ?? '').toString().trim() == id);
+      if (existingIdx != -1) {
+        continue;
+      }
+      current.insert(0, Map<String, dynamic>.from(rawTrack));
+      changed = true;
+    }
+
+    if (!changed) return;
+    final capped = current.take(30).toList();
+    await _prefs.setString(_connectGuestRecsKey, jsonEncode(capped));
+    connectRecommendationsNotifier.value = capped;
+  }
+
+  // --- SONORITIZ LYRICS (10 sons aimés/superlikés • renouvelés tous les 5 jours) ---
+  String get _sonoritizLyricsTracksKey =>
+      _scopedKey('sonoritiz_lyrics_tracks_v1');
+  String get _sonoritizLyricsTsKey => _scopedKey('sonoritiz_lyrics_ts_v1');
+
+  List<Map<String, dynamic>>? getCachedSonoritizLyricsTracks() {
+    if (!_prefsInitialized) return null;
+    final raw = _prefs.getString(_sonoritizLyricsTracksKey);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  DateTime? getSonoritizLyricsTimestamp() {
+    if (!_prefsInitialized) return null;
+    final ms = _prefs.getInt(_sonoritizLyricsTsKey);
+    if (ms == null || ms <= 0) return null;
+    return DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  Future<void> saveSonoritizLyricsTracks(
+    List<Map<String, dynamic>> tracks, {
+    bool updateTimestamp = true,
+  }) async {
+    if (!_prefsInitialized) return;
+    try {
+      await _prefs.setString(
+        _sonoritizLyricsTracksKey,
+        jsonEncode(tracks.take(10).toList()),
+      );
+      if (updateTimestamp) {
+        await _prefs.setInt(
+          _sonoritizLyricsTsKey,
+          DateTime.now().millisecondsSinceEpoch,
+        );
+      }
+    } catch (_) {}
   }
 
   Future<void> clearSession() async {

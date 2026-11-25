@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:video_player/video_player.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import '../../../../core/storage/storage_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/share_utils.dart';
 import '../../../../core/widgets/artist_name_display.dart';
@@ -14,8 +15,15 @@ import '../../player/presentation/cubit/player_cubit.dart';
 
 class PodcastPlayerScreen extends StatefulWidget {
   final TrackModel track;
+  final bool initialVideoMode;
+  final Duration? initialPosition;
 
-  const PodcastPlayerScreen({Key? key, required this.track}) : super(key: key);
+  const PodcastPlayerScreen({
+    Key? key,
+    required this.track,
+    this.initialVideoMode = false,
+    this.initialPosition,
+  }) : super(key: key);
 
   @override
   State<PodcastPlayerScreen> createState() => _PodcastPlayerScreenState();
@@ -39,10 +47,18 @@ class _PodcastPlayerScreenState extends State<PodcastPlayerScreen> {
   void initState() {
     super.initState();
     _resolvedTrack = widget.track;
-    // Si l'épisode est directement un podcast vidéo YouTube, activer l'affichage vidéo par défaut
+    if (widget.initialPosition != null &&
+        widget.initialPosition! > Duration.zero) {
+      _lastKnownPosition = widget.initialPosition!;
+    }
+    unawaited(
+      StorageService().recordRecentPodcastPlay(widget.track.toJson()),
+    );
+    // Si l'épisode est ouvert depuis le bouton vidéo du lecteur ou est un podcast vidéo YouTube, activer la vidéo
     final bool isDirectYoutubeVideo = !widget.track.id.startsWith('deezer_') &&
         RegExp(r'^[a-zA-Z0-9_-]{11}$').hasMatch(widget.track.id);
-    if (isDirectYoutubeVideo ||
+    if (widget.initialVideoMode ||
+        isDirectYoutubeVideo ||
         widget.track.genre.toLowerCase().contains('vidéo')) {
       _isVideoMode = true;
     }
@@ -51,7 +67,7 @@ class _PodcastPlayerScreenState extends State<PodcastPlayerScreen> {
         _playerCubit = context.read<PlayerCubit>();
         _playerCubit!.syncExternalMediaTrack(
           _resolvedTrack,
-          position: Duration.zero,
+          position: _lastKnownPosition,
           resumeAudioPlayback: false,
           source: _resolvedTrack.genre.isNotEmpty
               ? _resolvedTrack.genre
@@ -133,15 +149,21 @@ class _PodcastPlayerScreenState extends State<PodcastPlayerScreen> {
         durationSeconds: resolvedDurSec,
       );
 
-      // Si le même épisode était déjà en cours dans le Mini-Lecteur / PlayerCubit,
-      // reprendre à sa position exacte
+      // Si une position initiale est transmise ou si l'épisode était en cours dans le lecteur,
+      // reprendre à sa seconde exacte
       final cubit = _playerCubit;
-      if (cubit != null &&
-          cubit.state.currentTrack?.id == videoId &&
+      if (_lastKnownPosition > Duration.zero) {
+        await _controller!.seekTo(_lastKnownPosition);
+      } else if (cubit != null &&
+          (cubit.state.currentTrack?.id == videoId ||
+              cubit.state.currentTrack?.id == widget.track.id) &&
           cubit.state.position.inSeconds > 2) {
         _lastKnownPosition = cubit.state.position;
         await _controller!.seekTo(_lastKnownPosition);
       }
+      unawaited(
+        StorageService().recordRecentPodcastPlay(_resolvedTrack.toJson()),
+      );
 
       if (cubit != null) {
         unawaited(

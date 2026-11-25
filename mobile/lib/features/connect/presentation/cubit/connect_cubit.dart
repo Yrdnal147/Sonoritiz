@@ -178,6 +178,39 @@ class ConnectCubit extends Cubit<ConnectState> {
     return parsed;
   }
 
+  void _persistGuestRecommendationsFromThreads(
+    List<Map<String, dynamic>> threads, {
+    required bool isHost,
+  }) {
+    if (threads.isEmpty) return;
+    final myUsername = storageService.username.trim().toLowerCase();
+    final List<Map<String, dynamic>> guestTracks = [];
+    for (final t in threads) {
+      final suggester = (t['username'] ?? '').toString().trim().toLowerCase();
+      // Côté hôte : toutes les suggestions proviennent des invités.
+      // Côté invité : ne retenir que les suggestions des autres invités (pas les siennes).
+      if (!isHost && myUsername.isNotEmpty && suggester == myUsername) {
+        continue;
+      }
+      final rawList = t['tracks'];
+      if (rawList is List) {
+        for (final item in rawList) {
+          if (item is Map) {
+            final map = Map<String, dynamic>.from(item);
+            if (!TrackModel.fromJson(map).isPodcastOrBook) {
+              guestTracks.add(map);
+            }
+          }
+        }
+      }
+    }
+    if (guestTracks.isNotEmpty) {
+      unawaited(
+        storageService.recordConnectGuestRecommendations(guestTracks),
+      );
+    }
+  }
+
   int? _extractHostUserId(Map<String, dynamic> data) {
     final hostUser = data['host_user'];
     if (hostUser is Map && hostUser['id'] != null) {
@@ -255,6 +288,7 @@ class ConnectCubit extends Cubit<ConnectState> {
       final threads = _mapListFrom(
         playbackState['suggestion_threads'] ?? playbackState['suggestions'],
       );
+      _persistGuestRecommendationsFromThreads(threads, isHost: true);
       final sharedTracks = _tracksFromRaw(playbackState['shared_queue']);
 
       emit(ConnectActive(
@@ -313,6 +347,7 @@ class ConnectCubit extends Cubit<ConnectState> {
       final threads = _mapListFrom(
         playbackState['suggestion_threads'] ?? playbackState['suggestions'],
       );
+      _persistGuestRecommendationsFromThreads(threads, isHost: isHost);
       final sharedTracks = _tracksFromRaw(playbackState['shared_queue']);
       final sharedTitle =
           (playbackState['shared_playlist_title'] ?? 'File du salon')
@@ -472,6 +507,10 @@ class ConnectCubit extends Cubit<ConnectState> {
       final reactions = _mapListFrom(playbackState['reactions']);
       final threads = _mapListFrom(
         playbackState['suggestion_threads'] ?? playbackState['suggestions'],
+      );
+      _persistGuestRecommendationsFromThreads(
+        threads,
+        isHost: latestState.isHost,
       );
       final remoteQueue = _tracksFromRaw(playbackState['shared_queue']);
       final remoteTitle =

@@ -501,7 +501,21 @@ class AppRouter {
         GoRoute(
           path: '/podcast_player',
           builder: (context, state) {
-            final track = state.extra as TrackModel;
+            final extra = state.extra;
+            if (extra is Map<String, dynamic>) {
+              final track = extra['track'] as TrackModel;
+              final bool initialVideoMode =
+                  extra['initialVideoMode'] == true;
+              final int posSec =
+                  (extra['initialPositionSeconds'] as int?) ?? 0;
+              return PodcastPlayerScreen(
+                track: track,
+                initialVideoMode: initialVideoMode,
+                initialPosition:
+                    posSec > 0 ? Duration(seconds: posSec) : null,
+              );
+            }
+            final track = extra as TrackModel;
             return PodcastPlayerScreen(track: track);
           },
         ),
