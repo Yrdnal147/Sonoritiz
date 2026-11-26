@@ -30,6 +30,7 @@ import '../../../../features/library/presentation/cubit/library_state.dart';
 import '../../../offline/presentation/cubit/download_cubit.dart';
 
 import '../../../../core/widgets/sonoritiz_artwork.dart';
+import '../../../../core/widgets/track_context_menu.dart';
 import '../widgets/player_components/player_track_info.dart';
 import '../widgets/player_components/player_progress_bar.dart';
 import '../widgets/player_components/player_primary_controls.dart';
@@ -491,6 +492,27 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                           onTap: () {
                             Navigator.pop(sheetContext);
                             _showAddToPlaylistSheet(context, track);
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(
+                            Icons.playlist_play_rounded,
+                            color: AppColors.primary,
+                          ),
+                          title: const Text(
+                            "Lire ensuite",
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            context.read<PlayerCubit>().playTrackNext(track);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text("« ${track.title} » sera lu juste après"),
+                                behavior: SnackBarBehavior.floating,
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
                           },
                         ),
                         ListTile(
@@ -3515,6 +3537,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                   color: Colors.transparent,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(14),
+                    onLongPress: () => TrackContextMenu.show(context, sTrack),
                     onTap: () {
                       context.read<PlayerCubit>().playTrack(
                         sTrack,
@@ -3565,12 +3588,13 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                               ],
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 4),
                           IconButton(
+                            visualDensity: VisualDensity.compact,
                             icon: Icon(
                               Icons.play_arrow_rounded,
                               color: isSpecial ? AppColors.primary : Colors.white,
-                              size: isSpecial ? 30 : 26,
+                              size: isSpecial ? 28 : 25,
                             ),
                             onPressed: () {
                               context.read<PlayerCubit>().playTrack(
@@ -3579,6 +3603,16 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                                 source: "Découvrez des sons similaires",
                               );
                             },
+                          ),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            tooltip: "Options",
+                            icon: Icon(
+                              Icons.more_horiz_rounded,
+                              color: Colors.white.withValues(alpha: 0.72),
+                              size: 21,
+                            ),
+                            onPressed: () => TrackContextMenu.show(context, sTrack),
                           ),
                         ],
                       ),

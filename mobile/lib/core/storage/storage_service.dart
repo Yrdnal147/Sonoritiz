@@ -17,6 +17,9 @@ class StorageService {
   static final ValueNotifier<List<Map<String, dynamic>>>
       connectRecommendationsNotifier =
       ValueNotifier<List<Map<String, dynamic>>>(<Map<String, dynamic>>[]);
+  static final ValueNotifier<List<Map<String, dynamic>>>
+      downloadedAlbumsNotifier =
+      ValueNotifier<List<Map<String, dynamic>>>(<Map<String, dynamic>>[]);
 
   /// Hooks optionnels enregistrés au démarrage de l'app pour synchroniser les
   /// préférences avec le backend Django sans coupler StorageService aux tests unitaires.
@@ -85,6 +88,7 @@ class StorageService {
     favoriteArtistsNotifier.value = getFavoriteArtists();
     recentPodcastsNotifier.value = getRecentPodcastsRaw();
     connectRecommendationsNotifier.value = getConnectGuestRecommendationsRaw();
+    downloadedAlbumsNotifier.value = getDownloadedAlbumsRaw();
   }
 
   bool get _prefsInitialized {
@@ -988,6 +992,114 @@ class StorageService {
         );
       }
     } catch (_) {}
+  }
+
+  // --- ONGLET ACTIF DE LA BIBLIOTHÈQUE (mémorisé par compte) ---
+  String get _activeLibraryTabKey => _scopedKey('library_active_tab_v1');
+
+  String getActiveLibraryTab() {
+    if (!_prefsInitialized) return 'favorites';
+    final raw = _prefs.getString(_activeLibraryTabKey);
+    if (raw != null && raw.trim().isNotEmpty) return raw.trim();
+    return 'favorites';
+  }
+
+  Future<void> saveActiveLibraryTab(String tabId) async {
+    if (!_prefsInitialized || tabId.trim().isEmpty) return;
+    await _prefs.setString(_activeLibraryTabKey, tabId.trim());
+  }
+
+  // --- REGISTRE DES VRAIS ALBUMS TÉLÉCHARGÉS (jamais un son individuel isolé) ---
+  String get _downloadedAlbumsKey => _scopedKey('downloaded_albums_v1');
+
+  static String computeDownloadedAlbumKey(String id, String title, String artist) {
+    final cleanId = id.trim();
+    if (cleanId.isNotEmpty && cleanId != '0' && cleanId != '-1') {
+      return 'id:$cleanId';
+    }
+    return 'meta:${title.trim().toLowerCase()}__${artist.trim().toLowerCase()}';
+  }
+
+  List<Map<String, dynamic>> getDownloadedAlbumsRaw() {
+    if (!_prefsInitialized) return const [];
+    final raw = _prefs.getString(_downloadedAlbumsKey);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .where((m) => (m['title'] ?? '').toString().trim().isNotEmpty)
+            .toList();
+      }
+    } catch (_) {}
+    return const [];
+  }
+
+  bool isAlbumRegisteredDownloaded({
+    required String id,
+    required String title,
+    required String artistName,
+  }) {
+    final targetKey = computeDownloadedAlbumKey(id, title, artistName);
+    final normTitle = title.trim().toLowerCase();
+    for (final item in getDownloadedAlbumsRaw()) {
+      final k = (item['key'] ?? '').toString();
+      final itemTitle = (item['title'] ?? '').toString().trim().toLowerCase();
+      if (k == targetKey || (normTitle.isNotEmpty && itemTitle == normTitle)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> registerDownloadedAlbum({
+    required String id,
+    required String title,
+    required String artistName,
+    required String coverUrl,
+    required List<String> trackIds,
+  }) async {
+    if (!_prefsInitialized || title.trim().isEmpty || trackIds.isEmpty) return;
+    final key = computeDownloadedAlbumKey(id, title, artistName);
+    final current = List<Map<String, dynamic>>.from(getDownloadedAlbumsRaw());
+    current.removeWhere((m) =>
+        (m['key'] ?? '').toString() == key ||
+        ((m['title'] ?? '').toString().trim().toLowerCase() ==
+            title.trim().toLowerCase() &&
+            (m['artistName'] ?? '').toString().trim().toLowerCase() ==
+                artistName.trim().toLowerCase()));
+
+    current.insert(0, <String, dynamic>{
+      'key': key,
+      'id': id.trim(),
+      'title': title.trim(),
+      'artistName': artistName.trim(),
+      'coverUrl': coverUrl.trim(),
+      'trackIds': trackIds,
+      'downloadedAt': DateTime.now().toIso8601String(),
+    });
+
+    final capped = current.take(60).toList();
+    await _prefs.setString(_downloadedAlbumsKey, jsonEncode(capped));
+    downloadedAlbumsNotifier.value = capped;
+  }
+
+  Future<void> unregisterDownloadedAlbum({
+    required String id,
+    required String title,
+    required String artistName,
+  }) async {
+    if (!_prefsInitialized) return;
+    final key = computeDownloadedAlbumKey(id, title, artistName);
+    final current = List<Map<String, dynamic>>.from(getDownloadedAlbumsRaw());
+    current.removeWhere((m) =>
+        (m['key'] ?? '').toString() == key ||
+        (m['title'] ?? '').toString().trim().toLowerCase() ==
+            title.trim().toLowerCase());
+    await _prefs.setString(_downloadedAlbumsKey, jsonEncode(current));
+    downloadedAlbumsNotifier.value = current;
   }
 
   Future<void> clearSession() async {

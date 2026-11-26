@@ -22,6 +22,8 @@ import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/home/presentation/cubit/home_cubit.dart';
 import '../../features/home/presentation/screens/nouveautes_screen.dart';
 import '../../features/home/presentation/screens/new_releases_screen.dart';
+import '../../features/home/presentation/widgets/new_releases_carousel_widget.dart'
+    show AllAlbumReleasesScreen;
 import '../../features/home/presentation/screens/select_artists_screen.dart';
 import '../../features/home/presentation/screens/artist_playlist_screen.dart';
 import '../../features/home/presentation/screens/category_list_screen.dart';
@@ -38,6 +40,7 @@ import '../../features/library/presentation/cubit/library_cubit.dart';
 import '../../features/library/presentation/cubit/library_state.dart';
 import '../../features/library/presentation/favorites_screen.dart';
 import '../../features/library/presentation/favorite_albums_screen.dart';
+import '../../features/library/presentation/history_screen.dart';
 import '../../features/library/presentation/liked_tracks_screen.dart';
 import '../../features/library/presentation/superliked_tracks_screen.dart';
 import '../../features/library/presentation/playlists_list_screen.dart';
@@ -171,6 +174,51 @@ class AppRouter {
             GoRoute(
               path: '/new-releases',
               builder: (context, state) => const NewReleasesScreen(),
+            ),
+            GoRoute(
+              path: '/all-releases',
+              builder: (context, state) {
+                final raw = state.extra;
+                final albums = raw is List<Map<String, dynamic>>
+                    ? raw
+                    : (raw is List
+                        ? raw
+                            .whereType<Map>()
+                            .map((e) => Map<String, dynamic>.from(e))
+                            .toList()
+                        : const <Map<String, dynamic>>[]);
+                return AllAlbumReleasesScreen(albums: albums);
+              },
+            ),
+            GoRoute(
+              path: '/collection',
+              builder: (context, state) {
+                final data = state.extra is Map<String, dynamic>
+                    ? state.extra as Map<String, dynamic>
+                    : const <String, dynamic>{};
+                final tracks = data['tracks'] is List<TrackModel>
+                    ? data['tracks'] as List<TrackModel>
+                    : const <TrackModel>[];
+                final mosaic = data['playlistMosaic'] is PlaylistModel
+                    ? data['playlistMosaic'] as PlaylistModel
+                    : null;
+                final accent = data['fallbackAccentColor'] is Color
+                    ? data['fallbackAccentColor'] as Color
+                    : null;
+                return SonoritizCollectionScaffold(
+                  title: (data['title'] ?? 'Sélection').toString(),
+                  badgeLabel: data['badgeLabel'] as String?,
+                  subtitle: data['subtitle'] as String?,
+                  metadata: data['metadata'] as String?,
+                  coverUrl: (data['coverUrl'] ?? '').toString(),
+                  playlistMosaic: mosaic,
+                  tracks: tracks,
+                  playbackSource:
+                      (data['playbackSource'] ?? data['title'] ?? 'Sélection')
+                          .toString(),
+                  fallbackAccentColor: accent,
+                );
+              },
             ),
             GoRoute(
               path: '/artist-playlist',
@@ -432,8 +480,54 @@ class AppRouter {
 
             // --- Profil & Réglages ---
             GoRoute(
+              path: '/history',
+              builder: (context, state) =>
+                  BlocBuilder<LibraryCubit, LibraryState>(
+                builder: (context, libState) {
+                  final history = libState is LibraryLoaded
+                      ? libState.history
+                      : const <HistoryModel>[];
+                  final heroCover =
+                      (history.isNotEmpty && history.first.track != null)
+                          ? history.first.track!.coverUrl
+                          : '';
+                  return Scaffold(
+                    backgroundColor: Colors.black,
+                    body: SonoritizCoverAtmosphere(
+                      coverUrl: heroCover,
+                      child: SafeArea(
+                        child: Column(
+                          children: [
+                            AppBar(
+                              backgroundColor: Colors.transparent,
+                              elevation: 0,
+                              leading: IconButton(
+                                icon: const Icon(
+                                  Icons.arrow_back_ios_new_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                                onPressed: () => context.pop(),
+                              ),
+                              title: const SonoritizPageTitle(
+                                title: 'Historique',
+                                fontSize: 22,
+                              ),
+                            ),
+                            Expanded(child: HistoryScreen(history: history)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            GoRoute(
               path: '/stats',
-              builder: (context, state) => const StatsScreen(),
+              builder: (context, state) => StatsScreen(
+                openStoryOnInit: state.extra == true,
+              ),
             ),
             GoRoute(
               path: '/followed-artists',

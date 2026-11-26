@@ -187,14 +187,12 @@ class SonoritizTrackTile extends StatelessWidget {
                           source: playbackSource,
                         )),
             onLongPress: isSelectionMode
-                ? null
-                : (onSelectionChanged != null
-                    ? () => onSelectionChanged!.call(true)
-                    : () => TrackContextMenu.show(
-                          context,
-                          track,
-                          playlistId: playlistId,
-                        )),
+                ? () => onSelectionChanged?.call(!isSelected)
+                : () => TrackContextMenu.show(
+                      context,
+                      track,
+                      playlistId: playlistId,
+                    ),
           ),
         );
       },

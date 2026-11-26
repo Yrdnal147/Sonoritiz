@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart' as import_go_router;
 
 import '../../features/library/data/repositories/library_repository.dart';
 import '../../features/player/data/models/track_model.dart';
@@ -290,7 +291,14 @@ class _SonoritizCollectionScaffoldState
                       color: Colors.white,
                       size: 20,
                     ),
-                    onPressed: () => Navigator.of(context).maybePop(),
+                    onPressed: () {
+                      final router = import_go_router.GoRouter.maybeOf(context);
+                      if (router != null && router.canPop()) {
+                        router.pop();
+                      } else {
+                        Navigator.of(context).maybePop();
+                      }
+                    },
                   ),
                   title: Opacity(
                     opacity: collapse,

@@ -11,6 +11,7 @@ import '../../../../core/storage/storage_service.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/widgets/artist_name_display.dart';
 import '../../../../core/widgets/sonoritiz_artwork.dart';
+import '../../../../core/widgets/track_context_menu.dart';
 import '../../../library/presentation/cubit/library_cubit.dart';
 import '../../../library/presentation/cubit/library_state.dart';
 import '../../../player/data/models/lyrics_model.dart';
@@ -799,219 +800,225 @@ class _SonoritizLyricsExcerptCardState
         _palette.midColor;
     final Color deepTint = _palette.deepColor;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 360),
-      curve: Curves.easeOutCubic,
-      padding: const EdgeInsets.fromLTRB(16, 15, 16, 15),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            topTint,
-            midTint,
-            deepTint,
-          ],
-          stops: const [0.0, 0.54, 1.0],
-        ),
-        border: Border.all(
-          color: _isPlayingExcerpt
-              ? Colors.white.withValues(alpha: 0.42)
-              : Colors.white.withValues(alpha: 0.16),
-          width: _isPlayingExcerpt ? 1.3 : 1.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: _palette.dominantColor.withValues(alpha: 0.28),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 1. Excentré en haut à gauche : Pochette + Titre + Nom de l'artiste
-              //    (Cliquer dessus coupe l'extrait 30s et lance le son complet dans le lecteur principal)
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        _stopExcerptAudio(resetVisual: true);
-                        if (widget.activePlayingTrackId.value ==
-                            widget.track.id) {
-                          widget.activePlayingTrackId.value = null;
-                        }
-                        context.read<PlayerCubit>().playTrack(
-                              widget.track,
-                              queue: widget.fullQueue,
-                              source: 'Sonoritiz Lyrics',
-                            );
-                      },
-                      child: Row(
-                        children: [
-                          SonoritizArtwork(
-                            imageUrl: widget.track.coverUrl,
-                            width: 48,
-                            height: 48,
-                            borderRadius: 11,
-                            cacheMaxDimension: 150,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  widget.track.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 15.0,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -0.2,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                ArtistNameDisplay(
-                                  artistName: widget.track.artistName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.76),
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.28),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.14),
-                        width: 0.8,
-                      ),
-                    ),
-                    child: Text(
-                      _isPlayingExcerpt
-                          ? "${(30 - (_progress * 30).round()).clamp(0, 30)}s"
-                          : "30s",
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.90),
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 10),
-
-              // 2. Au centre du cadre : Paroles statiques -> dynamiques au clic sur l'audio
-              Expanded(
-                child: Center(
-                  child: _buildCenterLyricsZone(),
-                ),
-              ),
+    return GestureDetector(
+      onLongPress: () => TrackContextMenu.show(context, widget.track),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 360),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.fromLTRB(16, 15, 16, 15),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              topTint,
+              midTint,
+              deepTint,
             ],
+            stops: const [0.0, 0.54, 1.0],
           ),
-
-          // 3. Excentré en bas à droite : Bouton d'audio (Play / Pause + progression 30s)
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: GestureDetector(
-              onTap: _toggleExcerptAudio,
-              behavior: HitTestBehavior.opaque,
-              child: SizedBox(
-                width: 48,
-                height: 48,
-                child: Stack(
-                  alignment: Alignment.center,
+          border: Border.all(
+            color: _isPlayingExcerpt
+                ? Colors.white.withValues(alpha: 0.42)
+                : Colors.white.withValues(alpha: 0.16),
+            width: _isPlayingExcerpt ? 1.3 : 1.0,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: _palette.dominantColor.withValues(alpha: 0.28),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 1. Excentré en haut à gauche : Pochette + Titre + Nom de l'artiste
+                //    (Cliquer dessus coupe l'extrait 30s et lance le son complet dans le lecteur principal)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    if (_isPlayingExcerpt)
-                      SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: CircularProgressIndicator(
-                          value: _progress.clamp(0.0, 1.0),
-                          strokeWidth: 2.6,
-                          backgroundColor: Colors.white.withValues(alpha: 0.18),
-                          valueColor: const AlwaysStoppedAnimation<Color>(
-                            Colors.white,
-                          ),
-                        ),
-                      ),
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: _isPlayingExcerpt
-                            ? Colors.white
-                            : Colors.black.withValues(alpha: 0.38),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.34),
-                          width: 1.1,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.32),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Center(
-                        child: _loadingAudio
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.0,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : Icon(
-                                _isPlayingExcerpt
-                                    ? Icons.graphic_eq_rounded
-                                    : Icons.volume_up_rounded,
-                                size: 21,
-                                color: _isPlayingExcerpt
-                                    ? Colors.black
-                                    : Colors.white,
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onLongPress: () =>
+                            TrackContextMenu.show(context, widget.track),
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          _stopExcerptAudio(resetVisual: true);
+                          if (widget.activePlayingTrackId.value ==
+                              widget.track.id) {
+                            widget.activePlayingTrackId.value = null;
+                          }
+                          context.read<PlayerCubit>().playTrack(
+                                widget.track,
+                                queue: widget.fullQueue,
+                                source: 'Sonoritiz Lyrics',
+                              );
+                        },
+                        child: Row(
+                          children: [
+                            SonoritizArtwork(
+                              imageUrl: widget.track.coverUrl,
+                              width: 48,
+                              height: 48,
+                              borderRadius: 11,
+                              cacheMaxDimension: 150,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    widget.track.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 15.0,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: -0.2,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  ArtistNameDisplay(
+                                    artistName: widget.track.artistName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.76),
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
                               ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.28),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.14),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Text(
+                        _isPlayingExcerpt
+                            ? "${(30 - (_progress * 30).round()).clamp(0, 30)}s"
+                            : "30s",
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.90),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
                   ],
                 ),
+
+                const SizedBox(height: 10),
+
+                // 2. Au centre du cadre : Paroles statiques -> dynamiques au clic sur l'audio
+                Expanded(
+                  child: Center(
+                    child: _buildCenterLyricsZone(),
+                  ),
+                ),
+              ],
+            ),
+
+            // 3. Excentré en bas à droite : Bouton d'audio (Play / Pause + progression 30s)
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: GestureDetector(
+                onTap: _toggleExcerptAudio,
+                behavior: HitTestBehavior.opaque,
+                child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      if (_isPlayingExcerpt)
+                        SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: CircularProgressIndicator(
+                            value: _progress.clamp(0.0, 1.0),
+                            strokeWidth: 2.6,
+                            backgroundColor:
+                                Colors.white.withValues(alpha: 0.18),
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        ),
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: _isPlayingExcerpt
+                              ? Colors.white
+                              : Colors.black.withValues(alpha: 0.38),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.34),
+                            width: 1.1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.32),
+                              blurRadius: 10,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: _loadingAudio
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.0,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Icon(
+                                  _isPlayingExcerpt
+                                      ? Icons.graphic_eq_rounded
+                                      : Icons.volume_up_rounded,
+                                  size: 21,
+                                  color: _isPlayingExcerpt
+                                      ? Colors.black
+                                      : Colors.white,
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

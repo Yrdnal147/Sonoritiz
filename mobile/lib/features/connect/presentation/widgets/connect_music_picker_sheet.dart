@@ -1215,18 +1215,35 @@ class _ConnectMusicPickerSheetState extends State<ConnectMusicPickerSheet> {
                                     _handleSelectTrack(t, addNextOnly: true),
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
+                                    horizontal: 9,
                                     vertical: 7,
                                   ),
                                   margin: const EdgeInsets.only(right: 6),
                                   decoration: BoxDecoration(
                                     color: Colors.white.withValues(alpha: 0.09),
                                     borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: Colors.white.withValues(alpha: 0.14),
+                                    ),
                                   ),
-                                  child: const Icon(
-                                    Icons.playlist_add_rounded,
-                                    color: Colors.white,
-                                    size: 17,
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.playlist_play_rounded,
+                                        color: AppColors.primary,
+                                        size: 16,
+                                      ),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        "Lire ensuite",
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 11.2,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),

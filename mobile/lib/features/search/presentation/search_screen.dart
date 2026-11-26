@@ -13,6 +13,7 @@ import 'widgets/sonoritiz_moods_widget.dart';
 import '../../../core/widgets/sonoritiz_track_tile.dart';
 import '../../../core/widgets/sonoritiz_artwork.dart';
 import '../../../core/widgets/sonoritiz_dynamic_background.dart';
+import '../../../core/widgets/track_context_menu.dart';
 import '../../../core/storage/storage_service.dart';
 import '../../discovery/presentation/cubit/discovery_cubit.dart';
 import '../../discovery/presentation/cubit/discovery_state.dart';
@@ -873,6 +874,7 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget _buildBestMatchCard(TrackModel track, List<TrackModel> queue) {
     return InkWell(
       onTap: () => context.read<PlayerCubit>().playTrack(track, queue: queue),
+      onLongPress: () => TrackContextMenu.show(context, track),
       borderRadius: BorderRadius.circular(14),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
@@ -926,6 +928,16 @@ class _SearchScreenState extends State<SearchScreen> {
                 color: Colors.black,
                 size: 24,
               ),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: "Options",
+              icon: Icon(
+                Icons.more_horiz_rounded,
+                color: Colors.white.withValues(alpha: 0.65),
+              ),
+              onPressed: () => TrackContextMenu.show(context, track),
             ),
           ],
         ),

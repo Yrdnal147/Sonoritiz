@@ -85,6 +85,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
         location.startsWith('/favorites') ||
         location.startsWith('/playlists') ||
         location.startsWith('/playlist') ||
+        location.startsWith('/history') ||
         location.startsWith('/local')) {
       _lastKnownTab = 2;
       return 2;
@@ -107,6 +108,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
     if (location.startsWith('/home') ||
         location.startsWith('/trends') ||
         location.startsWith('/new-releases') ||
+        location.startsWith('/all-releases') ||
+        location.startsWith('/collection') ||
         location.startsWith('/artist-playlist') ||
         location.startsWith('/select-artists') ||
         location.startsWith('/select_artists') ||

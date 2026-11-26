@@ -7,6 +7,7 @@ import '../../data/repositories/catalog_repository.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/storage/storage_service.dart';
 import '../../../../core/storage/json_cache.dart';
+import '../../../../core/widgets/collection_context_menu.dart';
 import '../../../../core/widgets/sonoritiz_artwork.dart';
 import '../../../../core/widgets/sonoritiz_cover_atmosphere.dart';
 import '../../../../core/widgets/sonoritiz_page_title.dart';
@@ -246,10 +247,9 @@ class _NewReleasesCarouselWidgetState extends State<NewReleasesCarouselWidget> {
   }
 
   void _openAllReleases() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _AllAlbumReleasesScreen(albums: List.of(_albums)),
-      ),
+    context.push(
+      '/all-releases',
+      extra: List<Map<String, dynamic>>.from(_albums),
     );
   }
 
@@ -377,6 +377,14 @@ class _NewReleasesCarouselWidgetState extends State<NewReleasesCarouselWidget> {
 
               return GestureDetector(
                 onTap: () => _openReleaseAlbum(context, album),
+                onLongPress: () => CollectionContextMenu.showForAlbum(
+                  context,
+                  albumId: (album['id'] ?? '').toString(),
+                  title: (album['title'] ?? 'Album').toString(),
+                  artistName:
+                      (album['artist_name'] ?? 'Artiste inconnu').toString(),
+                  coverUrl: (album['cover'] ?? '').toString(),
+                ),
                 child: Transform.scale(
                   scale: scale,
                   child: Container(
@@ -541,10 +549,10 @@ class _NewReleasesCarouselWidgetState extends State<NewReleasesCarouselWidget> {
 }
 
 /// Grille complète de toutes les sorties albums trouvées (ouverte via « Voir tout »).
-class _AllAlbumReleasesScreen extends StatelessWidget {
+class AllAlbumReleasesScreen extends StatelessWidget {
   final List<Map<String, dynamic>> albums;
 
-  const _AllAlbumReleasesScreen({required this.albums});
+  const AllAlbumReleasesScreen({super.key, required this.albums});
 
   @override
   Widget build(BuildContext context) {
@@ -558,6 +566,20 @@ class _AllAlbumReleasesScreen extends StatelessWidget {
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+            size: 20,
+          ),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              Navigator.of(context).maybePop();
+            }
+          },
+        ),
         title: const SonoritizPageTitle(
           title: 'Albums à venir & Sorties',
           fontSize: 22,
@@ -594,6 +616,14 @@ class _AllAlbumReleasesScreen extends StatelessWidget {
 
               return GestureDetector(
                 onTap: () => _openReleaseAlbum(context, album),
+                onLongPress: () => CollectionContextMenu.showForAlbum(
+                  context,
+                  albumId: (album['id'] ?? '').toString(),
+                  title: (album['title'] ?? 'Album').toString(),
+                  artistName:
+                      (album['artist_name'] ?? 'Artiste inconnu').toString(),
+                  coverUrl: (album['cover'] ?? '').toString(),
+                ),
                 behavior: HitTestBehavior.opaque,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

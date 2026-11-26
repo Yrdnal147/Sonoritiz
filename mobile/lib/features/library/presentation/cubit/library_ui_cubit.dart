@@ -65,16 +65,37 @@ class LibraryUiCubit extends Cubit<LibraryUiState> {
       initialSortModes[tabId] = _parseSortMode(storageService.getSortMode(tabId));
     }
 
+    final savedTab = storageService.getActiveLibraryTab();
+    final validTab = tabIds.contains(savedTab) ? savedTab : 'favorites';
+
     return LibraryUiState(
       viewModes: initialViewModes,
       sortModes: initialSortModes,
-      activeTabId: 'favorites',
+      activeTabId: validTab,
     );
+  }
+
+  int get activeTabIndex {
+    final idx = tabIds.indexOf(state.activeTabId);
+    return idx >= 0 ? idx : 0;
   }
 
   void setActiveTab(int index) {
     if (index >= 0 && index < tabIds.length) {
-      emit(state.copyWith(activeTabId: tabIds[index]));
+      final nextId = tabIds[index];
+      storageService.saveActiveLibraryTab(nextId);
+      if (state.activeTabId != nextId) {
+        emit(state.copyWith(activeTabId: nextId));
+      }
+    }
+  }
+
+  void setActiveTabById(String tabId) {
+    if (tabIds.contains(tabId)) {
+      storageService.saveActiveLibraryTab(tabId);
+      if (state.activeTabId != tabId) {
+        emit(state.copyWith(activeTabId: tabId));
+      }
     }
   }
 

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/storage/storage_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/share_utils.dart';
+import '../../../../core/widgets/collection_context_menu.dart';
 import '../../../../core/widgets/sonoritiz_cover_atmosphere.dart';
 import '../../../library/data/repositories/library_repository.dart';
 import '../../../library/presentation/cubit/library_cubit.dart';
 import '../../../library/presentation/cubit/library_state.dart';
+import '../../../offline/presentation/cubit/download_cubit.dart';
 import '../../../player/data/models/track_model.dart';
 import '../../../search/presentation/cubit/search_cubit.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -331,6 +334,69 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                   ),
                 ),
           appBarActions: [
+            if (!_isPlaylist && _tracks.isNotEmpty)
+              ValueListenableBuilder<List<Map<String, dynamic>>>(
+                valueListenable: StorageService.downloadedAlbumsNotifier,
+                builder: (context, _, __) {
+                  final effectiveAlbumId = albumIdStr ?? displayTitle;
+                  final isDownloaded = StorageService().isAlbumRegisteredDownloaded(
+                    id: effectiveAlbumId,
+                    title: displayTitle,
+                    artistName: displayArtist,
+                  );
+                  return IconButton(
+                    tooltip: isDownloaded
+                        ? "Album téléchargé hors-ligne"
+                        : "Télécharger l'album",
+                    icon: Icon(
+                      isDownloaded
+                          ? Icons.download_done_rounded
+                          : Icons.download_for_offline_outlined,
+                      color: isDownloaded ? AppColors.primary : Colors.white,
+                    ),
+                    onPressed: () async {
+                      final dlCubit = context.read<DownloadCubit>();
+                      if (isDownloaded) {
+                        await dlCubit.removeAlbumDownload(
+                          albumId: effectiveAlbumId,
+                          title: displayTitle,
+                          artistName: displayArtist,
+                          trackIds: _tracks.map((t) => t.id).toList(),
+                        );
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            backgroundColor: const Color(0xFF181820),
+                            behavior: SnackBarBehavior.floating,
+                            content: Text(
+                              "Album « $displayTitle » retiré des téléchargements.",
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          ),
+                        );
+                      } else {
+                        dlCubit.downloadAlbum(
+                          albumId: effectiveAlbumId,
+                          title: displayTitle,
+                          artistName: displayArtist,
+                          coverUrl: heroCover,
+                          tracks: _tracks,
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            backgroundColor: const Color(0xFF181820),
+                            behavior: SnackBarBehavior.floating,
+                            content: Text(
+                              "Téléchargement de l'album « $displayTitle » (${_tracks.length} titres) lancé !",
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  );
+                },
+              ),
             if (!_isPlaylist)
               IconButton(
                 tooltip: isAlbumLiked ? "Retirer des albums favoris" : "Liker l'album entier",
@@ -356,6 +422,22 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     ),
                   );
                 }
+              },
+            ),
+            IconButton(
+              tooltip: "Plus d'options",
+              icon: const Icon(Icons.more_horiz_rounded, color: Colors.white),
+              onPressed: () {
+                CollectionContextMenu.showForAlbum(
+                  context,
+                  albumId: albumIdStr ?? displayTitle,
+                  title: displayTitle,
+                  artistName: displayArtist,
+                  coverUrl: heroCover,
+                  year: _year,
+                  preloadedTracks: _tracks.isNotEmpty ? _tracks : null,
+                  isEditorialPlaylist: _isPlaylist,
+                );
               },
             ),
           ],

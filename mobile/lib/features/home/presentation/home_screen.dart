@@ -11,17 +11,17 @@ import '../../../core/storage/storage_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/services/palette_service.dart';
+import '../../../core/widgets/collection_context_menu.dart';
 import '../../../core/widgets/playlist_cover_mosaic.dart';
-import '../../../core/widgets/sonoritiz_cover_atmosphere.dart';
 import '../../../core/widgets/sonoritiz_page_title.dart';
 import '../../../core/widgets/sonoritiz_section_header.dart';
 import '../../../core/widgets/sonoritiz_track_card.dart';
 import '../../../core/widgets/sonoritiz_artist_circle_card.dart';
 import '../../../core/widgets/sonoritiz_artwork.dart';
 import '../../../core/widgets/sonoritiz_dynamic_background.dart';
+import '../../../core/widgets/track_context_menu.dart';
 
 import '../../library/data/repositories/library_repository.dart';
-import '../../library/presentation/playlist_detail_screen.dart';
 import '../../player/data/models/track_model.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
 import '../../player/presentation/cubit/superlike_cubit.dart';
@@ -347,7 +347,7 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
                               if (state.userPlaylists.isNotEmpty) ...[
                                 SonoritizSectionHeader(
                                   title: "Vos Playlists",
-                                  onSeeAll: () => context.go('/library'),
+                                  onSeeAll: () => context.push('/playlists'),
                                 ),
                                 const SizedBox(height: AppDimensions.spacingSm),
                                 _buildPlaylistCarousel(context, state.userPlaylists),
@@ -358,7 +358,7 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
                               if (state.userFavorites.isNotEmpty) ...[
                                 SonoritizSectionHeader(
                                   title: "Vos Favoris",
-                                  onSeeAll: () => context.go('/library'),
+                                  onSeeAll: () => context.push('/favorites'),
                                 ),
                                 const SizedBox(height: AppDimensions.spacingSm),
                                 _buildTrackCarousel(
@@ -502,7 +502,7 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
           },
         ),
         GestureDetector(
-          onTap: () => context.go('/profile'),
+          onTap: () => context.push('/profile'),
           child: Padding(
             padding: const EdgeInsets.only(right: AppDimensions.spacingMd),
             child: CircleAvatar(
@@ -542,6 +542,7 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
               subtitle: track.artistName,
               width: 140.0,
               trackId: track.id,
+              track: track,
               rank: showRanks ? (index + 1) : null,
               showCenterLogo: isTopMix,
               onTap: () => context.read<PlayerCubit>().playTrack(track, queue: tracks, source: source),
@@ -643,6 +644,14 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
                     'is_playlist': true,
                   });
                 },
+                onLongPress: () => CollectionContextMenu.showForAlbum(
+                  context,
+                  albumId: (playlist['id'] ?? '').toString(),
+                  title: title,
+                  artistName: creator,
+                  coverUrl: picture,
+                  isEditorialPlaylist: true,
+                ),
                 child: SizedBox(
                   width: 150,
                   child: Column(
@@ -876,6 +885,7 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
                   );
 
                   return GestureDetector(
+                    onLongPress: () => TrackContextMenu.show(context, ep),
                     onTap: () {
                       final cubit = context.read<PlayerCubit>();
                       if (resumeSec > 5) {
@@ -1137,6 +1147,7 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
                       subtitle: track.artistName,
                       width: 140.0,
                       trackId: track.id,
+                      track: track,
                       showConnectCenterLogo: true,
                       onTap: () => context.read<PlayerCubit>().playTrack(
                             track,
@@ -1196,20 +1207,19 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
           )
         : null;
 
-    Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(
-        builder: (_) => SonoritizCollectionScaffold(
-          title: title,
-          badgeLabel: 'BASÉ SUR VOS ÉCOUTES',
-          subtitle: subtitle,
-          metadata: '${tracks.length} ${tracks.length > 1 ? "titres" : "titre"}',
-          coverUrl: heroCover,
-          playlistMosaic: mosaic,
-          tracks: tracks,
-          playbackSource: title,
-          fallbackAccentColor: fallbackAccent,
-        ),
-      ),
+    context.push(
+      '/collection',
+      extra: <String, dynamic>{
+        'title': title,
+        'badgeLabel': 'BASÉ SUR VOS ÉCOUTES',
+        'subtitle': subtitle,
+        'metadata': '${tracks.length} ${tracks.length > 1 ? "titres" : "titre"}',
+        'coverUrl': heroCover,
+        'playlistMosaic': mosaic,
+        'tracks': tracks,
+        'playbackSource': title,
+        'fallbackAccentColor': fallbackAccent,
+      },
     );
   }
 
@@ -1291,6 +1301,19 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
                   heroCover: heroCover,
                   tracks: tracks,
                 ),
+                onLongPress: () {
+                  if (tracks.isEmpty) return;
+                  CollectionContextMenu.showForPlaylist(
+                    context,
+                    playlist: PlaylistModel(
+                      id: -1 - index,
+                      name: title,
+                      coverUrl: heroCover,
+                      tracks: tracks,
+                      tracksCount: tracks.length,
+                    ),
+                  );
+                },
                 onPlayTap: () {
                   if (tracks.isNotEmpty) {
                     context.read<PlayerCubit>().playTrack(
@@ -1615,12 +1638,15 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
               label: "Ouvrir la playlist ${playlist.name}",
               child: GestureDetector(
                 onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => PlaylistDetailScreen(playlist: playlist),
-                    ),
-                  );
+                  context.push('/playlist', extra: playlist);
+                },
+                onLongPress: () {
+                  if (playlist is PlaylistModel) {
+                    CollectionContextMenu.showForPlaylist(
+                      context,
+                      playlist: playlist,
+                    );
+                  }
                 },
                 child: SizedBox(
                   width: 140,
@@ -1843,6 +1869,7 @@ class _WeeklyCuratedCard extends StatefulWidget {
   final Color fallbackAccent;
   final List<TrackModel> tracks;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final VoidCallback onPlayTap;
 
   const _WeeklyCuratedCard({
@@ -1853,6 +1880,7 @@ class _WeeklyCuratedCard extends StatefulWidget {
     required this.fallbackAccent,
     required this.tracks,
     required this.onTap,
+    this.onLongPress,
     required this.onPlayTap,
   });
 
@@ -1956,6 +1984,7 @@ class _WeeklyCuratedCardState extends State<_WeeklyCuratedCard> {
 
     return GestureDetector(
       onTap: widget.onTap,
+      onLongPress: widget.onLongPress,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 350),
         curve: Curves.easeOutCubic,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart' as import_go_router;
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../features/player/data/models/track_model.dart';
 import '../../../features/player/presentation/cubit/player_cubit.dart';
@@ -17,12 +19,13 @@ class TrackContextMenu extends StatelessWidget {
   const TrackContextMenu({Key? key, required this.track, this.playlistId}) : super(key: key);
 
   static void show(BuildContext context, TrackModel track, {int? playlistId}) {
+    HapticFeedback.mediumImpact();
     showModalBottomSheet(
       context: context,
       useRootNavigator: true,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => TrackContextMenu(track: track, playlistId: playlistId),
+      builder: (_) => TrackContextMenu(track: track, playlistId: playlistId),
     );
   }
 
@@ -141,9 +144,10 @@ class TrackContextMenu extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
-            // Action: Lire ensuite (Son suivant immédiat)
+            // Action: Lire ensuite (Son ou Podcast suivant immédiat)
             _buildMenuOption(
               icon: Icons.playlist_play_rounded,
+              iconColor: AppColors.primary,
               title: "Lire ensuite",
               onTap: () {
                 context.read<PlayerCubit>().playTrackNext(track);
@@ -158,6 +162,27 @@ class TrackContextMenu extends StatelessWidget {
               },
             ),
             const SizedBox(height: 12),
+
+            if (track.isPodcastOrBook) ...[
+              _buildMenuOption(
+                icon: Icons.videocam_rounded,
+                iconColor: AppColors.primary,
+                title: "Voir la vidéo du podcast",
+                onTap: () {
+                  final router = import_go_router.GoRouter.of(context);
+                  Navigator.pop(context);
+                  router.push(
+                    '/podcast_player',
+                    extra: <String, dynamic>{
+                      'track': track,
+                      'initialVideoMode': true,
+                      'initialPositionSeconds': 0,
+                    },
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
 
             // Action: File d'attente
             _buildMenuOption(

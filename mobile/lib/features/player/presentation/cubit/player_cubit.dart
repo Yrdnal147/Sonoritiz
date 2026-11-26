@@ -1230,8 +1230,40 @@ class PlayerCubit extends Cubit<PlayerState> {
     unawaited(_audioHandler.prefetch(track.toMediaItem()));
   }
 
+  /// Insère tous les titres d'un album ou d'une playlist juste après le morceau en cours (« Lire ensuite »).
+  void playTrackListNext(List<TrackModel> tracks, {String? source}) {
+    if (tracks.isEmpty) return;
+    if (state.queue.isEmpty) {
+      unawaited(playTrack(tracks.first, queue: tracks, source: source));
+      return;
+    }
+    final updatedQueue = List<TrackModel>.from(state.queue);
+    final int insertIndex = (state.currentIndex + 1).clamp(0, updatedQueue.length);
+    updatedQueue.insertAll(insertIndex, tracks);
+    _nextShuffleIndex = state.isShuffleModeEnabled ? insertIndex : null;
+    emit(state.copyWith(queue: updatedQueue));
+    unawaited(_audioHandler.prefetch(tracks.first.toMediaItem()));
+  }
+
   void addToQueue(TrackModel track) {
+    if (state.queue.isEmpty) {
+      unawaited(playTrack(track, queue: [track]));
+      return;
+    }
     final updatedQueue = List<TrackModel>.from(state.queue)..add(track);
+    emit(state.copyWith(queue: updatedQueue));
+    if (state.currentTrack != null) {
+      _schedulePrefetchOfNext(state.currentTrack!);
+    }
+  }
+
+  void addTrackListToQueue(List<TrackModel> tracks, {String? source}) {
+    if (tracks.isEmpty) return;
+    if (state.queue.isEmpty) {
+      unawaited(playTrack(tracks.first, queue: tracks, source: source));
+      return;
+    }
+    final updatedQueue = List<TrackModel>.from(state.queue)..addAll(tracks);
     emit(state.copyWith(queue: updatedQueue));
     if (state.currentTrack != null) {
       _schedulePrefetchOfNext(state.currentTrack!);

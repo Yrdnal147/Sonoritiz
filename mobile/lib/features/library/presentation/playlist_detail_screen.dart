@@ -348,6 +348,68 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                   ),
                 ),
                 Divider(color: Colors.white.withValues(alpha: 0.08), height: 22),
+                if (livePlaylist.tracks.isNotEmpty) ...[
+                  ListTile(
+                    leading: const Icon(
+                      Icons.playlist_play_rounded,
+                      color: AppColors.primary,
+                    ),
+                    title: const Text(
+                      "Lire ensuite",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetCtx);
+                      context.read<PlayerCubit>().playTrackListNext(
+                            livePlaylist.tracks,
+                            source: "la playlist ${livePlaylist.name}",
+                          );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          backgroundColor: const Color(0xFF181820),
+                          behavior: SnackBarBehavior.floating,
+                          content: Text(
+                            "« ${livePlaylist.name} » sera lue juste après",
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.queue_music_rounded,
+                      color: Colors.white,
+                    ),
+                    title: const Text(
+                      "Ajouter à la file d'attente",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetCtx);
+                      context.read<PlayerCubit>().addTrackListToQueue(
+                            livePlaylist.tracks,
+                            source: "la playlist ${livePlaylist.name}",
+                          );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          backgroundColor: const Color(0xFF181820),
+                          behavior: SnackBarBehavior.floating,
+                          content: Text(
+                            "« ${livePlaylist.name} » ajoutée à la file d'attente",
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
                 ListTile(
                   leading: const Icon(Icons.add_circle_outline_rounded, color: Colors.white),
                   title: const Text(
@@ -562,8 +624,10 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                                   _isSelectionMode = false;
                                   _selectedTrackIds.clear();
                                 });
+                              } else if (GoRouter.maybeOf(context)?.canPop() ?? false) {
+                                context.pop();
                               } else {
-                                Navigator.pop(context);
+                                Navigator.of(context).maybePop();
                               }
                             },
                           ),

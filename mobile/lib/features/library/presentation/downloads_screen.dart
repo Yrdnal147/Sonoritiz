@@ -1,25 +1,69 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import '../../../core/theme/app_dimensions.dart';
+import '../../../core/storage/storage_service.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/collection_context_menu.dart';
 import '../../../core/widgets/sonoritiz_artwork.dart';
 import '../../../core/widgets/sonoritiz_cover_atmosphere.dart';
 import '../../../core/widgets/sonoritiz_fast_scrollbar.dart';
 import '../../../core/widgets/sonoritiz_page_title.dart';
+import '../../../core/widgets/track_context_menu.dart';
+import '../../../core/widgets/track_grid_view.dart';
 import '../../offline/data/models/offline_track_model.dart';
 import '../../offline/presentation/cubit/download_cubit.dart';
-import '../../../core/widgets/track_grid_view.dart';
-import 'cubit/library_ui_cubit.dart';
-import '../../player/presentation/cubit/player_cubit.dart';
 import '../../player/data/models/track_model.dart';
+import '../../player/presentation/cubit/player_cubit.dart';
 import 'cubit/library_cubit.dart';
 import 'cubit/library_state.dart';
+import 'cubit/library_ui_cubit.dart';
 
 class DownloadsScreen extends StatefulWidget {
   const DownloadsScreen({Key? key}) : super(key: key);
 
   @override
   State<DownloadsScreen> createState() => _DownloadsScreenState();
+}
+
+class _ResolvedDownloadedAlbum {
+  final String id;
+  final String title;
+  final String artistName;
+  final String coverUrl;
+  final List<String> registeredTrackIds;
+  final List<OfflineTrackModel> offlineTracks;
+  final int activePendingCount;
+
+  const _ResolvedDownloadedAlbum({
+    required this.id,
+    required this.title,
+    required this.artistName,
+    required this.coverUrl,
+    required this.registeredTrackIds,
+    required this.offlineTracks,
+    required this.activePendingCount,
+  });
+
+  int get expectedCount => registeredTrackIds.isNotEmpty
+      ? registeredTrackIds.length
+      : offlineTracks.length;
+
+  String get effectiveCoverUrl {
+    for (final ot in offlineTracks) {
+      if (!kIsWeb &&
+          ot.localCoverPath.isNotEmpty &&
+          File(ot.localCoverPath).existsSync()) {
+        return 'file://${ot.localCoverPath}';
+      }
+    }
+    if (coverUrl.isNotEmpty) return coverUrl;
+    for (final ot in offlineTracks) {
+      if (ot.track.coverUrl.isNotEmpty) return ot.track.coverUrl;
+    }
+    return '';
+  }
 }
 
 class _DownloadsScreenState extends State<DownloadsScreen>
@@ -63,6 +107,85 @@ class _DownloadsScreenState extends State<DownloadsScreen>
         album.contains(normalizedQuery);
   }
 
+  List<_ResolvedDownloadedAlbum> _resolveRealDownloadedAlbums({
+    required List<Map<String, dynamic>> rawRegisteredAlbums,
+    required List<OfflineTrackModel> offlineTracks,
+    required Map<String, ActiveDownloadTask> activeTasks,
+    required String normalizedQuery,
+  }) {
+    if (rawRegisteredAlbums.isEmpty) return const [];
+
+    final offlineById = <String, OfflineTrackModel>{
+      for (final ot in offlineTracks) ot.track.id: ot,
+    };
+
+    final resolved = <_ResolvedDownloadedAlbum>[];
+    for (final reg in rawRegisteredAlbums) {
+      final id = (reg['id'] ?? '').toString().trim();
+      final title = (reg['title'] ?? '').toString().trim();
+      if (title.isEmpty) continue;
+      final artistName = (reg['artistName'] ?? 'Artiste').toString().trim();
+      final coverUrl = (reg['coverUrl'] ?? '').toString().trim();
+      final trackIds = (reg['trackIds'] as List? ?? const [])
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+
+      final matched = <OfflineTrackModel>[];
+      final seenIds = <String>{};
+
+      for (final tid in trackIds) {
+        final found = offlineById[tid];
+        if (found != null && seenIds.add(found.track.id)) {
+          matched.add(found);
+        }
+      }
+
+      // Fallback de correspondance uniquement pour cet album explicitement enregistré
+      final normTitle = LibraryUiCubit.normalizeForSearch(title);
+      for (final ot in offlineTracks) {
+        if (seenIds.contains(ot.track.id)) continue;
+        final otAlbumNorm =
+            LibraryUiCubit.normalizeForSearch(ot.track.albumName);
+        if (otAlbumNorm.isNotEmpty && otAlbumNorm == normTitle) {
+          seenIds.add(ot.track.id);
+          matched.add(ot);
+        }
+      }
+
+      int pendingCount = 0;
+      for (final tid in trackIds) {
+        if (activeTasks.containsKey(tid)) pendingCount++;
+      }
+
+      // N'afficher l'album que s'il a au moins 1 piste téléchargée ou en cours
+      if (matched.isEmpty && pendingCount == 0) continue;
+
+      if (normalizedQuery.isNotEmpty) {
+        final matchesMeta =
+            normTitle.contains(normalizedQuery) ||
+            LibraryUiCubit.normalizeForSearch(artistName)
+                .contains(normalizedQuery) ||
+            matched.any((ot) => _matchesTrackQuery(ot.track, normalizedQuery));
+        if (!matchesMeta) continue;
+      }
+
+      resolved.add(
+        _ResolvedDownloadedAlbum(
+          id: id.isNotEmpty ? id : title,
+          title: title,
+          artistName: artistName,
+          coverUrl: coverUrl,
+          registeredTrackIds: trackIds,
+          offlineTracks: matched,
+          activePendingCount: pendingCount,
+        ),
+      );
+    }
+
+    return resolved;
+  }
+
   void _showPlaylistsSelectionForMultiple(
       BuildContext parentContext, List<TrackModel> tracks) {
     final libraryState = parentContext.read<LibraryCubit>().state;
@@ -73,38 +196,47 @@ class _DownloadsScreenState extends State<DownloadsScreen>
       context: parentContext,
       builder: (context) {
         return Dialog(
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: const Color(0xFF16161D),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
                 child: Row(
                   children: [
-                    Icon(Icons.playlist_add_rounded,
-                        color: Theme.of(context).colorScheme.primary),
+                    const Icon(
+                      Icons.playlist_add_rounded,
+                      color: AppColors.primary,
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         "Ajouter ${tracks.length} titre${tracks.length > 1 ? 's' : ''}",
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge
-                            ?.copyWith(fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const Divider(height: 1),
+              Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
               if (playlists.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(20),
+                Padding(
+                  padding: const EdgeInsets.all(22),
                   child: Text(
-                      "Aucune playlist disponible.\nCréez une playlist d'abord.",
-                      textAlign: TextAlign.center),
+                    "Aucune playlist disponible.\nCréez une playlist d'abord.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.65),
+                    ),
+                  ),
                 )
               else
                 ConstrainedBox(
@@ -116,16 +248,26 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                       final playlist = playlists[index];
                       return ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withValues(alpha: 0.15),
-                          child: Icon(Icons.queue_music,
-                              color: Theme.of(context).colorScheme.primary),
+                          backgroundColor:
+                              AppColors.primary.withValues(alpha: 0.16),
+                          child: const Icon(
+                            Icons.queue_music_rounded,
+                            color: AppColors.primary,
+                          ),
                         ),
-                        title: Text(playlist.name),
-                        subtitle:
-                            Text("${playlist.tracks?.length ?? 0} titres"),
+                        title: Text(
+                          playlist.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        subtitle: Text(
+                          "${playlist.tracks?.length ?? 0} titres",
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.56),
+                          ),
+                        ),
                         onTap: () {
                           parentContext
                               .read<LibraryCubit>()
@@ -134,8 +276,11 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                           Navigator.pop(context);
                           ScaffoldMessenger.of(parentContext).showSnackBar(
                             SnackBar(
+                              backgroundColor: const Color(0xFF181820),
                               content: Text(
-                                  "✅ ${tracks.length} titre${tracks.length > 1 ? 's' : ''} ajouté${tracks.length > 1 ? 's' : ''} à \"${playlist.name}\""),
+                                "${tracks.length} titre${tracks.length > 1 ? 's' : ''} ajouté${tracks.length > 1 ? 's' : ''} à « ${playlist.name} »",
+                                style: const TextStyle(color: Colors.white),
+                              ),
                               behavior: SnackBarBehavior.floating,
                               duration: const Duration(seconds: 3),
                             ),
@@ -146,10 +291,13 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                     },
                   ),
                 ),
-              const Divider(height: 1),
+              Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text("Annuler"),
+                child: Text(
+                  "Annuler",
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+                ),
               ),
             ],
           ),
@@ -159,25 +307,36 @@ class _DownloadsScreenState extends State<DownloadsScreen>
   }
 
   Widget _buildSectionHeader(String title, int count, {Widget? trailing}) {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 28, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
       child: Row(
         children: [
-          Text(title,
-              style: tt.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.3,
+            ),
+          ),
           const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
             decoration: BoxDecoration(
-              color: cs.primary.withValues(alpha: 0.15),
+              color: AppColors.primary.withValues(alpha: 0.16),
               borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.35),
+              ),
             ),
             child: Text(
               '$count',
-              style: tt.labelSmall?.copyWith(
-                  color: cs.primary, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                color: AppColors.primary,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
           const Spacer(),
@@ -197,13 +356,13 @@ class _DownloadsScreenState extends State<DownloadsScreen>
     final isQueued = task.status == DownloadStatus.queued;
     final isFailed = task.status == DownloadStatus.failed;
 
-    Color statusColor = cs.primary;
+    Color statusColor = AppColors.primary;
     String statusText = "${(task.progress * 100).toInt()}%";
     if (isPaused) {
       statusColor = const Color(0xFFFE9920);
       statusText = "En pause (${(task.progress * 100).toInt()}%)";
     } else if (isQueued) {
-      statusColor = cs.onSurfaceVariant;
+      statusColor = Colors.white60;
       statusText = "En attente...";
     } else if (isFailed) {
       statusColor = cs.error;
@@ -211,15 +370,15 @@ class _DownloadsScreenState extends State<DownloadsScreen>
     }
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
+        color: const Color(0xFF14141B),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: isFailed
-              ? cs.error.withValues(alpha: 0.3)
-              : Colors.white.withValues(alpha: 0.06),
+              ? cs.error.withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.08),
         ),
       ),
       child: Row(
@@ -228,12 +387,12 @@ class _DownloadsScreenState extends State<DownloadsScreen>
             alignment: Alignment.center,
             children: [
               ClipRRect(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(11),
                 child: SonoritizArtwork(
                   imageUrl: task.track.coverUrl,
                   width: 52,
                   height: 52,
-                  borderRadius: 10,
+                  borderRadius: 11,
                 ),
               ),
               if (isDownloading)
@@ -241,18 +400,19 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                   width: 52,
                   height: 52,
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    borderRadius: BorderRadius.circular(10),
+                    color: Colors.black.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(11),
                   ),
                   child: Center(
                     child: SizedBox(
-                      width: 28,
-                      height: 28,
+                      width: 26,
+                      height: 26,
                       child: CircularProgressIndicator(
                         value: task.progress > 0 ? task.progress : null,
-                        strokeWidth: 3,
-                        color: cs.primary,
-                        backgroundColor: cs.primary.withValues(alpha: 0.2),
+                        strokeWidth: 2.8,
+                        color: AppColors.primary,
+                        backgroundColor:
+                            AppColors.primary.withValues(alpha: 0.2),
                       ),
                     ),
                   ),
@@ -263,11 +423,14 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                   height: 52,
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.55),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(11),
                   ),
                   child: const Center(
-                    child:
-                        Icon(Icons.pause_rounded, color: Colors.white, size: 24),
+                    child: Icon(
+                      Icons.pause_rounded,
+                      color: Colors.white,
+                      size: 24,
+                    ),
                   ),
                 ),
             ],
@@ -284,7 +447,10 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                       : "Titre inconnu",
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: tt.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                  style: tt.titleSmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -293,7 +459,9 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                       : "Artiste inconnu",
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                  style: tt.bodySmall?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.6),
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Row(
@@ -314,7 +482,7 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                       statusText,
                       style: tt.bodySmall?.copyWith(
                         color: statusColor,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                         fontSize: 11,
                       ),
                     ),
@@ -332,7 +500,7 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                   icon:
                       const Icon(Icons.pause_circle_outline_rounded, size: 24),
                   tooltip: "Mettre en pause",
-                  color: cs.primary,
+                  color: AppColors.primary,
                   onPressed: () => cubit.pauseDownload(task.track.id),
                 )
               else if (isPaused)
@@ -347,13 +515,13 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                 IconButton(
                   icon: const Icon(Icons.refresh_rounded, size: 24),
                   tooltip: "Réessayer",
-                  color: cs.primary,
+                  color: AppColors.primary,
                   onPressed: () => cubit.retryDownload(task.track.id),
                 ),
               IconButton(
                 icon: const Icon(Icons.close_rounded, size: 20),
                 tooltip: "Annuler",
-                color: cs.onSurfaceVariant,
+                color: Colors.white54,
                 onPressed: () => cubit.cancelDownload(task.track.id),
               ),
             ],
@@ -364,20 +532,31 @@ class _DownloadsScreenState extends State<DownloadsScreen>
   }
 
   Widget _buildAlbumCard(
-      BuildContext context, MapEntry<String, List<OfflineTrackModel>> album) {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
-    final title = album.key;
-    final tracks = album.value;
-    final firstTrack = tracks.first;
-    final coverPath = firstTrack.localCoverPath;
-    final artistName = firstTrack.track.artistName;
+    BuildContext context,
+    _ResolvedDownloadedAlbum album,
+  ) {
+    final trackList = album.offlineTracks.map((e) => e.track).toList();
+    final effectiveCover = album.effectiveCoverUrl;
+    final countLabel = album.activePendingCount > 0
+        ? "${album.offlineTracks.length}/${album.expectedCount} titres"
+        : "${album.offlineTracks.length} ${album.offlineTracks.length > 1 ? 'titres' : 'titre'}";
+
+    void openContextMenu() {
+      CollectionContextMenu.showForAlbum(
+        context,
+        albumId: album.id,
+        title: album.title,
+        artistName: album.artistName,
+        coverUrl: effectiveCover,
+        preloadedTracks: trackList.isNotEmpty ? trackList : null,
+      );
+    }
 
     return GestureDetector(
-      onTap: () => _showOfflineAlbumBottomSheet(
-          context, title, artistName, coverPath, tracks),
+      onTap: () => _showOfflineAlbumBottomSheet(context, album),
+      onLongPress: openContextMenu,
       child: Container(
-        width: 140,
+        width: 148,
         margin: const EdgeInsets.only(right: 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -385,62 +564,154 @@ class _DownloadsScreenState extends State<DownloadsScreen>
             Stack(
               children: [
                 Container(
-                  width: 140,
-                  height: 140,
+                  width: 148,
+                  height: 148,
                   decoration: BoxDecoration(
-                    color: cs.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(12),
+                    color: const Color(0xFF16161D),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.09),
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      )
+                        color: Colors.black.withValues(alpha: 0.36),
+                        blurRadius: 12,
+                        offset: const Offset(0, 5),
+                      ),
                     ],
                   ),
                   child: SonoritizArtwork(
-                    imageUrl: coverPath.isNotEmpty ? 'file://$coverPath' : '',
-                    width: 140,
-                    height: 140,
-                    borderRadius: 12,
-                    fallbackIcon:
-                        Icon(Icons.album, size: 50, color: cs.onSurfaceVariant),
+                    imageUrl: effectiveCover,
+                    width: 148,
+                    height: 148,
+                    borderRadius: 16,
+                    fallbackIcon: const Icon(
+                      Icons.album_rounded,
+                      size: 50,
+                      color: Colors.white30,
+                    ),
                   ),
                 ),
                 Positioned(
                   top: 8,
-                  right: 8,
+                  left: 8,
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.65),
-                      borderRadius: BorderRadius.circular(10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 3.5,
                     ),
-                    child: Text(
-                      '${tracks.length}',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.45),
+                        width: 0.8,
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.download_done_rounded,
+                          color: AppColors.primary,
+                          size: 11,
+                        ),
+                        SizedBox(width: 3),
+                        Text(
+                          "ALBUM",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: GestureDetector(
+                    onTap: openContextMenu,
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.68),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.16),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.more_horiz_rounded,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ),
+                  ),
+                ),
+                if (trackList.isNotEmpty)
+                  Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: GestureDetector(
+                      onTap: () {
+                        context.read<PlayerCubit>().playTrack(
+                              trackList.first,
+                              queue: trackList,
+                              source: "${album.artistName} • ${album.title}",
+                            );
+                      },
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.45),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.play_arrow_rounded,
+                          color: Colors.black,
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
             const SizedBox(height: 8),
             Text(
-              title,
+              album.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: tt.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.2,
+              ),
             ),
             const SizedBox(height: 2),
             Text(
-              "$artistName · ${tracks.length} titres",
+              "${album.artistName} • $countLabel",
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.56),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
@@ -449,42 +720,83 @@ class _DownloadsScreenState extends State<DownloadsScreen>
   }
 
   Widget _buildEmptyState(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 40),
+        padding: const EdgeInsets.symmetric(horizontal: 38),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 90,
-              height: 90,
+              width: 88,
+              height: 88,
               decoration: BoxDecoration(
-                color: cs.primary.withValues(alpha: 0.1),
+                color: AppColors.primary.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.primary.withValues(alpha: 0.25),
+                ),
               ),
-              child: Icon(Icons.download_for_offline_outlined,
-                  size: 46, color: cs.primary.withValues(alpha: 0.7)),
+              child: const Icon(
+                Icons.download_for_offline_outlined,
+                size: 42,
+                color: AppColors.primary,
+              ),
             ),
             const SizedBox(height: 20),
-            Text("Aucun téléchargement",
-                style: tt.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+            Text(
+              "Aucun téléchargement",
+              style: tt.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
+            ),
             const SizedBox(height: 8),
             Text(
-              "Les titres téléchargés s'écoutent sans connexion internet.",
+              "Télécharge tes albums ou sons préférés pour les écouter partout sans connexion.",
               textAlign: TextAlign.center,
-              style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+              style: tt.bodyMedium?.copyWith(
+                color: Colors.white.withValues(alpha: 0.6),
+              ),
             ),
-            const SizedBox(height: 28),
-            FilledButton.icon(
-              onPressed: () => context.go('/home'),
-              icon: const Icon(Icons.explore_rounded),
-              label: const Text("Explorer la musique"),
-              style: FilledButton.styleFrom(
-                shape: const StadiumBorder(),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+            const SizedBox(height: 26),
+            GestureDetector(
+              onTap: () => context.go('/home'),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 26,
+                  vertical: 13,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.28),
+                      blurRadius: 14,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.explore_rounded,
+                      color: Colors.black,
+                      size: 19,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      "Explorer la musique",
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -494,7 +806,6 @@ class _DownloadsScreenState extends State<DownloadsScreen>
   }
 
   Widget _buildEmptySearchState(BuildContext context, String rawQuery) {
-    final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     return Center(
       child: Padding(
@@ -506,26 +817,31 @@ class _DownloadsScreenState extends State<DownloadsScreen>
               width: 82,
               height: 82,
               decoration: BoxDecoration(
-                color: cs.primary.withValues(alpha: 0.1),
+                color: AppColors.primary.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: Icon(
+              child: const Icon(
                 Icons.search_off_rounded,
-                size: 42,
-                color: cs.primary.withValues(alpha: 0.8),
+                size: 40,
+                color: AppColors.primary,
               ),
             ),
             const SizedBox(height: 18),
             Text(
-              "Aucun son trouvé pour « ${rawQuery.trim()} »",
+              "Aucun téléchargement trouvé pour « ${rawQuery.trim()} »",
               textAlign: TextAlign.center,
-              style: tt.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              style: tt.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
-              "Vérifiez l'orthographe du titre ou du nom de l'artiste.",
+              "Vérifie l'orthographe du titre, de l'album ou de l'artiste.",
               textAlign: TextAlign.center,
-              style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+              style: tt.bodyMedium?.copyWith(
+                color: Colors.white.withValues(alpha: 0.58),
+              ),
             ),
             const SizedBox(height: 22),
             OutlinedButton.icon(
@@ -533,6 +849,8 @@ class _DownloadsScreenState extends State<DownloadsScreen>
               icon: const Icon(Icons.clear_rounded, size: 18),
               label: const Text("Effacer la recherche"),
               style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.22)),
                 shape: const StadiumBorder(),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -557,13 +875,13 @@ class _DownloadsScreenState extends State<DownloadsScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xF71E1E1E),
+          color: const Color(0xF716161D),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.4),
-              blurRadius: 16,
+              color: Colors.black.withValues(alpha: 0.45),
+              blurRadius: 18,
               offset: const Offset(0, 6),
             ),
           ],
@@ -571,20 +889,23 @@ class _DownloadsScreenState extends State<DownloadsScreen>
         child: Row(
           children: [
             TextButton.icon(
-              onPressed: count == offlineTracks.length && offlineTracks.isNotEmpty
-                  ? () => setState(() => _selectedTrackIds.clear())
-                  : () => _selectAll(offlineTracks),
+              onPressed:
+                  count == offlineTracks.length && offlineTracks.isNotEmpty
+                      ? () => setState(() => _selectedTrackIds.clear())
+                      : () => _selectAll(offlineTracks),
               icon: Icon(
                 count == offlineTracks.length && offlineTracks.isNotEmpty
                     ? Icons.deselect_rounded
                     : Icons.select_all_rounded,
                 size: 18,
               ),
-              label: Text(count == offlineTracks.length && offlineTracks.isNotEmpty
-                  ? "Tout désélect."
-                  : "Tout"),
+              label: Text(
+                count == offlineTracks.length && offlineTracks.isNotEmpty
+                    ? "Tout désélect."
+                    : "Tout",
+              ),
               style: TextButton.styleFrom(
-                foregroundColor: cs.onSurface,
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
               ),
             ),
@@ -594,14 +915,17 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                     ? "Sélectionner..."
                     : "$count sélectionné${count > 1 ? 's' : ''}",
                 textAlign: TextAlign.center,
-                style: tt.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                style: tt.titleSmall?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             if (count > 0)
               IconButton(
                 icon: const Icon(Icons.playlist_add_rounded, size: 22),
                 tooltip: "Ajouter à une playlist",
-                color: cs.primary,
+                color: AppColors.primary,
                 onPressed: () {
                   final selected = offlineTracks
                       .where((ot) => _selectedTrackIds.contains(ot.track.id))
@@ -631,8 +955,8 @@ class _DownloadsScreenState extends State<DownloadsScreen>
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Dismiss',
-      barrierColor: Colors.black.withValues(alpha: 0.5),
-      transitionDuration: const Duration(milliseconds: 300),
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      transitionDuration: const Duration(milliseconds: 260),
       transitionBuilder: (ctx, anim, anim2, child) {
         return ScaleTransition(
           scale: CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
@@ -642,18 +966,21 @@ class _DownloadsScreenState extends State<DownloadsScreen>
       pageBuilder: (ctx, anim, anim2) {
         return Center(
           child: Container(
-            width: MediaQuery.of(context).size.width * 0.82,
+            width: MediaQuery.of(context).size.width * 0.84,
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: const Color(0xF7202020),
+              color: const Color(0xFF16161D),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.18), width: 1.2),
+                color: Colors.white.withValues(alpha: 0.14),
+                width: 1.1,
+              ),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    blurRadius: 30,
-                    offset: const Offset(0, 10))
+                  color: Colors.black.withValues(alpha: 0.45),
+                  blurRadius: 30,
+                  offset: const Offset(0, 10),
+                ),
               ],
             ),
             child: Material(
@@ -668,19 +995,27 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                       color: cs.error.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(Icons.delete_forever_rounded,
-                        color: cs.error, size: 30),
+                    child: Icon(
+                      Icons.delete_forever_rounded,
+                      color: cs.error,
+                      size: 30,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Text(
                     "Supprimer $count titre${count > 1 ? 's' : ''} ?",
-                    style: tt.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                    style: tt.titleLarge?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
                   Text(
                     "Les fichiers seront supprimés de votre appareil. Vous pourrez les retélécharger plus tard.",
-                    style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                    style: tt.bodyMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.62),
+                    ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 24),
@@ -690,11 +1025,14 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                         child: OutlinedButton(
                           onPressed: () => Navigator.pop(ctx),
                           style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
                             side: BorderSide(
-                                color: Colors.white.withValues(alpha: 0.3)),
+                              color: Colors.white.withValues(alpha: 0.24),
+                            ),
                             minimumSize: const Size(double.infinity, 48),
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14)),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
                           ),
                           child: const Text("Annuler"),
                         ),
@@ -711,8 +1049,11 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                             }
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
+                                backgroundColor: const Color(0xFF181820),
                                 content: Text(
-                                    "$count titre${count > 1 ? 's' : ''} supprimé${count > 1 ? 's' : ''}"),
+                                  "$count titre${count > 1 ? 's' : ''} supprimé${count > 1 ? 's' : ''}",
+                                  style: const TextStyle(color: Colors.white),
+                                ),
                                 behavior: SnackBarBehavior.floating,
                               ),
                             );
@@ -721,9 +1062,11 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                           style: ElevatedButton.styleFrom(
                             backgroundColor: cs.error,
                             foregroundColor: Colors.white,
+                            elevation: 0,
                             minimumSize: const Size(double.infinity, 48),
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14)),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
                           ),
                           child: const Text("Supprimer"),
                         ),
@@ -746,257 +1089,341 @@ class _DownloadsScreenState extends State<DownloadsScreen>
     return BlocBuilder<DownloadCubit, DownloadState>(
       builder: (context, state) {
         if (state is! DownloadStateData) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+            child: CircularProgressIndicator(
+              color: AppColors.primary,
+              strokeWidth: 2.5,
+            ),
+          );
         }
 
         final offlineTracks = state.offlineTracks;
         final activeTasks = state.activeTasks;
 
-        if (offlineTracks.isEmpty && activeTasks.isEmpty) {
-          return _buildEmptyState(context);
-        }
-
-        return BlocBuilder<LibraryUiCubit, LibraryUiState>(
-          builder: (context, uiState) {
-            final viewMode = uiState.getViewModeFor('downloads');
-            final sortMode = uiState.getSortModeFor('downloads');
-            final normalizedQuery =
-                LibraryUiCubit.normalizeForSearch(uiState.searchQuery);
-
-            final filteredOfflineTracks = normalizedQuery.isEmpty
-                ? offlineTracks
-                : offlineTracks
-                    .where((ot) => _matchesTrackQuery(ot.track, normalizedQuery))
-                    .toList();
-
-            final filteredActiveTasksList = normalizedQuery.isEmpty
-                ? activeTasks.values.toList()
-                : activeTasks.values
-                    .where(
-                        (task) => _matchesTrackQuery(task.track, normalizedQuery))
-                    .toList();
-
-            // Group tracks by album (filtré si recherche active)
-            final Map<String, List<OfflineTrackModel>> albumsMap = {};
-            for (final ot in offlineTracks) {
-              final albumName = ot.track.albumName.trim();
-              if (albumName.isNotEmpty &&
-                  albumName != 'YouTube Audio' &&
-                  albumName != 'Sonoritiz' &&
-                  albumName != 'Top Titres' &&
-                  albumName != 'Deezer Top') {
-                albumsMap.putIfAbsent(albumName, () => []).add(ot);
-              }
-            }
-            final downloadedAlbums = normalizedQuery.isEmpty
-                ? albumsMap.entries.toList()
-                : albumsMap.entries.where((entry) {
-                    if (LibraryUiCubit.normalizeForSearch(entry.key)
-                        .contains(normalizedQuery)) {
-                      return true;
-                    }
-                    return entry.value.any(
-                        (ot) => _matchesTrackQuery(ot.track, normalizedQuery));
-                  }).toList();
-
-            if (normalizedQuery.isNotEmpty &&
-                filteredOfflineTracks.isEmpty &&
-                filteredActiveTasksList.isEmpty &&
-                downloadedAlbums.isEmpty) {
-              return _buildEmptySearchState(context, uiState.searchQuery);
+        return ValueListenableBuilder<List<Map<String, dynamic>>>(
+          valueListenable: StorageService.downloadedAlbumsNotifier,
+          builder: (context, rawRegisteredAlbums, _) {
+            if (offlineTracks.isEmpty &&
+                activeTasks.isEmpty &&
+                rawRegisteredAlbums.isEmpty) {
+              return _buildEmptyState(context);
             }
 
-            final Map<String, String> localCoverPaths = {
-              for (final ot in offlineTracks) ot.track.id: ot.localCoverPath
-            };
+            return BlocBuilder<LibraryUiCubit, LibraryUiState>(
+              builder: (context, uiState) {
+                final viewMode = uiState.getViewModeFor('downloads');
+                final sortMode = uiState.getSortModeFor('downloads');
+                final normalizedQuery =
+                    LibraryUiCubit.normalizeForSearch(uiState.searchQuery);
 
-            final rawTracks =
-                filteredOfflineTracks.map((e) => e.track).toList();
-            final sortedTracks = TrackGridView.sortTracks(rawTracks, sortMode);
+                final filteredOfflineTracks = normalizedQuery.isEmpty
+                    ? offlineTracks
+                    : offlineTracks
+                        .where((ot) =>
+                            _matchesTrackQuery(ot.track, normalizedQuery))
+                        .toList();
 
-            return Stack(
-              children: [
-                SonoritizFastScrollbar(
-                  itemCount: sortedTracks.length,
-                  bottomMargin: _isSelectionMode ? 220 : 110,
-                  labelBuilder: (idx) {
-                    final t = sortedTracks[idx];
-                    if (sortMode == SortMode.alpha) {
-                      final clean = t.title.trim();
-                      if (clean.isNotEmpty) {
-                        final firstChar = clean[0].toUpperCase();
-                        return RegExp(r'[A-ZÀ-Ÿ0-9]').hasMatch(firstChar)
-                            ? firstChar
-                            : '#';
-                      }
-                    }
-                    return '${idx + 1}';
-                  },
-                  child: CustomScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    slivers: [
-                      // ── 1. DOWNLOADS IN PROGRESS ──────────────────────
-                      if (filteredActiveTasksList.isNotEmpty) ...[
-                        SliverToBoxAdapter(
-                          child: _buildSectionHeader(
-                            "Téléchargements en cours",
-                            filteredActiveTasksList.length,
-                          ),
-                        ),
-                        SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) => _buildDownloadingCard(
-                              context,
-                              filteredActiveTasksList[index],
-                            ),
-                            childCount: filteredActiveTasksList.length,
-                          ),
-                        ),
-                      ],
+                final filteredActiveTasksList = normalizedQuery.isEmpty
+                    ? activeTasks.values.toList()
+                    : activeTasks.values
+                        .where((task) =>
+                            _matchesTrackQuery(task.track, normalizedQuery))
+                        .toList();
 
-                      // ── 2. ALBUMS ─────────────────────────────────────
-                      if (downloadedAlbums.isNotEmpty) ...[
-                        SliverToBoxAdapter(
-                          child: _buildSectionHeader(
-                            "Albums téléchargés",
-                            downloadedAlbums.length,
-                          ),
-                        ),
-                        SliverToBoxAdapter(
-                          child: SizedBox(
-                            height: 195,
-                            child: ListView.builder(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              scrollDirection: Axis.horizontal,
-                              itemCount: downloadedAlbums.length,
-                              itemBuilder: (context, index) => _buildAlbumCard(
-                                  context, downloadedAlbums[index]),
-                            ),
-                          ),
-                        ),
-                      ],
+                // RÈGLE STRICTE : « Albums téléchargés » n'affiche QUE les vrais albums
+                // explicitement téléchargés en tant qu'albums (jamais un son isolé !).
+                final downloadedAlbums = _resolveRealDownloadedAlbums(
+                  rawRegisteredAlbums: rawRegisteredAlbums,
+                  offlineTracks: offlineTracks,
+                  activeTasks: activeTasks,
+                  normalizedQuery: normalizedQuery,
+                );
 
-                      // ── 3. DOWNLOADED TRACKS ──────────────────────────
-                      if (sortedTracks.isNotEmpty) ...[
-                        SliverToBoxAdapter(
-                          child: _buildSectionHeader(
-                            normalizedQuery.isEmpty
-                                ? "Sons téléchargés"
-                                : "Résultats téléchargés",
-                            sortedTracks.length,
-                            trailing: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 200),
-                              child: IconButton(
-                                key: ValueKey(_isSelectionMode),
-                                icon: Icon(
-                                  _isSelectionMode
-                                      ? Icons.close_rounded
-                                      : Icons.checklist_rounded,
-                                ),
-                                tooltip: _isSelectionMode
-                                    ? "Annuler"
-                                    : "Sélectionner",
-                                onPressed: _toggleSelectionMode,
+                if (offlineTracks.isEmpty &&
+                    activeTasks.isEmpty &&
+                    downloadedAlbums.isEmpty) {
+                  return _buildEmptyState(context);
+                }
+
+                if (normalizedQuery.isNotEmpty &&
+                    filteredOfflineTracks.isEmpty &&
+                    filteredActiveTasksList.isEmpty &&
+                    downloadedAlbums.isEmpty) {
+                  return _buildEmptySearchState(context, uiState.searchQuery);
+                }
+
+                final Map<String, String> localCoverPaths = {
+                  for (final ot in offlineTracks) ot.track.id: ot.localCoverPath
+                };
+
+                final rawTracks =
+                    filteredOfflineTracks.map((e) => e.track).toList();
+                final sortedTracks =
+                    TrackGridView.sortTracks(rawTracks, sortMode);
+
+                return Stack(
+                  children: [
+                    SonoritizFastScrollbar(
+                      itemCount: sortedTracks.length,
+                      bottomMargin: _isSelectionMode ? 220 : 110,
+                      labelBuilder: (idx) {
+                        final t = sortedTracks[idx];
+                        if (sortMode == SortMode.alpha) {
+                          final clean = t.title.trim();
+                          if (clean.isNotEmpty) {
+                            final firstChar = clean[0].toUpperCase();
+                            return RegExp(r'[A-ZÀ-Ÿ0-9]').hasMatch(firstChar)
+                                ? firstChar
+                                : '#';
+                          }
+                        }
+                        return '${idx + 1}';
+                      },
+                      child: CustomScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        slivers: [
+                          // ── 1. TÉLÉCHARGEMENTS EN COURS ──────────────────
+                          if (filteredActiveTasksList.isNotEmpty) ...[
+                            SliverToBoxAdapter(
+                              child: _buildSectionHeader(
+                                "Téléchargements en cours",
+                                filteredActiveTasksList.length,
                               ),
                             ),
-                          ),
-                        ),
-                        SliverToBoxAdapter(
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 200),
-                            child: _isSelectionMode
-                                ? const SizedBox.shrink()
-                                : Padding(
-                                    key: const ValueKey('playButtons'),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: 4),
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: FilledButton.icon(
-                                            onPressed: () {
-                                              context
-                                                  .read<PlayerCubit>()
-                                                  .playTrack(
-                                                    sortedTracks.first,
-                                                    queue: sortedTracks,
-                                                    source:
-                                                        'les téléchargements',
-                                                  );
-                                            },
-                                            icon: const Icon(
-                                                Icons.play_arrow_rounded),
-                                            label: const Text("Lire"),
-                                            style: FilledButton.styleFrom(
-                                              shape: const StadiumBorder(),
-                                              minimumSize: const Size(
-                                                double.infinity,
-                                                AppDimensions.buttonHeight,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: OutlinedButton.icon(
-                                            onPressed: () {
-                                              final shuffled =
-                                                  List<TrackModel>.from(
-                                                      sortedTracks)
-                                                    ..shuffle();
-                                              context
-                                                  .read<PlayerCubit>()
-                                                  .playTrack(
-                                                    shuffled.first,
-                                                    queue: shuffled,
-                                                    source:
-                                                        'les téléchargements',
-                                                  );
-                                            },
-                                            icon: const Icon(
-                                                Icons.shuffle_rounded),
-                                            label: const Text("Aléatoire"),
-                                            style: OutlinedButton.styleFrom(
-                                              shape: const StadiumBorder(),
-                                              minimumSize: const Size(
-                                                double.infinity,
-                                                AppDimensions.buttonHeight,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
+                            SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) => _buildDownloadingCard(
+                                  context,
+                                  filteredActiveTasksList[index],
+                                ),
+                                childCount: filteredActiveTasksList.length,
+                              ),
+                            ),
+                          ],
+
+                          // ── 2. VRAIS ALBUMS TÉLÉCHARGÉS ──────────────────
+                          if (downloadedAlbums.isNotEmpty) ...[
+                            SliverToBoxAdapter(
+                              child: _buildSectionHeader(
+                                "Albums téléchargés",
+                                downloadedAlbums.length,
+                              ),
+                            ),
+                            SliverToBoxAdapter(
+                              child: SizedBox(
+                                height: 204,
+                                child: ListView.builder(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  scrollDirection: Axis.horizontal,
+                                  physics: const BouncingScrollPhysics(),
+                                  itemCount: downloadedAlbums.length,
+                                  itemBuilder: (context, index) =>
+                                      _buildAlbumCard(
+                                    context,
+                                    downloadedAlbums[index],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+
+                          // ── 3. SONS TÉLÉCHARGÉS ──────────────────────────
+                          if (sortedTracks.isNotEmpty) ...[
+                            SliverToBoxAdapter(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                                child: Container(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(14, 11, 10, 11),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF14141B),
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.08),
                                     ),
                                   ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              normalizedQuery.isEmpty
+                                                  ? "Sons téléchargés"
+                                                  : "Résultats téléchargés",
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w800,
+                                                letterSpacing: -0.2,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              "${sortedTracks.length} ${sortedTracks.length > 1 ? 'titres hors-ligne' : 'titre hors-ligne'}",
+                                              style: TextStyle(
+                                                color: Colors.white
+                                                    .withValues(alpha: 0.56),
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (!_isSelectionMode) ...[
+                                        GestureDetector(
+                                          onTap: () {
+                                            final shuffled =
+                                                List<TrackModel>.from(
+                                                    sortedTracks)
+                                                  ..shuffle();
+                                            context
+                                                .read<PlayerCubit>()
+                                                .playTrack(
+                                                  shuffled.first,
+                                                  queue: shuffled,
+                                                  source:
+                                                      'les téléchargements',
+                                                );
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 8,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.08),
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                              border: Border.all(
+                                                color: Colors.white
+                                                    .withValues(alpha: 0.14),
+                                              ),
+                                            ),
+                                            child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.shuffle_rounded,
+                                                  color: Colors.white,
+                                                  size: 16,
+                                                ),
+                                                SizedBox(width: 4),
+                                                Text(
+                                                  "Aléatoire",
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 12.5,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 7),
+                                        GestureDetector(
+                                          onTap: () {
+                                            context
+                                                .read<PlayerCubit>()
+                                                .playTrack(
+                                                  sortedTracks.first,
+                                                  queue: sortedTracks,
+                                                  source:
+                                                      'les téléchargements',
+                                                );
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 14,
+                                              vertical: 8,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.primary,
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                            ),
+                                            child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.play_arrow_rounded,
+                                                  color: Colors.black,
+                                                  size: 18,
+                                                ),
+                                                SizedBox(width: 3),
+                                                Text(
+                                                  "Lire",
+                                                  style: TextStyle(
+                                                    color: Colors.black,
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                      ],
+                                      IconButton(
+                                        visualDensity: VisualDensity.compact,
+                                        icon: Icon(
+                                          _isSelectionMode
+                                              ? Icons.close_rounded
+                                              : Icons.checklist_rounded,
+                                          color: _isSelectionMode
+                                              ? AppColors.primary
+                                              : Colors.white70,
+                                          size: 20,
+                                        ),
+                                        tooltip: _isSelectionMode
+                                            ? "Fermer la sélection"
+                                            : "Sélectionner",
+                                        onPressed: _toggleSelectionMode,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            TrackGridView(
+                              key: ValueKey(
+                                  '${viewMode.name}_${sortMode.name}'),
+                              tracks: rawTracks,
+                              viewMode: viewMode,
+                              sortMode: sortMode,
+                              localCoverPaths: localCoverPaths,
+                              isSelectionMode: _isSelectionMode,
+                              selectedTrackIds: _selectedTrackIds,
+                              onSelectionChanged: _onSelectionChanged,
+                              playbackSource: 'les téléchargements',
+                            ),
+                          ],
+
+                          SliverToBoxAdapter(
+                            child: SizedBox(
+                              height: _isSelectionMode ? 200 : 120,
+                            ),
                           ),
-                        ),
-                        const SliverToBoxAdapter(child: SizedBox(height: 8)),
-
-                        // Virtualisation Sliver directe (sans shrinkWrap)
-                        TrackGridView(
-                          key: ValueKey('${viewMode.name}_${sortMode.name}'),
-                          tracks: rawTracks,
-                          viewMode: viewMode,
-                          sortMode: sortMode,
-                          localCoverPaths: localCoverPaths,
-                          isSelectionMode: _isSelectionMode,
-                          selectedTrackIds: _selectedTrackIds,
-                          onSelectionChanged: _onSelectionChanged,
-                          playbackSource: 'les téléchargements',
-                        ),
-                      ],
-
-                      SliverToBoxAdapter(
-                        child: SizedBox(height: _isSelectionMode ? 200 : 120),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-
-                if (_isSelectionMode)
-                  _buildSelectionBar(context, filteredOfflineTracks),
-              ],
+                    ),
+                    if (_isSelectionMode)
+                      _buildSelectionBar(context, filteredOfflineTracks),
+                  ],
+                );
+              },
             );
           },
         );
@@ -1004,30 +1431,35 @@ class _DownloadsScreenState extends State<DownloadsScreen>
     );
   }
 
-  void _showOfflineAlbumBottomSheet(BuildContext context, String title,
-      String artistName, String coverPath, List<OfflineTrackModel> tracks) {
-    final trackList = tracks.map((e) => e.track).toList();
+  void _showOfflineAlbumBottomSheet(
+    BuildContext parentContext,
+    _ResolvedDownloadedAlbum album,
+  ) {
+    final trackList = album.offlineTracks.map((e) => e.track).toList();
+    final effectiveCover = album.effectiveCoverUrl;
+    final playerCubit = parentContext.read<PlayerCubit>();
+    final downloadCubit = parentContext.read<DownloadCubit>();
 
     showModalBottomSheet(
-      context: context,
+      context: parentContext,
       useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) {
+      builder: (sheetCtx) {
         return DraggableScrollableSheet(
-          initialChildSize: 0.8,
-          maxChildSize: 0.92,
+          initialChildSize: 0.82,
+          maxChildSize: 0.94,
           minChildSize: 0.5,
           builder: (context, scrollController) {
-            final cs = Theme.of(context).colorScheme;
             final tt = Theme.of(context).textTheme;
             return ClipRRect(
               borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(24)),
+                  const BorderRadius.vertical(top: Radius.circular(26)),
               child: SonoritizCoverAtmosphere(
-                coverUrl: coverPath.isNotEmpty ? 'file://$coverPath' : '',
+                coverUrl: effectiveCover,
                 child: CustomScrollView(
                   controller: scrollController,
+                  physics: const BouncingScrollPhysics(),
                   slivers: [
                     SliverToBoxAdapter(
                       child: Padding(
@@ -1035,109 +1467,216 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                         child: Column(
                           children: [
                             Container(
-                                width: 40,
-                                height: 4,
-                                decoration: BoxDecoration(
-                                    color: Colors.white24,
-                                    borderRadius: BorderRadius.circular(2))),
-                            const SizedBox(height: 20),
-                            Container(
-                              width: 200,
-                              height: 200,
+                              width: 40,
+                              height: 4,
                               decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(18),
-                                color: cs.surfaceContainerHighest,
+                                color: Colors.white24,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            Container(
+                              width: 192,
+                              height: 192,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(20),
+                                color: const Color(0xFF16161D),
                                 boxShadow: [
                                   BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.45),
-                                      blurRadius: 24,
-                                      offset: const Offset(0, 12))
+                                    color: Colors.black.withValues(alpha: 0.45),
+                                    blurRadius: 24,
+                                    offset: const Offset(0, 12),
+                                  ),
                                 ],
                               ),
                               child: SonoritizArtwork(
-                                imageUrl: coverPath.isNotEmpty
-                                    ? 'file://$coverPath'
-                                    : '',
-                                width: 200,
-                                height: 200,
-                                borderRadius: 18,
-                                fallbackIcon: Icon(Icons.album,
-                                    size: 80, color: cs.onSurfaceVariant),
+                                imageUrl: effectiveCover,
+                                width: 192,
+                                height: 192,
+                                borderRadius: 20,
+                                fallbackIcon: const Icon(
+                                  Icons.album_rounded,
+                                  size: 76,
+                                  color: Colors.white30,
+                                ),
                               ),
                             ),
                             const SizedBox(height: 18),
                             SonoritizPageTitle(
-                              title: title,
-                              fontSize: 25,
+                              title: album.title,
+                              fontSize: 24,
                               maxLines: 2,
                               centered: true,
                             ),
                             const SizedBox(height: 6),
-                            Text("$artistName · ${tracks.length} titres",
-                                style: tt.titleMedium
-                                    ?.copyWith(color: Colors.white70)),
-                            const SizedBox(height: 20),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: FilledButton.icon(
-                                    onPressed: () {
-                                      Navigator.pop(context);
-                                      context
-                                          .read<PlayerCubit>()
-                                          .playTrack(trackList.first,
-                                              queue: trackList);
-                                    },
-                                    icon: const Icon(Icons.play_arrow_rounded),
-                                    label: const Text(
-                                      "Lire",
-                                      style: TextStyle(
-                                          fontSize: 15.5,
-                                          fontWeight: FontWeight.w800),
-                                    ),
-                                    style: FilledButton.styleFrom(
-                                      foregroundColor: Colors.black,
-                                      shape: const StadiumBorder(),
-                                      minimumSize:
-                                          const Size(double.infinity, 50),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: () {
-                                      Navigator.pop(context);
-                                      final shuffled =
-                                          List<TrackModel>.from(trackList)
-                                            ..shuffle();
-                                      context
-                                          .read<PlayerCubit>()
-                                          .playTrack(shuffled.first,
-                                              queue: shuffled);
-                                    },
-                                    icon: const Icon(Icons.shuffle_rounded),
-                                    label: const Text(
-                                      "Aléatoire",
-                                      style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w700),
-                                    ),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: Colors.white,
-                                      side: BorderSide(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.2)),
-                                      shape: const StadiumBorder(),
-                                      minimumSize:
-                                          const Size(double.infinity, 50),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                            Text(
+                              "${album.artistName} • ${album.offlineTracks.length} ${album.offlineTracks.length > 1 ? 'titres hors-ligne' : 'titre hors-ligne'}",
+                              style: tt.titleMedium?.copyWith(
+                                color: Colors.white70,
+                                fontSize: 14,
+                              ),
                             ),
-                            const SizedBox(height: 8),
-                            const Divider(height: 24),
+                            const SizedBox(height: 20),
+                            if (trackList.isNotEmpty)
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        Navigator.pop(sheetCtx);
+                                        playerCubit.playTrack(
+                                          trackList.first,
+                                          queue: trackList,
+                                          source:
+                                              "${album.artistName} • ${album.title}",
+                                        );
+                                      },
+                                      child: Container(
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                          color: AppColors.primary,
+                                          borderRadius:
+                                              BorderRadius.circular(24),
+                                        ),
+                                        child: const Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.play_arrow_rounded,
+                                              color: Colors.black,
+                                              size: 22,
+                                            ),
+                                            SizedBox(width: 5),
+                                            Text(
+                                              "Lire",
+                                              style: TextStyle(
+                                                color: Colors.black,
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        Navigator.pop(sheetCtx);
+                                        playerCubit.playTrackListNext(
+                                          trackList,
+                                          source:
+                                              "${album.artistName} • ${album.title}",
+                                        );
+                                        ScaffoldMessenger.of(parentContext)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            backgroundColor:
+                                                const Color(0xFF181820),
+                                            behavior: SnackBarBehavior.floating,
+                                            content: Text(
+                                              "« ${album.title} » sera lu juste après",
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      child: Container(
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.10),
+                                          borderRadius:
+                                              BorderRadius.circular(24),
+                                          border: Border.all(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.18),
+                                          ),
+                                        ),
+                                        child: const Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.playlist_play_rounded,
+                                              color: AppColors.primary,
+                                              size: 20,
+                                            ),
+                                            SizedBox(width: 5),
+                                            Text(
+                                              "Lire ensuite",
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  GestureDetector(
+                                    onTap: () async {
+                                      Navigator.pop(sheetCtx);
+                                      final idsToRemove = <String>{
+                                        ...album.registeredTrackIds,
+                                        ...trackList.map((t) => t.id),
+                                      }.toList();
+                                      await downloadCubit.removeAlbumDownload(
+                                        albumId: album.id,
+                                        title: album.title,
+                                        artistName: album.artistName,
+                                        trackIds: idsToRemove,
+                                      );
+                                      if (!parentContext.mounted) return;
+                                      ScaffoldMessenger.of(parentContext)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          backgroundColor:
+                                              const Color(0xFF181820),
+                                          behavior: SnackBarBehavior.floating,
+                                          content: Text(
+                                            "Album « ${album.title} » supprimé des téléchargements.",
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        color: Colors.redAccent
+                                            .withValues(alpha: 0.14),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.redAccent
+                                              .withValues(alpha: 0.35),
+                                        ),
+                                      ),
+                                      child: const Icon(
+                                        Icons.delete_outline_rounded,
+                                        color: Colors.redAccent,
+                                        size: 21,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            const SizedBox(height: 12),
+                            Divider(
+                              height: 24,
+                              color: Colors.white.withValues(alpha: 0.10),
+                            ),
                           ],
                         ),
                       ),
@@ -1145,49 +1684,82 @@ class _DownloadsScreenState extends State<DownloadsScreen>
                     SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
-                          final track = tracks[index].track;
+                          final track = album.offlineTracks[index].track;
                           return ListTile(
                             contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 3),
+                              horizontal: 20,
+                              vertical: 2,
+                            ),
                             leading: SizedBox(
                               width: 28,
                               child: Text(
                                 '${index + 1}',
                                 style: tt.bodyMedium?.copyWith(
-                                    color: Colors.white54,
-                                    fontSize: 14.5,
-                                    fontWeight: FontWeight.bold),
+                                  color: Colors.white54,
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
                                 textAlign: TextAlign.center,
                               ),
                             ),
-                            title: Text(track.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16.5,
-                                    fontWeight: FontWeight.w700)),
-                            subtitle: Text(track.artistName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.72),
-                                    fontSize: 14)),
-                            trailing: Text(
-                              _formatDuration(track.durationSeconds),
+                            title: Text(
+                              track.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            subtitle: Text(
+                              track.artistName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.58),
-                                  fontSize: 13.5),
+                                color: Colors.white.withValues(alpha: 0.68),
+                                fontSize: 13,
+                              ),
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (track.durationSeconds > 0)
+                                  Text(
+                                    _formatDuration(track.durationSeconds),
+                                    style: TextStyle(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.52),
+                                      fontSize: 12.5,
+                                    ),
+                                  ),
+                                IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  icon: const Icon(
+                                    Icons.more_horiz_rounded,
+                                    color: Colors.white70,
+                                    size: 20,
+                                  ),
+                                  onPressed: () => TrackContextMenu.show(
+                                    parentContext,
+                                    track,
+                                  ),
+                                ),
+                              ],
                             ),
                             onTap: () {
-                              Navigator.pop(context);
-                              context
-                                  .read<PlayerCubit>()
-                                  .playTrack(track, queue: trackList);
+                              Navigator.pop(sheetCtx);
+                              playerCubit.playTrack(
+                                track,
+                                queue: trackList,
+                                source: "${album.artistName} • ${album.title}",
+                              );
                             },
+                            onLongPress: () =>
+                                TrackContextMenu.show(parentContext, track),
                           );
                         },
-                        childCount: tracks.length,
+                        childCount: album.offlineTracks.length,
                       ),
                     ),
                     const SliverToBoxAdapter(child: SizedBox(height: 40)),

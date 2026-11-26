@@ -8,6 +8,7 @@ import '../../../core/utils/responsive_utils.dart';
 import '../../../../core/widgets/sonoritiz_artwork.dart';
 import '../../../../core/widgets/sonoritiz_dynamic_background.dart';
 import '../../../../core/widgets/sonoritiz_page_title.dart';
+import '../../../../core/widgets/track_context_menu.dart';
 import '../../home/data/repositories/catalog_repository.dart';
 import '../../home/presentation/cubit/home_cubit.dart';
 import '../../player/data/models/track_model.dart';
@@ -426,6 +427,11 @@ class _PodcastScreenState extends State<PodcastScreen> {
                                             onTap: () {
                                               context.push('/podcast_player', extra: item);
                                             },
+                                            onLongPress: () =>
+                                                TrackContextMenu.show(
+                                              context,
+                                              item,
+                                            ),
                                             child: Column(
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
@@ -451,6 +457,36 @@ class _PodcastScreenState extends State<PodcastScreen> {
                                                                   size: 40,
                                                                 ),
                                                               ),
+                                                      ),
+                                                      Positioned(
+                                                        top: 6,
+                                                        right: 6,
+                                                        child: GestureDetector(
+                                                          onTap: () =>
+                                                              TrackContextMenu.show(
+                                                            context,
+                                                            item,
+                                                          ),
+                                                          child: Container(
+                                                            width: 28,
+                                                            height: 28,
+                                                            decoration: BoxDecoration(
+                                                              color: Colors.black
+                                                                  .withValues(alpha: 0.68),
+                                                              shape: BoxShape.circle,
+                                                              border: Border.all(
+                                                                color: Colors.white
+                                                                    .withValues(alpha: 0.16),
+                                                                width: 0.8,
+                                                              ),
+                                                            ),
+                                                            child: const Icon(
+                                                              Icons.more_horiz_rounded,
+                                                              color: Colors.white,
+                                                              size: 16,
+                                                            ),
+                                                          ),
+                                                        ),
                                                       ),
                                                       Positioned(
                                                         top: 8,

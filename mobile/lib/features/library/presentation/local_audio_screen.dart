@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/theme/app_animations.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../core/storage/storage_service.dart';
+import '../../../core/widgets/track_context_menu.dart';
 import '../../../core/widgets/track_grid_view.dart';
 import '../../../core/widgets/sonoritiz_track_tile.dart';
 import '../../../core/widgets/sonoritiz_icon_button.dart';
@@ -256,32 +258,28 @@ class _LocalAudioScreenState extends State<LocalAudioScreen>
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      floatingActionButton: _localTracks.isEmpty
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: _pickAudioFiles,
-              backgroundColor: colorScheme.primary,
-              foregroundColor: colorScheme.onPrimary,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text("Ajouter"),
-            ),
       body: _localTracks.isEmpty
           ? Center(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 40),
+                padding: const EdgeInsets.symmetric(horizontal: 38),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Container(
-                      width: 90,
-                      height: 90,
+                      width: 88,
+                      height: 88,
                       decoration: BoxDecoration(
-                        color: colorScheme.primary.withValues(alpha: 0.1),
+                        color: AppColors.primary.withValues(alpha: 0.12),
                         shape: BoxShape.circle,
+                        border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.25),
+                        ),
                       ),
-                      child: Icon(Icons.audio_file_rounded,
-                          size: 46,
-                          color: colorScheme.primary.withValues(alpha: 0.7)),
+                      child: const Icon(
+                        Icons.folder_special_rounded,
+                        size: 42,
+                        color: AppColors.primary,
+                      ),
                     ).animate().scale(
                         delay: AppAnimations.normal,
                         duration: AppAnimations.slow,
@@ -289,25 +287,57 @@ class _LocalAudioScreenState extends State<LocalAudioScreen>
                     const SizedBox(height: 20),
                     Text(
                       "Aucun son interne",
-                      style:
-                          textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                      style: textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
                     ).animate().fadeIn(delay: AppAnimations.slow),
                     const SizedBox(height: 8),
                     Text(
-                      "Importe des musiques stockées sur ton téléphone.",
+                      "Importe les musiques stockées sur ton téléphone pour les écouter dans Sonoritiz.",
                       textAlign: TextAlign.center,
-                      style: textTheme.bodyMedium
-                          ?.copyWith(color: colorScheme.onSurfaceVariant),
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.6),
+                      ),
                     ).animate().fadeIn(delay: AppAnimations.slow),
-                    const SizedBox(height: 28),
-                    FilledButton.icon(
-                      onPressed: _pickAudioFiles,
-                      icon: const Icon(Icons.add_rounded),
-                      label: const Text("Importer des sons"),
-                      style: FilledButton.styleFrom(
-                        shape: const StadiumBorder(),
+                    const SizedBox(height: 26),
+                    GestureDetector(
+                      onTap: _pickAudioFiles,
+                      child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 24, vertical: 14),
+                          horizontal: 26,
+                          vertical: 13,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(28),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.28),
+                              blurRadius: 14,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.add_rounded,
+                              color: Colors.black,
+                              size: 20,
+                            ),
+                            SizedBox(width: 7),
+                            Text(
+                              "Importer des sons",
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ).animate().fadeIn(delay: AppAnimations.slow),
                   ],
@@ -386,89 +416,154 @@ class _LocalAudioScreenState extends State<LocalAudioScreen>
                     slivers: [
                       SliverToBoxAdapter(
                         child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                          child: Row(
-                            children: [
-                              Text(
-                                '${sortedTracks.length} ${sortedTracks.length > 1 ? "fichiers locaux" : "fichier local"}',
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.55),
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                          child: Container(
+                            padding: const EdgeInsets.fromLTRB(14, 11, 12, 11),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF14141B),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.08),
                               ),
-                              const Spacer(),
-                              GestureDetector(
-                                onTap: () {
-                                  final shuffled =
-                                      List<TrackModel>.from(sortedTracks)
-                                        ..shuffle();
-                                  context
-                                      .read<PlayerCubit>()
-                                      .playTrack(shuffled.first, queue: shuffled);
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(24),
-                                    border: Border.all(
-                                      color: Colors.white.withValues(alpha: 0.16),
-                                    ),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Icon(Icons.shuffle_rounded,
-                                          color: Colors.white, size: 19),
-                                      SizedBox(width: 6),
                                       Text(
-                                        "Aléatoire",
-                                        style: TextStyle(
+                                        '${sortedTracks.length} ${sortedTracks.length > 1 ? "sons locaux" : "son local"}',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
                                           color: Colors.white,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              GestureDetector(
-                                onTap: () {
-                                  context.read<PlayerCubit>().playTrack(
-                                        sortedTracks.first,
-                                        queue: sortedTracks,
-                                      );
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 18, vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: colorScheme.primary,
-                                    borderRadius: BorderRadius.circular(24),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.play_arrow_rounded,
-                                          color: Colors.black, size: 21),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        "Lire",
-                                        style: TextStyle(
-                                          color: Colors.black,
-                                          fontSize: 14.5,
+                                          fontSize: 14.2,
                                           fontWeight: FontWeight.w800,
                                         ),
                                       ),
+                                      const SizedBox(height: 2),
+                                      GestureDetector(
+                                        onTap: _pickAudioFiles,
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.add_circle_outline_rounded,
+                                              color: AppColors.primary,
+                                              size: 13.5,
+                                            ),
+                                            SizedBox(width: 4),
+                                            Text(
+                                              "Importer d'autres fichiers",
+                                              style: TextStyle(
+                                                color: AppColors.primary,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ],
                                   ),
                                 ),
-                              ),
-                            ],
+                                GestureDetector(
+                                  onTap: () {
+                                    final shuffled =
+                                        List<TrackModel>.from(sortedTracks)
+                                          ..shuffle();
+                                    context.read<PlayerCubit>().playTrack(
+                                          shuffled.first,
+                                          queue: shuffled,
+                                          source: 'vos sons internes',
+                                        );
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 13,
+                                      vertical: 9,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.08),
+                                      borderRadius: BorderRadius.circular(22),
+                                      border: Border.all(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.14),
+                                      ),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.shuffle_rounded,
+                                          color: Colors.white,
+                                          size: 17,
+                                        ),
+                                        SizedBox(width: 5),
+                                        Text(
+                                          "Aléatoire",
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                GestureDetector(
+                                  onTap: () {
+                                    context.read<PlayerCubit>().playTrack(
+                                          sortedTracks.first,
+                                          queue: sortedTracks,
+                                          source: 'vos sons internes',
+                                        );
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 15,
+                                      vertical: 9,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary,
+                                      borderRadius: BorderRadius.circular(22),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: AppColors.primary
+                                              .withValues(alpha: 0.25),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.play_arrow_rounded,
+                                          color: Colors.black,
+                                          size: 19,
+                                        ),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          "Lire",
+                                          style: TextStyle(
+                                            color: Colors.black,
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -507,12 +602,26 @@ class _LocalAudioScreenState extends State<LocalAudioScreen>
     return SonoritizTrackTile(
       track: track,
       queue: queue,
-      onTap: () => context.read<PlayerCubit>().playTrack(track, queue: queue),
-      trailing: SonoritizIconButton(
-        icon: Icons.delete_outline_rounded,
-        tooltip: "Retirer",
-        color: colorScheme.error,
-        onPressed: () => _showRemoveDialog(track),
+      playbackSource: 'vos sons internes',
+      onTap: () => context
+          .read<PlayerCubit>()
+          .playTrack(track, queue: queue, source: 'vos sons internes'),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SonoritizIconButton(
+            icon: Icons.more_horiz_rounded,
+            tooltip: "Options",
+            color: Colors.white54,
+            onPressed: () => TrackContextMenu.show(context, track),
+          ),
+          SonoritizIconButton(
+            icon: Icons.delete_outline_rounded,
+            tooltip: "Retirer",
+            color: colorScheme.error,
+            onPressed: () => _showRemoveDialog(track),
+          ),
+        ],
       ),
     );
   }

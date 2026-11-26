@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/collection_context_menu.dart';
 import '../../../core/widgets/sonoritiz_artwork.dart';
 import '../../../core/widgets/superlike_torch_badge.dart';
 import '../../../core/widgets/track_grid_view.dart';
@@ -98,6 +99,18 @@ class FavoritesScreen extends StatelessWidget {
                                   final album = matchingAlbums[idx];
                                   return GestureDetector(
                                     onTap: () => context.push('/album', extra: album.toRouteExtra()),
+                                    onLongPress: () =>
+                                        CollectionContextMenu.showForAlbum(
+                                      context,
+                                      albumId: album.id,
+                                      title: album.title,
+                                      artistName: album.artistName,
+                                      coverUrl: album.coverUrl,
+                                      year: album.year,
+                                      preloadedTracks: album.tracks.isNotEmpty
+                                          ? album.tracks
+                                          : null,
+                                    ),
                                     child: SizedBox(
                                       width: 108,
                                       child: Column(
@@ -272,6 +285,18 @@ class FavoritesScreen extends StatelessWidget {
                                 final album = favoriteAlbums[idx];
                                 return GestureDetector(
                                   onTap: () => context.push('/album', extra: album.toRouteExtra()),
+                                  onLongPress: () =>
+                                      CollectionContextMenu.showForAlbum(
+                                    context,
+                                    albumId: album.id,
+                                    title: album.title,
+                                    artistName: album.artistName,
+                                    coverUrl: album.coverUrl,
+                                    year: album.year,
+                                    preloadedTracks: album.tracks.isNotEmpty
+                                        ? album.tracks
+                                        : null,
+                                  ),
                                   child: SizedBox(
                                     width: 118,
                                     child: Column(
@@ -387,112 +412,163 @@ class _FavoriteRubricTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white.withValues(alpha: 0.055),
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 60,
-                height: 60,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (coverUrl.isNotEmpty)
-                      SonoritizArtwork(
-                        imageUrl: coverUrl,
-                        width: 60,
-                        height: 60,
-                        borderRadius: 14,
-                        cacheMaxDimension: 200,
-                      )
-                    else
-                      Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(14),
-                          color: accentColor.withValues(alpha: 0.16),
-                        ),
-                        child: Center(
-                          child: customBadge ??
-                              Icon(fallbackIcon, color: accentColor, size: 28),
-                        ),
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF17171F),
+            const Color(0xFF111116),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.09),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.28),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            child: Row(
+              children: [
+                Container(
+                  width: 62,
+                  height: 62,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(15),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accentColor.withValues(alpha: 0.18),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
                       ),
-                    if (coverUrl.isNotEmpty && customBadge != null)
-                      Positioned(
-                        right: 3,
-                        bottom: 3,
-                        child: Container(
-                          padding: const EdgeInsets.all(3),
+                    ],
+                  ),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (coverUrl.isNotEmpty)
+                        SonoritizArtwork(
+                          imageUrl: coverUrl,
+                          width: 62,
+                          height: 62,
+                          borderRadius: 15,
+                          cacheMaxDimension: 200,
+                        )
+                      else
+                        Container(
                           decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.72),
-                            shape: BoxShape.circle,
+                            borderRadius: BorderRadius.circular(15),
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                accentColor.withValues(alpha: 0.24),
+                                accentColor.withValues(alpha: 0.08),
+                              ],
+                            ),
+                            border: Border.all(
+                              color: accentColor.withValues(alpha: 0.30),
+                            ),
                           ),
-                          child: customBadge!,
+                          child: Center(
+                            child: customBadge ??
+                                Icon(fallbackIcon, color: accentColor, size: 28),
+                          ),
                         ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.62),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (onQuickPlay != null) ...[
-                GestureDetector(
-                  onTap: onQuickPlay,
-                  child: Container(
-                    width: 38,
-                    height: 38,
-                    decoration: const BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.play_arrow_rounded,
-                      color: Colors.black,
-                      size: 22,
-                    ),
+                      if (coverUrl.isNotEmpty && customBadge != null)
+                        Positioned(
+                          right: 3,
+                          bottom: 3,
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.76),
+                              shape: BoxShape.circle,
+                            ),
+                            child: customBadge!,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.62),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (onQuickPlay != null) ...[
+                  GestureDetector(
+                    onTap: onQuickPlay,
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primary.withValues(alpha: 0.28),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.black,
+                        size: 22,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.white.withValues(alpha: 0.5),
+                  size: 22,
+                ),
               ],
-              Icon(
-                Icons.chevron_right_rounded,
-                color: Colors.white.withValues(alpha: 0.5),
-                size: 22,
-              ),
-            ],
+            ),
           ),
         ),
       ),

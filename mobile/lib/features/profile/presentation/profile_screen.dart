@@ -20,7 +20,7 @@ import '../../player/presentation/cubit/superlike_state.dart';
 import '../../../core/widgets/superlike_torch_badge.dart';
 import '../../../core/widgets/sonoritiz_dynamic_background.dart';
 import '../../../core/widgets/sonoritiz_page_title.dart';
-import 'stats_screen.dart';
+import '../../../core/widgets/track_context_menu.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -380,12 +380,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildOpenProfileHeader(BuildContext context) {
+    final canPopRoute = GoRouter.maybeOf(context)?.canPop() ?? false;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 24, 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SonoritizPageTitle(title: "Profil"),
+          Row(
+            children: [
+              if (canPopRoute) ...[
+                GestureDetector(
+                  onTap: () => context.pop(),
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    margin: const EdgeInsets.only(right: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.12),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                  ),
+                ),
+              ],
+              const Expanded(
+                child: SonoritizPageTitle(title: "Profil"),
+              ),
+            ],
+          ),
           const SizedBox(height: 20),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -680,6 +709,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   itemBuilder: (context, index) {
                     final track = superlikes[index];
                     return GestureDetector(
+                      onLongPress: () => TrackContextMenu.show(context, track),
                       onTap: () {
                         context.read<PlayerCubit>().playTrack(
                               track,
@@ -769,12 +799,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     GestureDetector(
                       onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const StatsScreen(openStoryOnInit: true),
-                          ),
-                        );
+                        context.push('/stats', extra: true);
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -833,6 +858,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       final rank = index + 1;
 
                       return GestureDetector(
+                        onLongPress: () =>
+                            TrackContextMenu.show(context, item.track),
                         onTap: () {
                           context.read<PlayerCubit>().playTrack(
                                 item.track,

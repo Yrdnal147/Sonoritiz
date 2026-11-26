@@ -146,10 +146,8 @@ class TrackGridView extends StatelessWidget {
                         source: playbackSource,
                       ),
               onLongPress: isSelectionMode
-                  ? null
-                  : (onSelectionChanged != null
-                      ? () => onSelectionChanged!.call(track.id, true)
-                      : () => TrackContextMenu.show(context, track)),
+                  ? () => onSelectionChanged?.call(track.id, !isSelected)
+                  : () => TrackContextMenu.show(context, track),
             );
           },
           childCount: sortedTracks.length,
@@ -235,10 +233,8 @@ class TrackGridView extends StatelessWidget {
                 .read<PlayerCubit>()
                 .playTrack(track, queue: queue, source: playbackSource),
         onLongPress: isSelectionMode
-            ? null
-            : (onSelectionChanged != null
-                ? () => onSelectionChanged!.call(track.id, true)
-                : () => TrackContextMenu.show(context, track)),
+            ? () => onSelectionChanged?.call(track.id, !isSelected)
+            : () => TrackContextMenu.show(context, track),
         child: Container(
           color: Colors.transparent,
           child: Column(

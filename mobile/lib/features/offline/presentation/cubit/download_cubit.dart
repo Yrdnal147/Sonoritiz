@@ -2,6 +2,7 @@ import 'dart:collection';
 import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/storage/storage_service.dart';
 import '../../../player/data/models/track_model.dart';
 import '../../data/models/offline_track_model.dart';
 import '../../data/repositories/offline_repository.dart';
@@ -327,6 +328,47 @@ class DownloadCubit extends Cubit<DownloadState> {
         emit(s.copyWith(activeTasks: updatedTasks));
       }
     }
+  }
+
+  Future<void> downloadAlbum({
+    required String albumId,
+    required String title,
+    required String artistName,
+    required String coverUrl,
+    required List<TrackModel> tracks,
+  }) async {
+    if (tracks.isEmpty) return;
+    await StorageService().registerDownloadedAlbum(
+      id: albumId,
+      title: title,
+      artistName: artistName,
+      coverUrl: coverUrl,
+      trackIds: tracks.map((t) => t.id).toList(),
+    );
+    for (final track in tracks) {
+      final enriched = track.albumName.trim().isEmpty
+          ? track.copyWith(albumName: title)
+          : track;
+      await downloadTrack(enriched);
+    }
+  }
+
+  Future<void> removeAlbumDownload({
+    required String albumId,
+    required String title,
+    required String artistName,
+    required List<String> trackIds,
+  }) async {
+    await StorageService().unregisterDownloadedAlbum(
+      id: albumId,
+      title: title,
+      artistName: artistName,
+    );
+    for (final tid in trackIds) {
+      cancelDownload(tid);
+      await repository.deleteDownload(tid);
+    }
+    loadDownloads();
   }
 
   Future<void> removeDownload(String trackId) async {

@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../../../core/services/palette_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/storage/storage_service.dart';
+import '../../../../core/widgets/collection_context_menu.dart';
 import '../../../../core/widgets/sonoritiz_artwork.dart';
 import '../../../../core/widgets/sonoritiz_cover_atmosphere.dart';
 import '../../../library/presentation/cubit/library_cubit.dart';
@@ -1109,6 +1110,17 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                 extra: {'album': release, 'artistName': artistName},
               );
             },
+            onLongPress: () {
+              final relDate = (release['release_date'] ?? '').toString();
+              CollectionContextMenu.showForAlbum(
+                context,
+                albumId: (release['id'] ?? '').toString(),
+                title: (release['title'] ?? 'Album').toString(),
+                artistName: artistName,
+                coverUrl: cover,
+                year: relDate.length >= 4 ? relDate.substring(0, 4) : '',
+              );
+            },
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -1550,6 +1562,14 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
             onTap: () {
               context.push('/album', extra: {'album': album, 'artistName': artistName});
             },
+            onLongPress: () => CollectionContextMenu.showForAlbum(
+              context,
+              albumId: (album['id'] ?? '').toString(),
+              title: title.toString(),
+              artistName: artistName,
+              coverUrl: cover.toString(),
+              year: year,
+            ),
             child: Container(
               width: 148,
               margin: const EdgeInsets.only(right: 16),

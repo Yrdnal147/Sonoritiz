@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/responsive_utils.dart';
+import '../../../core/widgets/collection_context_menu.dart';
 import '../../../core/widgets/sonoritiz_artwork.dart';
 import '../../../core/widgets/sonoritiz_cover_atmosphere.dart';
 import '../../../core/widgets/sonoritiz_page_title.dart';
@@ -157,6 +158,15 @@ class _FavoriteAlbumCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () => context.push('/album', extra: album.toRouteExtra()),
+      onLongPress: () => CollectionContextMenu.showForAlbum(
+        context,
+        albumId: album.id,
+        title: album.title,
+        artistName: album.artistName,
+        coverUrl: album.coverUrl,
+        year: album.year,
+        preloadedTracks: album.tracks.isNotEmpty ? album.tracks : null,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

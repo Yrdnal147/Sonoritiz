@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_animations.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_dimensions.dart';
 import '../../../core/utils/responsive_utils.dart';
+import '../../../core/widgets/collection_context_menu.dart';
 import '../../../core/widgets/playlist_cover_mosaic.dart';
 import '../../../core/widgets/playlist_editor_sheet.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
 import '../data/repositories/library_repository.dart';
 import 'cubit/library_cubit.dart';
 import 'cubit/library_ui_cubit.dart';
-import 'playlist_detail_screen.dart';
 
 class PlaylistsListScreen extends StatelessWidget {
   final List<PlaylistModel> playlists;
@@ -26,112 +26,15 @@ class PlaylistsListScreen extends StatelessWidget {
   }
 
   void _showPlaylistContextMenu(BuildContext context, PlaylistModel playlist) {
-    final textTheme = Theme.of(context).textTheme;
-
-    showModalBottomSheet(
-      context: context,
-      useRootNavigator: true,
-      backgroundColor: const Color(0xFF141418),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (bottomSheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 38,
-                  height: 4,
-                  margin: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.22),
-                    borderRadius: BorderRadius.circular(AppDimensions.radiusPill),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
-                  child: Row(
-                    children: [
-                      PlaylistCoverMosaic(
-                        playlist: playlist,
-                        size: 50,
-                        height: 52,
-                        borderRadius: 10,
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              playlist.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: textTheme.titleMedium?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _formatTracksSubtitle(playlist),
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.55),
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Divider(color: Colors.white.withValues(alpha: 0.08), height: 1),
-                const SizedBox(height: 4),
-                ListTile(
-                  leading: const Icon(Icons.edit_outlined, color: Colors.white),
-                  title: const Text(
-                    "Modifier",
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                  ),
-                  onTap: () {
-                    Navigator.pop(bottomSheetContext);
-                    PlaylistEditorSheet.show(context, existingPlaylist: playlist);
-                  },
-                ),
-                ListTile(
-                  leading: Icon(
-                    playlist.isPinned ? Icons.push_pin_outlined : Icons.push_pin_rounded,
-                    color: playlist.isPinned ? AppColors.primary : Colors.white,
-                  ),
-                  title: Text(
-                    playlist.isPinned ? "Désépingler" : "Épingler en haut",
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                  ),
-                  onTap: () {
-                    context.read<LibraryCubit>().togglePinPlaylist(playlist.id, playlist.isPinned);
-                    Navigator.pop(bottomSheetContext);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
-                  title: const Text(
-                    "Supprimer",
-                    style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600),
-                  ),
-                  onTap: () {
-                    Navigator.pop(bottomSheetContext);
-                    _confirmDelete(context, playlist);
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+    CollectionContextMenu.showForPlaylist(
+      context,
+      playlist: playlist,
+      onEdit: () =>
+          PlaylistEditorSheet.show(context, existingPlaylist: playlist),
+      onTogglePin: () => context
+          .read<LibraryCubit>()
+          .togglePinPlaylist(playlist.id, playlist.isPinned),
+      onDelete: () => _confirmDelete(context, playlist),
     );
   }
 
@@ -223,15 +126,7 @@ class PlaylistsListScreen extends StatelessWidget {
   }
 
   void _openPlaylist(BuildContext context, PlaylistModel playlist) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => BlocProvider.value(
-          value: context.read<LibraryCubit>(),
-          child: PlaylistDetailScreen(playlist: playlist),
-        ),
-      ),
-    );
+    context.push('/playlist', extra: playlist);
   }
 
   void _playPlaylistDirect(BuildContext context, PlaylistModel playlist) {
@@ -372,29 +267,46 @@ class PlaylistsListScreen extends StatelessWidget {
                               ),
                             ),
                             const Spacer(),
-                            Material(
-                              color: Colors.white.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(22),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(22),
-                                onTap: () => _openCreatePlaylistSheet(context),
-                                child: const Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.add_rounded, color: AppColors.primary, size: 18),
-                                      SizedBox(width: 5),
-                                      Text(
-                                        "Nouvelle playlist",
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
+                            GestureDetector(
+                              onTap: () => _openCreatePlaylistSheet(context),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 15,
+                                  vertical: 9,
+                                ),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      AppColors.primary.withValues(alpha: 0.22),
+                                      const Color(0xFF16161D),
                                     ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
                                   ),
+                                  borderRadius: BorderRadius.circular(24),
+                                  border: Border.all(
+                                    color: AppColors.primary
+                                        .withValues(alpha: 0.45),
+                                  ),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.add_rounded,
+                                      color: AppColors.primary,
+                                      size: 18,
+                                    ),
+                                    SizedBox(width: 5),
+                                    Text(
+                                      "Nouvelle playlist",
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),

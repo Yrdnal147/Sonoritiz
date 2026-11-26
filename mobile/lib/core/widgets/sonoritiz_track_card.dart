@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../features/player/data/models/track_model.dart';
 import '../../features/player/presentation/cubit/player_cubit.dart';
 import '../../features/player/presentation/cubit/player_state.dart';
 import '../../features/player/presentation/cubit/superlike_cubit.dart';
@@ -10,12 +11,15 @@ import 'sonoritiz_artwork.dart';
 import 'artist_name_display.dart';
 import 'playing_indicator_overlay.dart';
 import 'superlike_torch_badge.dart';
+import 'track_context_menu.dart';
 
 class SonoritizTrackCard extends StatelessWidget {
   final String imageUrl;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final TrackModel? track;
   final double width;
   final String? tag; // Pour le Hero animation
   final String? trackId;
@@ -29,6 +33,8 @@ class SonoritizTrackCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.onLongPress,
+    this.track,
     this.width = 140.0,
     this.tag,
     this.trackId,
@@ -154,11 +160,27 @@ class SonoritizTrackCard extends StatelessWidget {
           );
         }
 
+        final TrackModel? effectiveTrack = track ??
+            ((trackId != null && trackId!.trim().isNotEmpty)
+                ? TrackModel(
+                    id: trackId!.trim(),
+                    title: title,
+                    artistName: subtitle,
+                    coverUrl: imageUrl,
+                    durationSeconds: 0,
+                    audioUrl: '',
+                  )
+                : null);
+
         return Semantics(
           button: true,
           label: "Jouer $title par $subtitle",
           child: GestureDetector(
             onTap: onTap,
+            onLongPress: onLongPress ??
+                (effectiveTrack != null
+                    ? () => TrackContextMenu.show(context, effectiveTrack)
+                    : null),
             child: SizedBox(
               width: width,
               child: Column(
