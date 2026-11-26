@@ -1,14 +1,11 @@
 import 'dart:collection';
-import 'dart:io';
 import 'dart:ui';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../../../core/services/palette_service.dart';
 import '../../../../core/storage/storage_service.dart';
-import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_animations.dart';
 import '../../../../core/widgets/sonoritiz_artwork.dart';
@@ -53,6 +50,17 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
     if (trimmed == _lastCoverUrl || trimmed.isEmpty) return;
     _lastCoverUrl = trimmed;
 
+    final sharedCached = PaletteService.getCached(trimmed);
+    if (sharedCached != null) {
+      if (mounted) {
+        setState(() {
+          _dominantColor = sharedCached.dominantColor;
+          _immersivePalette = sharedCached;
+        });
+      }
+      return;
+    }
+
     final cached = _miniPaletteCache.remove(trimmed);
     if (cached != null) {
       _miniPaletteCache[trimmed] = cached;
@@ -65,56 +73,12 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget> {
       return;
     }
 
-    if (kIsWeb) {
-      final int hash = trimmed.codeUnits.fold<int>(0, (acc, c) => (acc * 31 + c) & 0x7fffffff);
-      final double hue = (hash % 360).toDouble();
-      final dominant = HSLColor.fromAHSL(1.0, hue, 0.62, 0.36).toColor();
-      final vibrant = HSLColor.fromAHSL(1.0, (hue + 18) % 360, 0.78, 0.52).toColor();
-      final muted = HSLColor.fromAHSL(1.0, hue, 0.38, 0.28).toColor();
-      final darkMuted = HSLColor.fromAHSL(1.0, hue, 0.42, 0.14).toColor();
-      final immersive = ImmersivePalette.fromExtracted(
-        dominant: dominant,
-        vibrant: vibrant,
-        muted: muted,
-        darkMuted: darkMuted,
-      );
-      _miniPaletteCache[trimmed] = (dominant, immersive);
-      if (mounted) {
-        setState(() {
-          _dominantColor = dominant;
-          _immersivePalette = immersive;
-        });
-      }
-      return;
-    }
-
-    ImageProvider? baseProvider;
-    if (!kIsWeb && trimmed.startsWith('file://')) {
-      final file = File(trimmed.replaceFirst('file://', ''));
-      if (file.existsSync()) {
-        baseProvider = FileImage(file);
-      }
-    } else if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      baseProvider = CachedNetworkImageProvider(trimmed);
-    }
-
-    if (baseProvider == null) return;
-
-    final resizedProvider = ResizeImage(baseProvider, width: 48, height: 48);
-
-    ColorScheme.fromImageProvider(provider: resizedProvider).then((scheme) {
-      final dominant = scheme.primaryContainer;
-      final immersive = ImmersivePalette.fromExtracted(
-        dominant: scheme.primaryContainer,
-        vibrant: scheme.primary,
-        muted: scheme.secondaryContainer,
-        darkMuted: scheme.surfaceContainerHighest,
-      );
+    PaletteService.getPalette(trimmed).then((immersive) {
+      final dominant = immersive.dominantColor;
       if (_miniPaletteCache.length >= 40) {
         _miniPaletteCache.remove(_miniPaletteCache.keys.first);
       }
       _miniPaletteCache[trimmed] = (dominant, immersive);
-
       if (mounted && _lastCoverUrl == trimmed) {
         setState(() {
           _dominantColor = dominant;

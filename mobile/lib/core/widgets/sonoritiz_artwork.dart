@@ -2,10 +2,44 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:shimmer/shimmer.dart';
 import '../theme/app_dimensions.dart';
 
 class SonoritizArtwork extends StatelessWidget {
+  static final Map<String, bool> _localFileExistsCache = <String, bool>{};
+
+  /// Vérifie l'existence d'un fichier local avec cache mémoire pour ne jamais bloquer le thread UI au scroll.
+  static bool fileExistsCached(String path) {
+    if (kIsWeb || path.isEmpty) return false;
+    final clean = path.startsWith('file://')
+        ? path.replaceFirst('file://', '')
+        : path;
+    final cached = _localFileExistsCache[clean];
+    if (cached != null && cached) return true;
+    final exists = File(clean).existsSync();
+    if (_localFileExistsCache.length >= 400) {
+      _localFileExistsCache.remove(_localFileExistsCache.keys.first);
+    }
+    _localFileExistsCache[clean] = exists;
+    return exists;
+  }
+
+  /// Adapte la résolution de la pochette distante à la dimension réelle d'affichage
+  /// (évite de télécharger et décoder du 1000x1000 pour des vignettes de 48px à 160px).
+  static String _optimizeNetworkUrl(String url, double logicalRef) {
+    if (!url.contains('1000x1000')) return url;
+    if (logicalRef <= 185) {
+      return url
+          .replaceAll('/1000x1000-', '/250x250-')
+          .replaceAll('1000x1000bb.jpg', '300x300bb.jpg');
+    }
+    if (logicalRef <= 420) {
+      return url
+          .replaceAll('/1000x1000-', '/500x500-')
+          .replaceAll('1000x1000bb.jpg', '500x500bb.jpg');
+    }
+    return url;
+  }
+
   final String imageUrl;
   final double width;
   final double height;
@@ -74,6 +108,12 @@ class SonoritizArtwork extends StatelessWidget {
       ),
     );
 
+    final Widget placeholderWidget = Container(
+      width: width,
+      height: height,
+      color: const Color(0xFF17171E),
+    );
+
     Widget imageWidget;
     final trimmedUrl = imageUrl.trim();
 
@@ -83,10 +123,9 @@ class SonoritizArtwork extends StatelessWidget {
       final cleanPath = trimmedUrl.startsWith('file://')
           ? trimmedUrl.replaceFirst('file://', '')
           : trimmedUrl;
-      final file = File(cleanPath);
-      if (file.existsSync()) {
+      if (fileExistsCached(cleanPath)) {
         imageWidget = Image.file(
-          file,
+          File(cleanPath),
           width: width,
           height: height,
           cacheWidth: effectiveCacheWidth,
@@ -98,13 +137,12 @@ class SonoritizArtwork extends StatelessWidget {
       } else {
         imageWidget = errorWidget;
       }
-    } else if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
+    } else if (trimmedUrl.startsWith('http://') ||
+        trimmedUrl.startsWith('https://')) {
+      final optimizedUrl = _optimizeNetworkUrl(trimmedUrl, finiteRef);
       if (kIsWeb) {
-        final String webUrl = (finiteRef <= 280 && trimmedUrl.contains('/1000x1000-'))
-            ? trimmedUrl.replaceFirst('/1000x1000-', '/500x500-')
-            : trimmedUrl;
         imageWidget = Image.network(
-          webUrl,
+          optimizedUrl,
           width: width,
           height: height,
           fit: fit,
@@ -112,32 +150,22 @@ class SonoritizArtwork extends StatelessWidget {
           webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
           loadingBuilder: (context, child, loadingProgress) {
             if (loadingProgress == null) return child;
-            return Container(
-              width: width,
-              height: height,
-              color: colorScheme.surfaceContainerHighest,
-            );
+            return placeholderWidget;
           },
           errorBuilder: (_, __, ___) => errorWidget,
         );
       } else {
         imageWidget = CachedNetworkImage(
-          imageUrl: trimmedUrl,
+          imageUrl: optimizedUrl,
           width: width,
           height: height,
           memCacheWidth: effectiveCacheWidth,
           memCacheHeight: effectiveCacheHeight,
           fit: fit,
           alignment: alignment,
-          placeholder: (context, url) => Shimmer.fromColors(
-            baseColor: colorScheme.surfaceContainerHighest,
-            highlightColor: colorScheme.surface,
-            child: Container(
-              width: width,
-              height: height,
-              color: colorScheme.surfaceContainerHighest,
-            ),
-          ),
+          fadeInDuration: const Duration(milliseconds: 140),
+          fadeOutDuration: const Duration(milliseconds: 80),
+          placeholder: (context, url) => placeholderWidget,
           errorWidget: (context, url, error) => errorWidget,
         );
       }

@@ -259,7 +259,7 @@ class LibraryRepository {
       final cachedAt = _recentFavoritesAt;
       if (cached != null &&
           cachedAt != null &&
-          DateTime.now().difference(cachedAt) < const Duration(seconds: 15)) {
+          DateTime.now().difference(cachedAt) < const Duration(minutes: 10)) {
         return cached.any((t) => t.id == trackId);
       }
       final favs = await getFavorites();
@@ -270,8 +270,12 @@ class LibraryRepository {
   }
 
   Future<void> addFavorite(TrackModel track) async {
-    _recentFavoritesCache = null;
-    _recentFavoritesAt = null;
+    if (_recentFavoritesCache != null) {
+      if (!_recentFavoritesCache!.any((t) => t.id == track.id)) {
+        _recentFavoritesCache = [track, ..._recentFavoritesCache!];
+      }
+      _recentFavoritesAt = DateTime.now();
+    }
     await apiClient.post(ApiConstants.favorites, data: {
       'youtube_id': track.id,
       'title': track.title,
@@ -283,8 +287,11 @@ class LibraryRepository {
   }
 
   Future<void> removeFavorite(String trackId) async {
-    _recentFavoritesCache = null;
-    _recentFavoritesAt = null;
+    if (_recentFavoritesCache != null) {
+      _recentFavoritesCache =
+          _recentFavoritesCache!.where((t) => t.id != trackId).toList();
+      _recentFavoritesAt = DateTime.now();
+    }
     await apiClient.delete('${ApiConstants.favorites}$trackId/');
   }
 

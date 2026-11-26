@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/storage/storage_service.dart' show StorageService;
@@ -24,13 +25,21 @@ class HomeCubit extends Cubit<HomeState> {
   bool _hydrating = false;
   Future<void>? _homeLoadInFlight;
   String _loadedAccountScope = '';
+  Timer? _cacheSaveDebounce;
 
   String get _cacheKey => 'home_v4_${storageService.accountScope}';
 
   void resetSessionState() {
+    _cacheSaveDebounce?.cancel();
     _homeLoadInFlight = null;
     _loadedAccountScope = '';
     emit(HomeInitial());
+  }
+
+  @override
+  Future<void> close() {
+    _cacheSaveDebounce?.cancel();
+    return super.close();
   }
 
   @override
@@ -38,7 +47,14 @@ class HomeCubit extends Cubit<HomeState> {
     super.onChange(change);
     final next = change.nextState;
     if (!_hydrating && next is HomeLoaded) {
-      _saveCache(next);
+      // Ignorer les états intermédiaires de chargement (changement d'ambiance ou de continent)
+      if (next.isMoodLoading || next.isContinentLoading) return;
+      _cacheSaveDebounce?.cancel();
+      _cacheSaveDebounce = Timer(const Duration(milliseconds: 1500), () {
+        if (!isClosed) {
+          _saveCache(next);
+        }
+      });
     }
   }
 

@@ -1,13 +1,10 @@
-import 'dart:io';
 import 'dart:ui';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../../../../core/utils/responsive_utils.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:palette_generator/palette_generator.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
+import '../../../../core/services/palette_service.dart';
 import '../../../../core/storage/storage_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
@@ -227,48 +224,20 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
     if (trimmed.isEmpty || _lastCoverUrl == trimmed) return;
     _lastCoverUrl = trimmed;
 
-    final cached = _paletteCache.remove(trimmed);
-    if (cached != null) {
-      _paletteCache[trimmed] = cached; // Rafraîchit la position LRU
+    final sharedCached = PaletteService.getCached(trimmed) ?? _paletteCache.remove(trimmed);
+    if (sharedCached != null) {
+      _paletteCache[trimmed] = sharedCached;
       if (mounted) {
         setState(() {
-          _immersivePalette = cached;
-          _dominantColor = cached.dominantColor;
+          _immersivePalette = sharedCached;
+          _dominantColor = sharedCached.dominantColor;
         });
       }
       return;
     }
 
     try {
-      ImageProvider baseProvider;
-      if (!kIsWeb && trimmed.startsWith("file://")) {
-        final path = trimmed.replaceFirst("file://", "");
-        if (File(path).existsSync()) {
-          baseProvider = FileImage(File(path));
-        } else {
-          return;
-        }
-      } else if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-        baseProvider = CachedNetworkImageProvider(trimmed);
-      } else {
-        return;
-      }
-
-      // Décodage 48x48 (~3x plus rapide côté CPU qu'en 80x80 pour une précision chromatique identique)
-      final resizedProvider = ResizeImage(baseProvider, width: 48, height: 48);
-      final palette = await PaletteGenerator.fromImageProvider(
-        resizedProvider,
-        maximumColorCount: 16,
-      );
-      final extracted = ImmersivePalette.fromExtracted(
-        dominant: palette.dominantColor?.color,
-        vibrant: palette.vibrantColor?.color,
-        lightVibrant: palette.lightVibrantColor?.color,
-        darkVibrant: palette.darkVibrantColor?.color,
-        muted: palette.mutedColor?.color,
-        darkMuted: palette.darkMutedColor?.color,
-      );
-
+      final extracted = await PaletteService.getPalette(trimmed);
       if (_paletteCache.length >= 40) {
         _paletteCache.remove(_paletteCache.keys.first);
       }

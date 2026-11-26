@@ -51,26 +51,51 @@ def _paginated_response(request, tracks, limit, offset):
     }, status=status.HTTP_200_OK)
 
 def cache_or_update_tracks(tracks_data):
-    """Helper utility to persist tracks into database TrackCache for offline/instant lookup."""
+    """Persiste les pistes dans TrackCache en 1 seule requête SQL groupée (bulk upsert) pour préserver le quota Supabase."""
+    if not tracks_data:
+        return
+    seen_ids = set()
+    instances = []
     for track in tracks_data:
-        if not track.get('youtube_id'):
+        yid = str(track.get('youtube_id') or '').strip()
+        if not yid or yid in seen_ids:
             continue
-        defaults = {
-            'title': track.get('title', ''),
-            'artist_name': track.get('artist_name', ''),
-            'album_name': track.get('album_name', ''),
-            'cover_url': track.get('cover_url', ''),
-            'duration_seconds': int(track.get('duration_seconds', 0)),
-            'genre': track.get('genre', ''),
-            'license_ccurl': track.get('license_ccurl', ''),
-        }
-        audio_url = str(track.get('audio_url') or '').strip()
-        if audio_url:
-            defaults['audio_url'] = audio_url
-        TrackCache.objects.update_or_create(
-            youtube_id=str(track['youtube_id']),
-            defaults=defaults,
+        seen_ids.add(yid)
+        instances.append(
+            TrackCache(
+                youtube_id=yid,
+                title=str(track.get('title', ''))[:255],
+                artist_name=str(track.get('artist_name', ''))[:255],
+                album_name=str(track.get('album_name', ''))[:255],
+                cover_url=str(track.get('cover_url', ''))[:500],
+                duration_seconds=int(track.get('duration_seconds', 0) or 0),
+                audio_url=str(track.get('audio_url') or '').strip()[:500],
+                genre=str(track.get('genre', ''))[:100],
+                license_ccurl=str(track.get('license_ccurl', ''))[:500],
+            )
         )
+    if not instances:
+        return
+    try:
+        TrackCache.objects.bulk_create(
+            instances,
+            update_conflicts=True,
+            unique_fields=['youtube_id'],
+            update_fields=[
+                'title',
+                'artist_name',
+                'album_name',
+                'cover_url',
+                'duration_seconds',
+                'genre',
+                'license_ccurl',
+            ],
+        )
+    except Exception:
+        try:
+            TrackCache.objects.bulk_create(instances, ignore_conflicts=True)
+        except Exception:
+            pass
 
 class TrendingTracksView(APIView):
     permission_classes = [permissions.AllowAny]

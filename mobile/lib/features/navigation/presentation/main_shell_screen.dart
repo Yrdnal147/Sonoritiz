@@ -234,90 +234,120 @@ class _MainShellScreenState extends State<MainShellScreen> {
               ),
               child: const MiniPlayerWidget(),
             ),
-          ClipRect(
-            child: AnimatedAlign(
-              duration: const Duration(milliseconds: 240),
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.topCenter,
-              heightFactor: _isBottomNavVisible ? 1.0 : 0.0,
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 180),
-                opacity: _isBottomNavVisible ? 1.0 : 0.0,
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-                  child: Container(
-                color: const Color(0xFF0B0B0C).withValues(alpha: 0.84),
-                child: SafeArea(
-                  top: false,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Bordure supérieure avec indicateur dynamique qui suit l'onglet actif
-                      SizedBox(
-                        height: 2.0,
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: Container(
-                                color: Colors.white.withValues(alpha: 0.10),
+          RepaintBoundary(
+            child: ClipRect(
+              child: AnimatedAlign(
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                heightFactor: _isBottomNavVisible ? 1.0 : 0.0,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 180),
+                  opacity: _isBottomNavVisible ? 1.0 : 0.0,
+                  child: _isBottomNavVisible
+                      ? BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                          child: _buildBottomNavSurface(
+                            context,
+                            currentIndex: currentIndex,
+                            isNarrowFoldCover: isNarrowFoldCover,
+                            labelFontSize: labelFontSize,
+                          ),
+                        )
+                      : _buildBottomNavSurface(
+                          context,
+                          currentIndex: currentIndex,
+                          isNarrowFoldCover: isNarrowFoldCover,
+                          labelFontSize: labelFontSize,
+                        ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomNavSurface(
+    BuildContext context, {
+    required int currentIndex,
+    required bool isNarrowFoldCover,
+    required double labelFontSize,
+  }) {
+    return Container(
+      color: const Color(0xFF0B0B0C).withValues(alpha: 0.88),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Bordure supérieure avec indicateur dynamique qui suit l'onglet actif
+            SizedBox(
+              height: 2.0,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: Container(
+                      color: Colors.white.withValues(alpha: 0.10),
+                    ),
+                  ),
+                  AnimatedAlign(
+                    duration: const Duration(milliseconds: 260),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment(
+                      -1.0 + (currentIndex * (2.0 / 4)),
+                      0,
+                    ),
+                    child: FractionallySizedBox(
+                      widthFactor: 0.20,
+                      child: Center(
+                        child: Container(
+                          height: 2.0,
+                          width: isNarrowFoldCover ? 28 : 36,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(1.0),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary
+                                    .withValues(alpha: 0.75),
+                                blurRadius: 6,
+                                spreadRadius: 1,
                               ),
-                            ),
-                            AnimatedAlign(
-                              duration: const Duration(milliseconds: 260),
-                              curve: Curves.easeOutCubic,
-                              alignment: Alignment(
-                                -1.0 + (currentIndex * (2.0 / 4)),
-                                0,
-                              ),
-                              child: FractionallySizedBox(
-                                widthFactor: 0.20,
-                                child: Center(
-                                  child: Container(
-                                    height: 2.0,
-                                    width: isNarrowFoldCover ? 28 : 36,
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary,
-                                      borderRadius: BorderRadius.circular(1.0),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: AppColors.primary
-                                              .withValues(alpha: 0.75),
-                                          blurRadius: 6,
-                                          spreadRadius: 1,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                      Theme(
-                        data: Theme.of(context).copyWith(
-                          splashColor: Colors.transparent,
-                          highlightColor: Colors.transparent,
-                          hoverColor: Colors.transparent,
-                          splashFactory: NoSplash.splashFactory,
-                        ),
-                        child: Container(
-                          color: Colors.transparent,
-                          padding: const EdgeInsets.only(top: 5, bottom: 2),
-                          child: BottomNavigationBar(
-                            currentIndex: currentIndex,
-                            onTap: _onTap,
-                            backgroundColor: Colors.transparent,
-                            elevation: 0,
-                            type: BottomNavigationBarType.fixed,
-                            selectedItemColor: Colors.white,
-                            unselectedItemColor: const Color(0xFF9898A4),
-                            selectedFontSize: labelFontSize,
-                            unselectedFontSize: labelFontSize,
-                            selectedLabelStyle: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.2,
-                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Theme(
+              data: Theme.of(context).copyWith(
+                splashColor: Colors.transparent,
+                highlightColor: Colors.transparent,
+                hoverColor: Colors.transparent,
+                splashFactory: NoSplash.splashFactory,
+              ),
+              child: Container(
+                color: Colors.transparent,
+                padding: const EdgeInsets.only(top: 5, bottom: 2),
+                child: BottomNavigationBar(
+                  currentIndex: currentIndex,
+                  onTap: _onTap,
+                  backgroundColor: Colors.transparent,
+                  elevation: 0,
+                  type: BottomNavigationBarType.fixed,
+                  selectedItemColor: Colors.white,
+                  unselectedItemColor: const Color(0xFF9898A4),
+                  selectedFontSize: labelFontSize,
+                  unselectedFontSize: labelFontSize,
+                  selectedLabelStyle: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                  ),
                             unselectedLabelStyle: const TextStyle(
                               fontWeight: FontWeight.w500,
                               letterSpacing: 0.2,
@@ -395,14 +425,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     ],
                   ),
                 ),
-              ),
-            ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+              );
   }
 
   static const List<(_NavIconType, String)> _navEntries = [

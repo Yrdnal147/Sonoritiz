@@ -49,6 +49,7 @@ class ConnectRepository {
     int sessionId, {
     String? avatar,
     int? seq,
+    int? knownMetaRev,
     Map<String, dynamic>? track,
     double? position,
     bool? isPlaying,
@@ -66,6 +67,8 @@ class ConnectRepository {
       data: <String, dynamic>{
         if (avatar != null && avatar.isNotEmpty) 'avatar': avatar,
         if (seq != null) 'seq': seq,
+        if (knownMetaRev != null && knownMetaRev > 0)
+          'known_meta_rev': knownMetaRev,
         if (track != null) 'track': track,
         if (position != null) 'position': position,
         if (isPlaying != null) 'is_playing': isPlaying,

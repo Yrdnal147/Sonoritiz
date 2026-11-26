@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -505,18 +504,30 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
           onTap: () => context.push('/profile'),
           child: Padding(
             padding: const EdgeInsets.only(right: AppDimensions.spacingMd),
-            child: CircleAvatar(
-              radius: 16,
-              backgroundColor: colorScheme.primaryContainer,
-              backgroundImage: !kIsWeb && profileImagePath != null && File(profileImagePath).existsSync()
-                  ? FileImage(File(profileImagePath))
-                  : null,
-              child: kIsWeb || profileImagePath == null || !File(profileImagePath).existsSync()
-                  ? Text(
-                      username.isNotEmpty ? username[0].toUpperCase() : 'U',
-                      style: TextStyle(color: colorScheme.onPrimaryContainer, fontSize: 14, fontWeight: FontWeight.bold),
-                    )
-                  : null,
+            child: Builder(
+              builder: (context) {
+                final hasLocalAvatar = !kIsWeb &&
+                    profileImagePath != null &&
+                    SonoritizArtwork.fileExistsCached(profileImagePath);
+                return CircleAvatar(
+                  radius: 16,
+                  backgroundColor: colorScheme.primaryContainer,
+                  backgroundImage:
+                      hasLocalAvatar ? FileImage(File(profileImagePath)) : null,
+                  child: !hasLocalAvatar
+                      ? Text(
+                          username.isNotEmpty
+                              ? username[0].toUpperCase()
+                              : 'U',
+                          style: TextStyle(
+                            color: colorScheme.onPrimaryContainer,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        )
+                      : null,
+                );
+              },
             ),
           ),
         ),
@@ -907,187 +918,183 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
                         );
                       }
                     },
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(24),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                        child: Container(
-                          width: 226,
-                          padding: const EdgeInsets.all(13),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(24),
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                Colors.white.withValues(alpha: 0.13),
-                                Colors.white.withValues(alpha: 0.05),
-                              ],
-                            ),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.18),
-                              width: 1.1,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.34),
-                                blurRadius: 16,
-                                offset: const Offset(0, 8),
-                              ),
+                    child: RepaintBoundary(
+                      child: Container(
+                        width: 226,
+                        padding: const EdgeInsets.all(13),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(24),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              const Color(0xFF22222C).withValues(alpha: 0.92),
+                              const Color(0xFF15151C).withValues(alpha: 0.94),
                             ],
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      SonoritizArtwork(
-                                        imageUrl: ep.coverUrl,
-                                        width: double.infinity,
-                                        height: double.infinity,
-                                        borderRadius: 16,
-                                        fit: BoxFit.cover,
-                                        cacheMaxDimension: 380,
-                                      ),
-                                      Positioned(
-                                        right: 8,
-                                        bottom: progressRatio > 0 ? 12 : 8,
-                                        child: GestureDetector(
-                                          onTap: () {
-                                            context.push(
-                                              '/podcast_player',
-                                              extra: <String, dynamic>{
-                                                'track': ep,
-                                                'initialVideoMode': true,
-                                                'initialPositionSeconds':
-                                                    resumeSec,
-                                              },
-                                            );
-                                          },
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 9,
-                                              vertical: 5,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.black
-                                                  .withValues(alpha: 0.72),
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              border: Border.all(
-                                                color: Colors.white
-                                                    .withValues(alpha: 0.22),
-                                                width: 0.8,
-                                              ),
-                                            ),
-                                            child: const Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                  Icons.videocam_rounded,
-                                                  color: AppColors.primary,
-                                                  size: 14,
-                                                ),
-                                                SizedBox(width: 4),
-                                                Text(
-                                                  "Vidéo",
-                                                  style: TextStyle(
-                                                    color: Colors.white,
-                                                    fontSize: 10.5,
-                                                    fontWeight: FontWeight.w800,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.18),
+                            width: 1.1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.34),
+                              blurRadius: 14,
+                              offset: const Offset(0, 7),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    SonoritizArtwork(
+                                      imageUrl: ep.coverUrl,
+                                      width: double.infinity,
+                                      height: double.infinity,
+                                      borderRadius: 16,
+                                      fit: BoxFit.cover,
+                                      cacheMaxDimension: 380,
+                                    ),
+                                    Positioned(
+                                      right: 8,
+                                      bottom: progressRatio > 0 ? 12 : 8,
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          context.push(
+                                            '/podcast_player',
+                                            extra: <String, dynamic>{
+                                              'track': ep,
+                                              'initialVideoMode': true,
+                                              'initialPositionSeconds':
+                                                  resumeSec,
+                                            },
+                                          );
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 9,
+                                            vertical: 5,
                                           ),
-                                        ),
-                                      ),
-                                      if (progressRatio > 0)
-                                        Positioned(
-                                          left: 0,
-                                          right: 0,
-                                          bottom: 0,
-                                          child: Container(
-                                            height: 4,
+                                          decoration: BoxDecoration(
                                             color: Colors.black
-                                                .withValues(alpha: 0.55),
-                                            alignment: Alignment.centerLeft,
-                                            child: FractionallySizedBox(
-                                              widthFactor: progressRatio,
-                                              child: Container(
-                                                height: 4,
-                                                decoration: const BoxDecoration(
-                                                  color: AppColors.primary,
-                                                  borderRadius:
-                                                      BorderRadius.horizontal(
-                                                    right: Radius.circular(3),
-                                                  ),
-                                                ),
-                                              ),
+                                                .withValues(alpha: 0.72),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.22),
+                                              width: 0.8,
                                             ),
                                           ),
+                                          child: const Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                Icons.videocam_rounded,
+                                                color: AppColors.primary,
+                                                size: 14,
+                                              ),
+                                              SizedBox(width: 4),
+                                              Text(
+                                                "Vidéo",
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 11),
-                              Text(
-                                ep.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14.5,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -0.2,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                ep.artistName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.66),
-                                  fontSize: 12.0,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Icon(
-                                    resumeSec > 5
-                                        ? Icons.play_circle_fill_rounded
-                                        : Icons.podcasts_rounded,
-                                    size: 13,
-                                    color: AppColors.primary,
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Expanded(
-                                    child: Text(
-                                      statusLabel,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: resumeSec > 5
-                                            ? AppColors.primary
-                                            : Colors.white
-                                                .withValues(alpha: 0.52),
-                                        fontSize: 11.2,
-                                        fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                  ),
-                                ],
+                                    if (progressRatio > 0)
+                                      Positioned(
+                                        left: 0,
+                                        right: 0,
+                                        bottom: 0,
+                                        child: Container(
+                                          height: 4,
+                                          color: Colors.black
+                                              .withValues(alpha: 0.55),
+                                          alignment: Alignment.centerLeft,
+                                          child: FractionallySizedBox(
+                                            widthFactor: progressRatio,
+                                            child: Container(
+                                              height: 4,
+                                              decoration: const BoxDecoration(
+                                                color: AppColors.primary,
+                                                borderRadius:
+                                                    BorderRadius.horizontal(
+                                                  right: Radius.circular(3),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(height: 11),
+                            Text(
+                              ep.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              ep.artistName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.66),
+                                fontSize: 12.0,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Icon(
+                                  resumeSec > 5
+                                      ? Icons.play_circle_fill_rounded
+                                      : Icons.podcasts_rounded,
+                                  size: 13,
+                                  color: AppColors.primary,
+                                ),
+                                const SizedBox(width: 5),
+                                Expanded(
+                                  child: Text(
+                                    statusLabel,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: resumeSec > 5
+                                          ? AppColors.primary
+                                          : Colors.white
+                                              .withValues(alpha: 0.52),
+                                      fontSize: 11.2,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
                     ),

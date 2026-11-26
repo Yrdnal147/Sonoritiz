@@ -54,6 +54,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'django.middleware.gzip.GZipMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -92,7 +93,21 @@ if not DATABASE_URL:
     raise ValueError("DATABASE_URL must be set in the environment variables.")
 
 DATABASES = {
-    'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+    'default': {
+        **dj_database_url.parse(DATABASE_URL, conn_max_age=600),
+        'CONN_HEALTH_CHECKS': True,
+    }
+}
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'sonoritiz-fast-memcache',
+        'TIMEOUT': 1800,
+        'OPTIONS': {
+            'MAX_ENTRIES': 2000,
+        },
+    }
 }
 
 AUTH_USER_MODEL = 'accounts.User'
@@ -128,7 +143,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # REST Framework Configuration
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'accounts.authentication.LightweightJWTAuthentication',
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',
     'PAGE_SIZE': 20,

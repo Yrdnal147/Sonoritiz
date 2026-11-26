@@ -33,6 +33,9 @@ class ConnectCubit extends Cubit<ConnectState> {
 
   int _hostSeq = 1;
   int _lastAppliedRemoteSeq = -1;
+  int _knownServerMetaRev = -1;
+  String _lastSentAvatar = '';
+  String _lastSentQueueFingerprint = '';
   String _sharedPlaylistTitle = 'File du salon';
 
   String? _cachedMyAvatarPayload;
@@ -45,7 +48,7 @@ class ConnectCubit extends Cubit<ConnectState> {
   }) : super(ConnectInitial());
 
   /// Résout la photo de profil de l'utilisateur courant :
-  /// 1. Miniature 72x72 (`data:image/png;base64,...`) depuis sa galerie locale,
+  /// 1. Miniature compacte 44x44 (`data:image/png;base64,...`, < 12 Ko) depuis sa galerie locale,
   /// 2. Sinon URL http/https directe,
   /// 3. Sinon photo de son 1er artiste suivi/consulté.
   Future<String> _resolveMyAvatarPayload() async {
@@ -73,8 +76,8 @@ class ConnectCubit extends Cubit<ConnectState> {
           final bytes = await file.readAsBytes();
           final codec = await ui.instantiateImageCodec(
             bytes,
-            targetWidth: 72,
-            targetHeight: 72,
+            targetWidth: 44,
+            targetHeight: 44,
           );
           final frame = await codec.getNextFrame();
           final byteData = await frame.image.toByteData(
@@ -84,7 +87,7 @@ class ConnectCubit extends Cubit<ConnectState> {
             final thumbBytes = byteData.buffer.asUint8List();
             final dataUri =
                 'data:image/png;base64,${base64Encode(thumbBytes)}';
-            if (dataUri.length <= 155000) {
+            if (dataUri.length <= 32000) {
               _lastAvatarSourcePath = rawPath;
               _cachedMyAvatarPayload = dataUri;
               return dataUri;
@@ -262,6 +265,10 @@ class ConnectCubit extends Cubit<ConnectState> {
           : 'File du salon';
       _hostSeq = 1;
       _lastAppliedRemoteSeq = -1;
+      _knownServerMetaRev = -1;
+      _lastSentAvatar = avatar;
+      _lastSentQueueFingerprint =
+          '$_sharedPlaylistTitle::${initialQueue.map((t) => t.id).join(',')}';
 
       final data = await repository.createSession(
         avatar: avatar,
@@ -283,6 +290,9 @@ class ConnectCubit extends Cubit<ConnectState> {
       final playbackState = data['playback_state'] is Map
           ? Map<String, dynamic>.from(data['playback_state'] as Map)
           : const <String, dynamic>{};
+      if (playbackState['meta_rev'] is int) {
+        _knownServerMetaRev = playbackState['meta_rev'] as int;
+      }
 
       _httpSyncHealthy = true;
       final threads = _mapListFrom(
@@ -344,6 +354,10 @@ class ConnectCubit extends Cubit<ConnectState> {
 
       _httpSyncHealthy = true;
       _lastAppliedRemoteSeq = -1;
+      _lastSentAvatar = avatar;
+      _knownServerMetaRev = playbackState['meta_rev'] is int
+          ? playbackState['meta_rev'] as int
+          : -1;
       final threads = _mapListFrom(
         playbackState['suggestion_threads'] ?? playbackState['suggestions'],
       );
@@ -460,15 +474,23 @@ class ConnectCubit extends Cubit<ConnectState> {
     _isSyncInFlight = true;
     try {
       final avatar = await _resolveMyAvatarPayload();
+      final bool shouldSendAvatar =
+          avatar.isNotEmpty && avatar != _lastSentAvatar;
       final pState = playerCubit.state;
       final curTrack = pState.currentTrack;
       final hostWindowQueue =
           currentState.isHost ? _extractHostWindowQueue(pState) : null;
+      final String queueFingerprint = (currentState.isHost && hostWindowQueue != null)
+          ? '$_sharedPlaylistTitle::${hostWindowQueue.map((t) => t.id).join(',')}'
+          : '';
+      final bool shouldSendHostQueue = currentState.isHost &&
+          (forceHostState || queueFingerprint != _lastSentQueueFingerprint);
 
       final data = await repository.syncSession(
         currentState.sessionId,
-        avatar: avatar,
+        avatar: shouldSendAvatar ? avatar : null,
         seq: currentState.isHost ? _hostSeq : null,
+        knownMetaRev: _knownServerMetaRev > 0 ? _knownServerMetaRev : null,
         track: (currentState.isHost && curTrack != null)
             ? _shareableTrack(curTrack)
             : null,
@@ -478,13 +500,22 @@ class ConnectCubit extends Cubit<ConnectState> {
         isPlaying: currentState.isHost ? pState.isPlaying : null,
         isBuffering: currentState.isHost ? pState.isBuffering : null,
         sharedPlaylistTitle:
-            currentState.isHost ? _sharedPlaylistTitle : null,
-        sharedQueue: hostWindowQueue?.map(_shareableTrack).toList(),
+            shouldSendHostQueue ? _sharedPlaylistTitle : null,
+        sharedQueue: shouldSendHostQueue
+            ? hostWindowQueue?.map(_shareableTrack).toList()
+            : null,
         reaction: reaction,
         suggestionPayload: suggestionPayload,
         upvoteSuggestionId: upvoteSuggestionId,
         clearSuggestionId: clearSuggestionId,
       );
+
+      if (shouldSendAvatar) {
+        _lastSentAvatar = avatar;
+      }
+      if (shouldSendHostQueue) {
+        _lastSentQueueFingerprint = queueFingerprint;
+      }
 
       if (state is! ConnectActive) return;
       final latestState = state as ConnectActive;
@@ -495,42 +526,55 @@ class ConnectCubit extends Cubit<ConnectState> {
       }
 
       _httpSyncHealthy = true;
+      final bool isDelta = data['delta'] == true;
       final int maxParticipants = data['max_participants'] is int
           ? data['max_participants'] as int
           : latestState.maxParticipants;
-      final int? hostId = _extractHostUserId(data);
-      final participants =
-          _participantsFrom(data['participants'], hostUserId: hostId);
       final playbackState = data['playback_state'] is Map
           ? Map<String, dynamic>.from(data['playback_state'] as Map)
           : const <String, dynamic>{};
+      if (playbackState['meta_rev'] is int) {
+        _knownServerMetaRev = playbackState['meta_rev'] as int;
+      }
       final reactions = _mapListFrom(playbackState['reactions']);
-      final threads = _mapListFrom(
-        playbackState['suggestion_threads'] ?? playbackState['suggestions'],
-      );
-      _persistGuestRecommendationsFromThreads(
-        threads,
-        isHost: latestState.isHost,
-      );
-      final remoteQueue = _tracksFromRaw(playbackState['shared_queue']);
-      final remoteTitle =
-          (playbackState['shared_playlist_title'] ?? 'File du salon')
-              .toString();
 
-      emit(latestState.copyWith(
-        participants:
-            participants.isNotEmpty ? participants : latestState.participants,
-        reactions: reactions,
-        suggestions: threads,
-        suggestionThreads: threads,
-        sharedPlaylistTitle:
-            latestState.isHost ? _sharedPlaylistTitle : remoteTitle,
-        sharedQueue: latestState.isHost
-            ? (hostWindowQueue ?? latestState.sharedQueue)
-            : remoteQueue,
-        maxParticipants: maxParticipants,
-        connectionStatus: 'connected',
-      ));
+      if (isDelta) {
+        emit(latestState.copyWith(
+          reactions: reactions,
+          maxParticipants: maxParticipants,
+          connectionStatus: 'connected',
+        ));
+      } else {
+        final int? hostId = _extractHostUserId(data);
+        final participants =
+            _participantsFrom(data['participants'], hostUserId: hostId);
+        final threads = _mapListFrom(
+          playbackState['suggestion_threads'] ?? playbackState['suggestions'],
+        );
+        _persistGuestRecommendationsFromThreads(
+          threads,
+          isHost: latestState.isHost,
+        );
+        final remoteQueue = _tracksFromRaw(playbackState['shared_queue']);
+        final remoteTitle =
+            (playbackState['shared_playlist_title'] ?? 'File du salon')
+                .toString();
+
+        emit(latestState.copyWith(
+          participants:
+              participants.isNotEmpty ? participants : latestState.participants,
+          reactions: reactions,
+          suggestions: threads,
+          suggestionThreads: threads,
+          sharedPlaylistTitle:
+              latestState.isHost ? _sharedPlaylistTitle : remoteTitle,
+          sharedQueue: latestState.isHost
+              ? (hostWindowQueue ?? latestState.sharedQueue)
+              : (remoteQueue.isNotEmpty ? remoteQueue : latestState.sharedQueue),
+          maxParticipants: maxParticipants,
+          connectionStatus: 'connected',
+        ));
+      }
 
       if (!latestState.isHost && playbackState.isNotEmpty) {
         final double? serverNow = data['server_now'] is num
@@ -846,8 +890,16 @@ class ConnectCubit extends Cubit<ConnectState> {
 
     final List<TrackModel> remoteQueue =
         _tracksFromRaw(playbackState['shared_queue']);
+    final List<TrackModel> effectiveQueue = remoteQueue.isNotEmpty
+        ? remoteQueue
+        : (state is ConnectActive && (state as ConnectActive).sharedQueue.isNotEmpty
+            ? (state as ConnectActive).sharedQueue
+            : [track]);
     final String sharedTitle =
-        (playbackState['shared_playlist_title'] ?? 'Sonoritiz Connect')
+        (playbackState['shared_playlist_title'] ??
+                (state is ConnectActive
+                    ? (state as ConnectActive).sharedPlaylistTitle
+                    : 'Sonoritiz Connect'))
             .toString();
 
     final Duration targetDuration =
@@ -859,7 +911,7 @@ class ConnectCubit extends Cubit<ConnectState> {
 
     await playerCubit.syncConnectTargetState(
       track: track,
-      queue: remoteQueue.isNotEmpty ? remoteQueue : [track],
+      queue: effectiveQueue,
       targetPosition: targetDuration,
       shouldPlay: effectiveShouldPlay,
       source: sharedTitle,

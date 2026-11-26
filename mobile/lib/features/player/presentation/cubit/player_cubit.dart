@@ -41,6 +41,8 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   // Historique léger des 5 derniers titres pour les widgets Android (Playlist & Récent)
   final List<_WidgetRecentEntry> _recentWidgetEntries = [];
+  final Map<String, String> _widgetCoverPathCache = {};
+  final Map<String, String> _widgetArtistPathCache = {};
 
   PlayerCubit({
     required SonoritizAudioHandler audioHandler,
@@ -353,11 +355,17 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   Future<String?> _resolveWidgetCoverPath(TrackModel track) async {
     try {
+      final cachedPath = _widgetCoverPathCache[track.id];
+      if (cachedPath != null && cachedPath.isNotEmpty) {
+        return cachedPath;
+      }
+
       // 1. Pochette hors-ligne déjà téléchargée
       final offline = _audioHandler.offlineRepository?.getOfflineTrack(track.id);
       if (offline != null &&
           offline.localCoverPath.isNotEmpty &&
           await File(offline.localCoverPath).exists()) {
+        _widgetCoverPathCache[track.id] = offline.localCoverPath;
         return offline.localCoverPath;
       }
 
@@ -365,6 +373,7 @@ class PlayerCubit extends Cubit<PlayerState> {
       if (track.coverUrl.startsWith('file://')) {
         final localPath = track.coverUrl.replaceFirst('file://', '');
         if (await File(localPath).exists()) {
+          _widgetCoverPathCache[track.id] = localPath;
           return localPath;
         }
         return null;
@@ -382,6 +391,7 @@ class PlayerCubit extends Cubit<PlayerState> {
         await _metaDio.download(thumbUrl, localPath);
       }
       if (await file.exists()) {
+        _widgetCoverPathCache[track.id] = localPath;
         return localPath;
       }
     } catch (_) {}
@@ -394,11 +404,18 @@ class PlayerCubit extends Cubit<PlayerState> {
       final target = clean.isNotEmpty ? clean : artistName.trim();
       if (target.isEmpty || target.toLowerCase() == 'artiste inconnu') return null;
 
+      final cacheKey = target.toLowerCase();
+      final memCached = _widgetArtistPathCache[cacheKey];
+      if (memCached != null && memCached.isNotEmpty) {
+        return memCached;
+      }
+
       final tempDir = await getTemporaryDirectory();
       final safeName = target.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
       final localPath = '${tempDir.path}/widget_artist_$safeName.jpg';
       final file = File(localPath);
       if (await file.exists() && await file.length() > 512) {
+        _widgetArtistPathCache[cacheKey] = localPath;
         return localPath;
       }
 

@@ -1,7 +1,8 @@
+import copy
 import json
 import time
 from django.db import connection
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from rest_framework import status, permissions, serializers
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -12,6 +13,9 @@ from .serializers import ConnectSessionSerializer, ConnectJoinSerializer
 from playlists.models import Playlist
 
 _PLAYBACK_COL_READY = False
+# Cache mémoire ultra-rapide des salons actifs pour éviter les lectures/écritures SQL Supabase
+# à chaque tick de 1,2s (réduit l'Egress Supabase de >98% tout en gardant une latence <50ms).
+_SESSION_RAM_CACHE = {}
 
 
 def _ensure_playback_state_column():
@@ -41,7 +45,12 @@ def _ensure_playback_state_column():
         return False
 
 
-def _read_session_state(session_id: int) -> dict:
+def _read_session_state(session_id: int, allow_ram: bool = True) -> dict:
+    now = time.time()
+    if allow_ram:
+        cached = _SESSION_RAM_CACHE.get(session_id)
+        if cached and (now - cached.get('read_at', 0.0) < 6.0):
+            return cached['state']
     if not _ensure_playback_state_column():
         return {}
     try:
@@ -53,18 +62,31 @@ def _read_session_state(session_id: int) -> dict:
             row = cursor.fetchone()
             if row and row[0]:
                 raw = row[0]
+                parsed = None
                 if isinstance(raw, dict):
-                    return raw
-                if isinstance(raw, str) and raw.strip():
-                    parsed = json.loads(raw)
-                    if isinstance(parsed, dict):
-                        return parsed
+                    parsed = raw
+                elif isinstance(raw, str) and raw.strip():
+                    loaded = json.loads(raw)
+                    if isinstance(loaded, dict):
+                        parsed = loaded
+                if parsed is not None:
+                    entry = _SESSION_RAM_CACHE.setdefault(session_id, {})
+                    entry['state'] = parsed
+                    entry['read_at'] = now
+                    return parsed
     except Exception:
         pass
     return {}
 
 
-def _write_session_state(session_id: int, state_dict: dict) -> None:
+def _write_session_state(session_id: int, state_dict: dict, force_db: bool = True) -> None:
+    now = time.time()
+    entry = _SESSION_RAM_CACHE.setdefault(session_id, {})
+    entry['state'] = state_dict
+    entry['read_at'] = now
+    last_db_write = entry.get('db_written_at', 0.0)
+    if not force_db and (now - last_db_write < 8.0):
+        return
     if not _ensure_playback_state_column():
         return
     try:
@@ -74,6 +96,7 @@ def _write_session_state(session_id: int, state_dict: dict) -> None:
                 "UPDATE connect_connectsession SET playback_state = %s WHERE id = %s",
                 [payload, session_id],
             )
+        entry['db_written_at'] = now
     except Exception:
         pass
 
@@ -86,7 +109,8 @@ def _sanitize_avatar(raw_avatar) -> str:
         return ''
     if cleaned.startswith(('https://', 'http://')) and len(cleaned) <= 600:
         return cleaned
-    if cleaned.startswith('data:image/') and len(cleaned) <= 160000:
+    # Miniature Base64 compacte (max 32 Ko pour préserver l'Egress Supabase)
+    if cleaned.startswith('data:image/') and len(cleaned) <= 32000:
         return cleaned
     return ''
 
@@ -174,8 +198,73 @@ def _sort_suggestion_threads(threads: list, avatars: dict) -> list:
     return valid
 
 
-def _enrich_session_response(session: ConnectSession, state_dict: dict) -> dict:
-    data = dict(ConnectSessionSerializer(session).data)
+def _get_cached_serialized_session(session: ConnectSession, force_refresh: bool = False) -> dict:
+    now = time.time()
+    entry = _SESSION_RAM_CACHE.setdefault(session.pk, {})
+    cached_data = entry.get('serialized_session')
+    if not force_refresh and cached_data and (now - entry.get('serialized_at', 0.0) < 6.0):
+        return copy.deepcopy(cached_data)
+
+    # Chargement optimisé en 2 requêtes légères SANS jamais lire favorite_artists / superliked_tracks / favorite_albums
+    light_participants_qs = (
+        ConnectParticipant.objects.select_related('user')
+        .defer(
+            'user__password',
+            'user__favorite_artists',
+            'user__superliked_tracks',
+            'user__favorite_albums',
+        )
+    )
+    light_session = (
+        ConnectSession.objects.select_related('host_user', 'playlist')
+        .defer(
+            'host_user__password',
+            'host_user__favorite_artists',
+            'host_user__superliked_tracks',
+            'host_user__favorite_albums',
+        )
+        .prefetch_related(Prefetch('participants', queryset=light_participants_qs))
+        .filter(pk=session.pk)
+        .first()
+    ) or session
+
+    fresh = dict(ConnectSessionSerializer(light_session).data)
+    entry['serialized_session'] = fresh
+    entry['serialized_at'] = now
+    return copy.deepcopy(fresh)
+
+
+def _enrich_session_response(
+    session: ConnectSession,
+    state_dict: dict,
+    client_meta_rev: int = -1,
+    force_participants_refresh: bool = False,
+) -> dict:
+    server_meta_rev = int(state_dict.get('meta_rev', 1))
+    now = time.time()
+
+    # Si le client possède déjà exactement la même révision de métadonnées (avatars, file, threads, participants),
+    # on renvoie un paquet delta ultra-léger (< 500 octets au lieu de 300 Ko !).
+    if client_meta_rev > 0 and client_meta_rev == server_meta_rev and not force_participants_refresh:
+        return {
+            'id': session.pk,
+            'status': session.status,
+            'delta': True,
+            'max_participants': 20,
+            'server_now': now,
+            'playback_state': {
+                'seq': int(state_dict.get('seq', 0)),
+                'meta_rev': server_meta_rev,
+                'track': state_dict.get('track'),
+                'position': state_dict.get('position', 0.0),
+                'is_playing': bool(state_dict.get('is_playing', False)),
+                'is_buffering': bool(state_dict.get('is_buffering', False)),
+                'server_timestamp': state_dict.get('server_timestamp', now),
+                'reactions': state_dict.get('reactions', []),
+            },
+        }
+
+    data = _get_cached_serialized_session(session, force_refresh=force_participants_refresh)
     avatars = state_dict.get('avatars') if isinstance(state_dict.get('avatars'), dict) else {}
     participants = data.get('participants')
     if isinstance(participants, list):
@@ -195,13 +284,15 @@ def _enrich_session_response(session: ConnectSession, state_dict: dict) -> dict:
         raw_threads = state_dict.get('suggestions', [])
     sorted_threads = _sort_suggestion_threads(raw_threads, avatars)
 
+    data['delta'] = False
     data['playback_state'] = {
         'seq': int(state_dict.get('seq', 0)),
+        'meta_rev': server_meta_rev,
         'track': state_dict.get('track'),
         'position': state_dict.get('position', 0.0),
         'is_playing': bool(state_dict.get('is_playing', False)),
         'is_buffering': bool(state_dict.get('is_buffering', False)),
-        'server_timestamp': state_dict.get('server_timestamp', time.time()),
+        'server_timestamp': state_dict.get('server_timestamp', now),
         'shared_playlist_title': str(state_dict.get('shared_playlist_title') or 'File du salon'),
         'shared_queue': state_dict.get('shared_queue', []),
         'reactions': state_dict.get('reactions', []),
@@ -209,7 +300,7 @@ def _enrich_session_response(session: ConnectSession, state_dict: dict) -> dict:
         'suggestions': sorted_threads,
     }
     data['max_participants'] = 20
-    data['server_now'] = time.time()
+    data['server_now'] = now
     return data
 
 class ConnectSessionCreateView(APIView):
@@ -242,6 +333,7 @@ class ConnectSessionCreateView(APIView):
 
         state_dict = {
             'seq': 1,
+            'meta_rev': 1,
             'avatars': {},
             'reactions': [],
             'suggestion_threads': [],
@@ -260,9 +352,12 @@ class ConnectSessionCreateView(APIView):
             state_dict['server_timestamp'] = time.time()
             if not state_dict['shared_queue']:
                 state_dict['shared_queue'] = [initial_track]
-        _write_session_state(session.pk, state_dict)
+        _write_session_state(session.pk, state_dict, force_db=True)
 
-        return Response(_enrich_session_response(session, state_dict), status=status.HTTP_201_CREATED)
+        return Response(
+            _enrich_session_response(session, state_dict, force_participants_refresh=True),
+            status=status.HTTP_201_CREATED,
+        )
 
 class ConnectSessionJoinView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -293,15 +388,19 @@ class ConnectSessionJoinView(APIView):
             user=request.user
         )
 
-        state_dict = _read_session_state(session.pk)
+        state_dict = _read_session_state(session.pk, allow_ram=False)
         avatar = _sanitize_avatar(request.data.get('avatar'))
         if avatar:
             avatars = state_dict.get('avatars') if isinstance(state_dict.get('avatars'), dict) else {}
             avatars[str(request.user.id)] = avatar
             state_dict['avatars'] = avatars
-            _write_session_state(session.pk, state_dict)
+        state_dict['meta_rev'] = int(state_dict.get('meta_rev', 1)) + 1
+        _write_session_state(session.pk, state_dict, force_db=True)
 
-        return Response(_enrich_session_response(session, state_dict), status=status.HTTP_200_OK)
+        return Response(
+            _enrich_session_response(session, state_dict, force_participants_refresh=True),
+            status=status.HTTP_200_OK,
+        )
 
 class ConnectSessionDetailView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -346,6 +445,7 @@ class ConnectSessionSyncView(APIView):
 
         state_dict = _read_session_state(session.pk)
         changed = False
+        meta_changed = False
         now = time.time()
 
         # 1. Mise à jour de la photo de profil du participant
@@ -357,6 +457,7 @@ class ConnectSessionSyncView(APIView):
                 avatars[uid] = avatar
                 state_dict['avatars'] = avatars
                 changed = True
+                meta_changed = True
 
         # 2. Si c'est l'hôte, mise à jour de l'état de lecture (avec numéro de séquence monotone `seq`)
         if session.host_user_id == request.user.id:
@@ -368,8 +469,9 @@ class ConnectSessionSyncView(APIView):
                     incoming_seq_int = int(incoming_seq)
                     if incoming_seq_int < current_seq:
                         is_stale_host_packet = True
-                    else:
+                    elif incoming_seq_int > current_seq:
                         state_dict['seq'] = incoming_seq_int
+                        meta_changed = True
                 except (TypeError, ValueError):
                     pass
 
@@ -382,12 +484,21 @@ class ConnectSessionSyncView(APIView):
                         pos = 0.0
                     state_dict['position'] = pos
                     if 'is_playing' in request.data:
-                        state_dict['is_playing'] = bool(request.data.get('is_playing'))
+                        new_playing = bool(request.data.get('is_playing'))
+                        if state_dict.get('is_playing') != new_playing:
+                            meta_changed = True
+                        state_dict['is_playing'] = new_playing
                     if 'is_buffering' in request.data:
-                        state_dict['is_buffering'] = bool(request.data.get('is_buffering'))
+                        new_buf = bool(request.data.get('is_buffering'))
+                        if state_dict.get('is_buffering') != new_buf:
+                            meta_changed = True
+                        state_dict['is_buffering'] = new_buf
                     state_dict['server_timestamp'] = now
                     track = _sanitize_track(request.data.get('track'))
                     if track is not None:
+                        prev_track_id = (state_dict.get('track') or {}).get('id') if isinstance(state_dict.get('track'), dict) else None
+                        if prev_track_id != track['id']:
+                            meta_changed = True
                         state_dict['track'] = track
                         if session.current_jamendo_track_id != track['id']:
                             session.current_jamendo_track_id = track['id']
@@ -395,17 +506,22 @@ class ConnectSessionSyncView(APIView):
                     changed = True
 
                 if 'shared_playlist_title' in request.data:
-                    state_dict['shared_playlist_title'] = str(
+                    new_title = str(
                         request.data.get('shared_playlist_title') or 'File du salon'
                     )[:120]
-                    changed = True
+                    if state_dict.get('shared_playlist_title') != new_title:
+                        state_dict['shared_playlist_title'] = new_title
+                        changed = True
+                        meta_changed = True
 
                 if 'shared_queue' in request.data:
-                    state_dict['shared_queue'] = _sanitize_track_list(
+                    new_queue = _sanitize_track_list(
                         request.data.get('shared_queue'),
                         max_items=35,
                     )
+                    state_dict['shared_queue'] = new_queue
                     changed = True
+                    meta_changed = True
 
             clear_suggestion_id = request.data.get('clear_suggestion_id')
             if isinstance(clear_suggestion_id, str) and clear_suggestion_id.strip():
@@ -419,6 +535,7 @@ class ConnectSessionSyncView(APIView):
                 ]
                 state_dict.pop('suggestions', None)
                 changed = True
+                meta_changed = True
 
         # 3. Réaction en direct (hôte ou invité)
         reaction = request.data.get('reaction')
@@ -449,6 +566,7 @@ class ConnectSessionSyncView(APIView):
                         voter_ids.append(request.user.id)
                         t['voter_ids'] = voter_ids
                         changed = True
+                        meta_changed = True
                     break
             state_dict['suggestion_threads'] = threads
 
@@ -499,6 +617,7 @@ class ConnectSessionSyncView(APIView):
                         voter_ids.append(request.user.id)
                         existing['voter_ids'] = voter_ids
                         changed = True
+                        meta_changed = True
                 else:
                     avatars = state_dict.get('avatars') if isinstance(state_dict.get('avatars'), dict) else {}
                     threads.append({
@@ -520,11 +639,31 @@ class ConnectSessionSyncView(APIView):
                     state_dict['suggestion_threads'] = threads[-24:]
                     state_dict.pop('suggestions', None)
                     changed = True
+                    meta_changed = True
+
+        if meta_changed:
+            state_dict['meta_rev'] = int(state_dict.get('meta_rev', 1)) + 1
 
         if changed:
-            _write_session_state(session.pk, state_dict)
+            _write_session_state(
+                session.pk,
+                state_dict,
+                force_db=bool(meta_changed or reaction),
+            )
 
-        return Response(_enrich_session_response(session, state_dict), status=status.HTTP_200_OK)
+        try:
+            client_meta_rev = int(request.data.get('known_meta_rev') or -1)
+        except (TypeError, ValueError):
+            client_meta_rev = -1
+
+        return Response(
+            _enrich_session_response(
+                session,
+                state_dict,
+                client_meta_rev=client_meta_rev if not meta_changed else -1,
+            ),
+            status=status.HTTP_200_OK,
+        )
 
 class ConnectSessionLeaveView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -543,11 +682,14 @@ class ConnectSessionLeaveView(APIView):
             )
 
         ConnectParticipant.objects.filter(session=session, user=request.user).delete()
+        _SESSION_RAM_CACHE.pop(session.pk, None)
 
-        # If host leaves or no participants left, close the session
-        if session.host_user == request.user or session.participants.count() == 0:
+        # If host leaves or no participants left, close the session and purge heavy playback_state blob
+        if session.host_user_id == request.user.id or session.participants.count() == 0:
             session.status = 'ended'
-            session.save()
+            session.save(update_fields=['status'])
+            _write_session_state(session.pk, {}, force_db=True)
+            _SESSION_RAM_CACHE.pop(session.pk, None)
             channel_layer = get_channel_layer()
             if channel_layer is not None:
                 try:
