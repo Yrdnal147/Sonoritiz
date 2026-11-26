@@ -1825,7 +1825,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                             borderRadius: 0,
                             alignment: const Alignment(0, -0.2),
                             fit: BoxFit.cover,
-                            cacheMaxDimension: 900,
+                            cacheMaxDimension: 1400,
                           ),
                         );
                       },
@@ -2245,7 +2245,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                             borderRadius: 0,
                             alignment: const Alignment(0, -0.2),
                             fit: BoxFit.cover,
-                            cacheMaxDimension: 900,
+                            cacheMaxDimension: 1400,
                           ),
                         );
                       },

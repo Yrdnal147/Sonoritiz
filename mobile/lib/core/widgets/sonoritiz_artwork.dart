@@ -23,16 +23,27 @@ class SonoritizArtwork extends StatelessWidget {
     return exists;
   }
 
-  /// Adapte la résolution de la pochette distante à la dimension réelle d'affichage
-  /// (évite de télécharger et décoder du 1000x1000 pour des vignettes de 48px à 160px).
-  static String _optimizeNetworkUrl(String url, double logicalRef) {
+  /// Adapte la résolution de la pochette distante uniquement pour les toutes petites miniatures
+  /// (conserve toujours le 1000x1000 HD sur le lecteur plein écran, les cartes et les vues double.infinity).
+  static String _optimizeNetworkUrl(
+    String url, {
+    required double width,
+    required double height,
+    required int cacheMaxDimension,
+  }) {
     if (!url.contains('1000x1000')) return url;
-    if (logicalRef <= 185) {
+    // Si l'une des dimensions est infinie (ex: Lecteur Signature plein écran) ou cache HD demandé,
+    // toujours garder l'URL originale 1000x1000 Ultra-HD !
+    if (!width.isFinite || !height.isFinite || cacheMaxDimension >= 450) {
+      return url;
+    }
+    final maxSide = width > height ? width : height;
+    if (maxSide <= 72) {
       return url
           .replaceAll('/1000x1000-', '/250x250-')
           .replaceAll('1000x1000bb.jpg', '300x300bb.jpg');
     }
-    if (logicalRef <= 420) {
+    if (maxSide <= 160) {
       return url
           .replaceAll('/1000x1000-', '/500x500-')
           .replaceAll('1000x1000bb.jpg', '500x500bb.jpg');
@@ -91,7 +102,9 @@ class SonoritizArtwork extends StatelessWidget {
 
     final double finiteRef = (width.isFinite && width > 0)
         ? width
-        : ((height.isFinite && height > 0) ? height : 100.0);
+        : ((height.isFinite && height > 0)
+            ? height
+            : cacheMaxDimension.toDouble());
     final double safeIconSize = (finiteRef * 0.4).clamp(18.0, 64.0);
 
     final Widget errorWidget = Container(
@@ -139,7 +152,12 @@ class SonoritizArtwork extends StatelessWidget {
       }
     } else if (trimmedUrl.startsWith('http://') ||
         trimmedUrl.startsWith('https://')) {
-      final optimizedUrl = _optimizeNetworkUrl(trimmedUrl, finiteRef);
+      final optimizedUrl = _optimizeNetworkUrl(
+        trimmedUrl,
+        width: width,
+        height: height,
+        cacheMaxDimension: cacheMaxDimension,
+      );
       if (kIsWeb) {
         imageWidget = Image.network(
           optimizedUrl,
