@@ -9,6 +9,7 @@ import '../../../core/widgets/collection_context_menu.dart';
 import '../../../core/widgets/playlist_cover_mosaic.dart';
 import '../../../core/widgets/playlist_editor_sheet.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
+import '../../player/presentation/cubit/player_state.dart';
 import '../data/repositories/library_repository.dart';
 import 'cubit/library_cubit.dart';
 import 'cubit/library_ui_cubit.dart';
@@ -139,6 +140,16 @@ class PlaylistsListScreen extends StatelessWidget {
           queue: playlist.tracks,
           source: 'la playlist ${playlist.name}',
         );
+  }
+
+  bool _isPlaylistActive(PlayerState pState, PlaylistModel playlist) {
+    if (pState.currentTrack == null) return false;
+    final name = playlist.name.trim().toLowerCase();
+    if (name.isEmpty) return false;
+    final src = pState.playbackSource.trim().toLowerCase();
+    return src == name ||
+        src == 'la playlist $name' ||
+        src.endsWith('playlist $name');
   }
 
   @override
@@ -361,106 +372,137 @@ class PlaylistsListScreen extends StatelessWidget {
   }) {
     final coverWidth = compact ? 50.0 : 66.0;
     final coverHeight = compact ? 52.0 : 70.0;
+    final radius = compact ? 8.0 : 11.0;
 
-    return Semantics(
-      button: true,
-      label: "Ouvrir la playlist ${playlist.name}",
-      child: InkWell(
-        onTap: () => _openPlaylist(context, playlist),
-        onLongPress: () => _showPlaylistContextMenu(context, playlist),
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: compact ? 6 : 8,
-          ),
-          child: Row(
-            children: [
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(compact ? 8 : 11),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: PlaylistCoverMosaic(
-                  playlist: playlist,
-                  size: coverWidth,
-                  height: coverHeight,
-                  borderRadius: compact ? 8 : 11,
-                ),
+    return BlocSelector<PlayerCubit, PlayerState, (bool, bool)>(
+      selector: (pState) =>
+          (_isPlaylistActive(pState, playlist), pState.isPlaying),
+      builder: (context, activeTuple) {
+        final bool isActive = activeTuple.$1;
+        final bool isPlaying = activeTuple.$2;
+
+        return Semantics(
+          button: true,
+          label: "Ouvrir la playlist ${playlist.name}",
+          child: InkWell(
+            onTap: () => _openPlaylist(context, playlist),
+            onLongPress: () => _showPlaylistContextMenu(context, playlist),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: compact ? 6 : 8,
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              child: Row(
+                children: [
+                  Container(
+                    padding: isActive ? const EdgeInsets.all(1.5) : EdgeInsets.zero,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(radius + (isActive ? 2 : 0)),
+                      border: isActive
+                          ? Border.all(color: AppColors.primary, width: 1.8)
+                          : null,
+                      boxShadow: [
+                        BoxShadow(
+                          color: isActive
+                              ? AppColors.primary.withValues(alpha: 0.34)
+                              : Colors.black.withValues(alpha: 0.35),
+                          blurRadius: isActive ? 14 : 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: PlaylistCoverMosaic(
+                      playlist: playlist,
+                      size: coverWidth,
+                      height: coverHeight,
+                      borderRadius: radius,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (playlist.isPinned) ...[
-                          const Icon(
-                            Icons.push_pin_rounded,
-                            color: AppColors.primary,
-                            size: 13.5,
-                          ),
-                          const SizedBox(width: 5),
-                        ],
-                        Expanded(
-                          child: Text(
-                            playlist.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: compact ? 14.5 : 16,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.2,
+                        Row(
+                          children: [
+                            if (isActive) ...[
+                              Icon(
+                                isPlaying
+                                    ? Icons.graphic_eq_rounded
+                                    : Icons.pause_circle_filled_rounded,
+                                color: AppColors.primary,
+                                size: 15,
+                              ),
+                              const SizedBox(width: 5),
+                            ] else if (playlist.isPinned) ...[
+                              const Icon(
+                                Icons.push_pin_rounded,
+                                color: AppColors.primary,
+                                size: 13.5,
+                              ),
+                              const SizedBox(width: 5),
+                            ],
+                            Expanded(
+                              child: Text(
+                                playlist.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: isActive
+                                      ? AppColors.primary
+                                      : Colors.white,
+                                  fontSize: compact ? 14.5 : 16,
+                                  fontWeight: isActive
+                                      ? FontWeight.w800
+                                      : FontWeight.w700,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
                             ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _formatTracksSubtitle(playlist),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.56),
+                            fontSize: compact ? 12 : 13,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      _formatTracksSubtitle(playlist),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.56),
-                        fontSize: compact ? 12 : 13,
-                        fontWeight: FontWeight.w500,
+                  ),
+                  if (!compact && playlist.tracks.isNotEmpty)
+                    IconButton(
+                      tooltip: "Lire",
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _playPlaylistDirect(context, playlist),
+                      icon: Icon(
+                        isActive && isPlaying
+                            ? Icons.graphic_eq_rounded
+                            : Icons.play_circle_fill_rounded,
+                        color: AppColors.primary.withValues(alpha: 0.92),
+                        size: 28,
                       ),
                     ),
-                  ],
-                ),
-              ),
-              if (!compact && playlist.tracks.isNotEmpty)
-                IconButton(
-                  tooltip: "Lire",
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => _playPlaylistDirect(context, playlist),
-                  icon: Icon(
-                    Icons.play_circle_fill_rounded,
-                    color: AppColors.primary.withValues(alpha: 0.92),
-                    size: 28,
+                  IconButton(
+                    tooltip: "Options",
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(
+                      Icons.more_horiz_rounded,
+                      color: Colors.white.withValues(alpha: 0.5),
+                    ),
+                    onPressed: () => _showPlaylistContextMenu(context, playlist),
                   ),
-                ),
-              IconButton(
-                tooltip: "Options",
-                visualDensity: VisualDensity.compact,
-                icon: Icon(
-                  Icons.more_horiz_rounded,
-                  color: Colors.white.withValues(alpha: 0.5),
-                ),
-                onPressed: () => _showPlaylistContextMenu(context, playlist),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -468,250 +510,349 @@ class PlaylistsListScreen extends StatelessWidget {
     final isPanoramic = mode == ViewMode.gridLarge || mode == ViewMode.cards;
     final artistsStr = _extractArtistsSummary(playlist);
 
-    if (isPanoramic) {
-      return Semantics(
-        button: true,
-        label: "Ouvrir la playlist ${playlist.name}",
-        child: Material(
-          color: Colors.white.withValues(alpha: 0.045),
-          borderRadius: BorderRadius.circular(18),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(18),
+    return BlocSelector<PlayerCubit, PlayerState, (bool, bool)>(
+      selector: (pState) =>
+          (_isPlaylistActive(pState, playlist), pState.isPlaying),
+      builder: (context, activeTuple) {
+        final bool isActive = activeTuple.$1;
+        final bool isPlaying = activeTuple.$2;
+
+        if (isPanoramic) {
+          return Semantics(
+            button: true,
+            label: "Ouvrir la playlist ${playlist.name}",
+            child: Material(
+              color: isActive
+                  ? AppColors.primary.withValues(alpha: 0.10)
+                  : Colors.white.withValues(alpha: 0.045),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: isActive
+                    ? const BorderSide(color: AppColors.primary, width: 1.5)
+                    : BorderSide.none,
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () => _openPlaylist(context, playlist),
+                onLongPress: () => _showPlaylistContextMenu(context, playlist),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      PlaylistCoverMosaic(
+                        playlist: playlist,
+                        size: 122,
+                        height: 130,
+                        borderRadius: 13,
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (isActive)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isPlaying
+                                          ? Icons.graphic_eq_rounded
+                                          : Icons.pause_circle_filled_rounded,
+                                      color: AppColors.primary,
+                                      size: 13,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Text(
+                                      "EN ÉCOUTE",
+                                      style: TextStyle(
+                                        color: AppColors.primary,
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.6,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else if (playlist.isPinned)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: const [
+                                    Icon(Icons.push_pin_rounded, color: AppColors.primary, size: 12),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      "Épinglée",
+                                      style: TextStyle(
+                                        color: AppColors.primary,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            Text(
+                              playlist.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: isActive ? AppColors.primary : Colors.white,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.3,
+                                height: 1.15,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            if (artistsStr.isNotEmpty) ...[
+                              Text(
+                                artistsStr,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.65),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                            ],
+                            Text(
+                              _formatTracksSubtitle(playlist),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.5),
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                if (playlist.tracks.isNotEmpty)
+                                  GestureDetector(
+                                    onTap: () => _playPlaylistDirect(context, playlist),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                                      decoration: const BoxDecoration(
+                                        color: AppColors.primary,
+                                        borderRadius: BorderRadius.all(Radius.circular(20)),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            isActive && isPlaying
+                                                ? Icons.graphic_eq_rounded
+                                                : Icons.play_arrow_rounded,
+                                            color: Colors.black,
+                                            size: 17,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            isActive ? "En cours" : "Lire",
+                                            style: const TextStyle(
+                                              color: Colors.black,
+                                              fontSize: 12.5,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                const Spacer(),
+                                IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  icon: Icon(
+                                    Icons.more_horiz_rounded,
+                                    color: Colors.white.withValues(alpha: 0.65),
+                                  ),
+                                  onPressed: () => _showPlaylistContextMenu(context, playlist),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        // Grille épurée 2 ou 3 colonnes : pochettes mises en valeur avec contour lumineux si en lecture
+        final isCompactGrid = mode == ViewMode.gridSmall;
+        final radius = isCompactGrid ? 10.0 : 14.0;
+
+        return Semantics(
+          button: true,
+          label: "Ouvrir la playlist ${playlist.name}",
+          child: GestureDetector(
             onTap: () => _openPlaylist(context, playlist),
             onLongPress: () => _showPlaylistContextMenu(context, playlist),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Row(
-                children: [
-                  PlaylistCoverMosaic(
-                    playlist: playlist,
-                    size: 122,
-                    height: 130,
-                    borderRadius: 13,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (playlist.isPinned)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Container(
+                        padding: isActive ? const EdgeInsets.all(2) : EdgeInsets.zero,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(radius + (isActive ? 2 : 0)),
+                          border: isActive
+                              ? Border.all(color: AppColors.primary, width: 2.0)
+                              : null,
+                          boxShadow: [
+                            BoxShadow(
+                              color: isActive
+                                  ? AppColors.primary.withValues(alpha: 0.36)
+                                  : Colors.black.withValues(alpha: 0.42),
+                              blurRadius: isActive ? 16 : 14,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: PlaylistCoverMosaic(
+                          playlist: playlist,
+                          size: double.infinity,
+                          height: double.infinity,
+                          borderRadius: radius,
+                        ),
+                      ),
+                      if (isActive)
+                        Positioned(
+                          top: 8,
+                          left: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.45),
+                                  blurRadius: 8,
+                                ),
+                              ],
+                            ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
-                              children: const [
-                                Icon(Icons.push_pin_rounded, color: AppColors.primary, size: 12),
-                                SizedBox(width: 4),
-                                Text(
-                                  "Épinglée",
+                              children: [
+                                Icon(
+                                  isPlaying
+                                      ? Icons.graphic_eq_rounded
+                                      : Icons.pause_rounded,
+                                  color: Colors.black,
+                                  size: 12,
+                                ),
+                                const SizedBox(width: 4),
+                                const Text(
+                                  "EN COURS",
                                   style: TextStyle(
-                                    color: AppColors.primary,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
+                                    color: Colors.black,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.5,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                        Text(
-                          playlist.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.3,
-                            height: 1.15,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        if (artistsStr.isNotEmpty) ...[
-                          Text(
-                            artistsStr,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.65),
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w500,
+                        )
+                      else if (playlist.isPinned)
+                        Positioned(
+                          top: 7,
+                          left: 7,
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.68),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.push_pin_rounded,
+                              color: AppColors.primary,
+                              size: 12,
                             ),
                           ),
-                          const SizedBox(height: 3),
-                        ],
-                        Text(
-                          _formatTracksSubtitle(playlist),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.5),
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w500,
+                        ),
+                      if (!isCompactGrid && playlist.tracks.isNotEmpty)
+                        Positioned(
+                          right: 8,
+                          bottom: 8,
+                          child: GestureDetector(
+                            onTap: () => _playPlaylistDirect(context, playlist),
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.45),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                isActive && isPlaying
+                                    ? Icons.graphic_eq_rounded
+                                    : Icons.play_arrow_rounded,
+                                color: Colors.black,
+                                size: 22,
+                              ),
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            if (playlist.tracks.isNotEmpty)
-                              GestureDetector(
-                                onTap: () => _playPlaylistDirect(context, playlist),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.primary,
-                                    borderRadius: BorderRadius.all(Radius.circular(20)),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.play_arrow_rounded, color: Colors.black, size: 17),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        "Lire",
-                                        style: TextStyle(
-                                          color: Colors.black,
-                                          fontSize: 12.5,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            const Spacer(),
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              icon: Icon(
-                                Icons.more_horiz_rounded,
-                                color: Colors.white.withValues(alpha: 0.65),
-                              ),
-                              onPressed: () => _showPlaylistContextMenu(context, playlist),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  playlist.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: isActive ? AppColors.primary : Colors.white,
+                    fontSize: isCompactGrid ? 12.5 : 14.5,
+                    fontWeight: isActive ? FontWeight.w800 : FontWeight.w700,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isCompactGrid
+                      ? "${playlist.tracks.isNotEmpty ? playlist.tracks.length : playlist.tracksCount} titres"
+                      : _formatTracksSubtitle(playlist),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.52),
+                    fontSize: isCompactGrid ? 11 : 12.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-      );
-    }
-
-    // Grille épurée 2 ou 3 colonnes : pochettes mises en valeur sans cadre épais
-    final isCompactGrid = mode == ViewMode.gridSmall;
-    final radius = isCompactGrid ? 10.0 : 14.0;
-
-    return Semantics(
-      button: true,
-      label: "Ouvrir la playlist ${playlist.name}",
-      child: GestureDetector(
-        onTap: () => _openPlaylist(context, playlist),
-        onLongPress: () => _showPlaylistContextMenu(context, playlist),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(radius),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.42),
-                          blurRadius: 14,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: PlaylistCoverMosaic(
-                      playlist: playlist,
-                      size: double.infinity,
-                      height: double.infinity,
-                      borderRadius: radius,
-                    ),
-                  ),
-                  if (playlist.isPinned)
-                    Positioned(
-                      top: 7,
-                      left: 7,
-                      child: Container(
-                        padding: const EdgeInsets.all(5),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.68),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.push_pin_rounded,
-                          color: AppColors.primary,
-                          size: 12,
-                        ),
-                      ),
-                    ),
-                  if (!isCompactGrid && playlist.tracks.isNotEmpty)
-                    Positioned(
-                      right: 8,
-                      bottom: 8,
-                      child: GestureDetector(
-                        onTap: () => _playPlaylistDirect(context, playlist),
-                        child: Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.45),
-                                blurRadius: 8,
-                                offset: const Offset(0, 3),
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.play_arrow_rounded,
-                            color: Colors.black,
-                            size: 22,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              playlist.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: isCompactGrid ? 12.5 : 14.5,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.2,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              isCompactGrid
-                  ? "${playlist.tracks.isNotEmpty ? playlist.tracks.length : playlist.tracksCount} titres"
-                  : _formatTracksSubtitle(playlist),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.52),
-                fontSize: isCompactGrid ? 11 : 12.5,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
+        );
+      },
     );
   }
 }

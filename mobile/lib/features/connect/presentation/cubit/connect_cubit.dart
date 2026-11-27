@@ -37,6 +37,8 @@ class ConnectCubit extends Cubit<ConnectState> {
   String _lastSentAvatar = '';
   String _lastSentQueueFingerprint = '';
   String _sharedPlaylistTitle = 'File du salon';
+  String? _lastAutoDjTriggeredTrackId;
+  bool _isAutoDjLaunching = false;
 
   String? _cachedMyAvatarPayload;
   String? _lastAvatarSourcePath;
@@ -991,8 +993,17 @@ class ConnectCubit extends Cubit<ConnectState> {
     });
   }
 
+  /// Active/désactive le mode Auto-DJ (lancement automatique de la suggestion #1 à la fin de chaque son).
+  void toggleAutoDj() {
+    if (state is! ConnectActive) return;
+    final cur = state as ConnectActive;
+    if (!cur.isHost) return;
+    emit(cur.copyWith(autoDjEnabled: !cur.autoDjEnabled));
+  }
+
   void _onHostPlayerChanged(PlayerState next) {
     if (state is! ConnectActive || !(state as ConnectActive).isHost) return;
+    final activeState = state as ConnectActive;
     final previous = _lastPlayerState;
     _lastPlayerState = next;
     if (previous == null) {
@@ -1002,6 +1013,29 @@ class ConnectCubit extends Cubit<ConnectState> {
 
     final nextTrack = next.currentTrack;
     final previousTrackId = previous.currentTrack?.id;
+
+    // 0. Mode Auto-DJ : lorsqu'il reste moins de 2.5s sur le morceau en cours,
+    // lance automatiquement la suggestion #1 la plus soutenue du salon !
+    if (activeState.autoDjEnabled &&
+        !_isAutoDjLaunching &&
+        activeState.suggestionThreads.isNotEmpty &&
+        nextTrack != null &&
+        next.isPlaying &&
+        !next.isBuffering &&
+        next.duration.inSeconds > 15 &&
+        next.position.inMilliseconds >=
+            next.duration.inMilliseconds - 2500 &&
+        _lastAutoDjTriggeredTrackId != nextTrack.id) {
+      _lastAutoDjTriggeredTrackId = nextTrack.id;
+      _isAutoDjLaunching = true;
+      final topThread = activeState.suggestionThreads.first;
+      unawaited(
+        hostAcceptSuggestionNow(topThread).whenComplete(() {
+          _isAutoDjLaunching = false;
+        }),
+      );
+      return;
+    }
 
     // 1. Changement de morceau : publier immédiatement pour lancer le pré-chargement chez les invités
     if (nextTrack?.id != previousTrackId) {

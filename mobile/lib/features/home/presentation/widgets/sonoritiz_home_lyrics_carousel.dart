@@ -9,6 +9,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../../../../core/services/palette_service.dart';
 import '../../../../core/storage/storage_service.dart';
 import '../../../../core/theme/app_dimensions.dart';
+import '../../../../core/utils/share_utils.dart';
 import '../../../../core/widgets/artist_name_display.dart';
 import '../../../../core/widgets/sonoritiz_artwork.dart';
 import '../../../../core/widgets/track_context_menu.dart';
@@ -906,6 +907,47 @@ class _SonoritizLyricsExcerptCardState
                       ),
                     ),
                     const SizedBox(width: 8),
+                    if (_excerptLines.isNotEmpty) ...[
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.mediumImpact();
+                          final startIdx = _activeLineIndex.clamp(
+                            0,
+                            _excerptLines.length - 1,
+                          );
+                          final shareLines = _excerptLines
+                              .skip(startIdx)
+                              .take(3)
+                              .map((e) => e.text)
+                              .toList();
+                          ShareUtils.shareLyricsCard(
+                            track: widget.track,
+                            lyricLines: shareLines,
+                            dominantColor: _palette.dominantColor,
+                            deepColor: _palette.deepColor,
+                            accentColor: _palette.accentColor,
+                          );
+                        },
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          margin: const EdgeInsets.only(right: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.28),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.16),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.ios_share_rounded,
+                            color: Colors.white,
+                            size: 13.5,
+                          ),
+                        ),
+                      ),
+                    ],
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,

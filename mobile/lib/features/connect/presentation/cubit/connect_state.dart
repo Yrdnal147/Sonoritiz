@@ -24,6 +24,7 @@ class ConnectActive extends ConnectState {
   final List<TrackModel> sharedQueue;
   final int maxParticipants;
   final String connectionStatus;
+  final bool autoDjEnabled;
   final String? actionError;
 
   const ConnectActive({
@@ -38,6 +39,7 @@ class ConnectActive extends ConnectState {
     this.sharedQueue = const [],
     this.maxParticipants = 20,
     this.connectionStatus = 'connected',
+    this.autoDjEnabled = false,
     this.actionError,
   });
 
@@ -50,6 +52,7 @@ class ConnectActive extends ConnectState {
     List<TrackModel>? sharedQueue,
     int? maxParticipants,
     String? connectionStatus,
+    bool? autoDjEnabled,
     String? actionError,
   }) {
     return ConnectActive(
@@ -64,6 +67,7 @@ class ConnectActive extends ConnectState {
       sharedQueue: sharedQueue ?? this.sharedQueue,
       maxParticipants: maxParticipants ?? this.maxParticipants,
       connectionStatus: connectionStatus ?? this.connectionStatus,
+      autoDjEnabled: autoDjEnabled ?? this.autoDjEnabled,
       actionError: actionError,
     );
   }
@@ -81,6 +85,7 @@ class ConnectActive extends ConnectState {
         sharedQueue,
         maxParticipants,
         connectionStatus,
+        autoDjEnabled,
         actionError,
       ];
 }

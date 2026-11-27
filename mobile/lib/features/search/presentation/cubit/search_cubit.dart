@@ -42,14 +42,26 @@ class SearchCubit extends Cubit<SearchState> {
     try {
       final resultsFuture = repository.searchTracks(query: query);
       final artistsFuture = repository.searchArtists(query);
+      final albumsFuture = repository.searchAlbums(query, limit: 14);
 
       final results = await resultsFuture;
       final artists = await artistsFuture;
-      
+      List<Map<String, dynamic>> albums = const [];
+      try {
+        albums = await albumsFuture;
+      } catch (_) {}
+
       if (!isClosed) {
         // Save to history only on successful actual search
         await storageService.addSearchQuery(query);
-        emit(SearchSuccess(results: results, artists: artists, query: query));
+        emit(
+          SearchSuccess(
+            results: results,
+            artists: artists,
+            albums: albums,
+            query: query,
+          ),
+        );
       }
     } catch (e) {
       if (!isClosed) {

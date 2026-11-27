@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart' show Color;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../storage/storage_service.dart';
@@ -103,5 +104,67 @@ class ShareUtils {
     } catch (e) {
       await Share.share(text);
     }
+  }
+
+  /// Génère et partage une Carte Visuelle de Paroles (« Sonoritiz Lyric Card ») avec le logo transparent.
+  static Future<void> shareLyricsCard({
+    required TrackModel track,
+    required List<String> lyricLines,
+    required Color dominantColor,
+    required Color deepColor,
+    required Color accentColor,
+  }) async {
+    final cleanedLines =
+        lyricLines.map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+    final quoteBlock =
+        cleanedLines.map((l) => '“$l”').join('\n');
+    final caption =
+        "$quoteBlock\n\n🎵 *${track.title}* — ${track.artistName}\n✨ Partagé via *Sonoritiz Lyrics*";
+
+    try {
+      File? coverFile;
+      if (track.coverUrl.isNotEmpty) {
+        final tempDir = await getTemporaryDirectory();
+        final safeId = track.id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+        final localPath = '${tempDir.path}/share_raw_$safeId.jpg';
+        final candidate = File(localPath);
+        if (!await candidate.exists() || await candidate.length() < 512) {
+          if (track.coverUrl.startsWith('file://')) {
+            final rawFile = File(track.coverUrl.replaceFirst('file://', ''));
+            if (await rawFile.exists()) {
+              await rawFile.copy(localPath);
+            }
+          } else if (track.coverUrl.startsWith('http')) {
+            final dio = Dio(BaseOptions(
+              connectTimeout: const Duration(seconds: 8),
+              receiveTimeout: const Duration(seconds: 12),
+            ));
+            await dio.download(track.coverUrl, localPath);
+          }
+        }
+        if (await candidate.exists()) {
+          coverFile = candidate;
+        }
+      }
+
+      final cardFile = await ShareCardGenerator.generateLyricsShareCard(
+        track: track,
+        lyricLines: cleanedLines,
+        coverFile: coverFile,
+        dominantColor: dominantColor,
+        deepColor: deepColor,
+        accentColor: accentColor,
+      );
+
+      if (cardFile != null && await cardFile.exists()) {
+        await Share.shareXFiles(
+          [XFile(cardFile.path, mimeType: 'image/png')],
+          text: caption,
+        );
+        return;
+      }
+    } catch (_) {}
+
+    await Share.share(caption);
   }
 }

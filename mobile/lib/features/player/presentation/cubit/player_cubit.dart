@@ -1242,8 +1242,13 @@ class PlayerCubit extends Cubit<PlayerState> {
     final updatedQueue = List<TrackModel>.from(state.queue);
     final int insertIndex = (state.currentIndex + 1).clamp(0, updatedQueue.length);
     updatedQueue.insert(insertIndex, track);
+    final updatedUserQueued = Set<String>.from(state.userQueuedTrackIds)
+      ..add(track.id);
     _nextShuffleIndex = state.isShuffleModeEnabled ? insertIndex : null;
-    emit(state.copyWith(queue: updatedQueue));
+    emit(state.copyWith(
+      queue: updatedQueue,
+      userQueuedTrackIds: updatedUserQueued,
+    ));
     unawaited(_audioHandler.prefetch(track.toMediaItem()));
   }
 
@@ -1257,9 +1262,59 @@ class PlayerCubit extends Cubit<PlayerState> {
     final updatedQueue = List<TrackModel>.from(state.queue);
     final int insertIndex = (state.currentIndex + 1).clamp(0, updatedQueue.length);
     updatedQueue.insertAll(insertIndex, tracks);
+    final updatedUserQueued = Set<String>.from(state.userQueuedTrackIds)
+      ..addAll(tracks.map((t) => t.id));
     _nextShuffleIndex = state.isShuffleModeEnabled ? insertIndex : null;
-    emit(state.copyWith(queue: updatedQueue));
+    emit(state.copyWith(
+      queue: updatedQueue,
+      userQueuedTrackIds: updatedUserQueued,
+    ));
     unawaited(_audioHandler.prefetch(tracks.first.toMediaItem()));
+  }
+
+  /// Retire un titre de la file d'attente à l'index donné.
+  void removeFromQueueAt(int index) {
+    if (index < 0 || index >= state.queue.length || index == state.currentIndex) {
+      return;
+    }
+    final updatedQueue = List<TrackModel>.from(state.queue);
+    final removed = updatedQueue.removeAt(index);
+    int newCurrentIndex = state.currentIndex;
+    if (index < state.currentIndex) {
+      newCurrentIndex--;
+    }
+    final updatedUserQueued = Set<String>.from(state.userQueuedTrackIds);
+    if (!updatedQueue.any((t) => t.id == removed.id)) {
+      updatedUserQueued.remove(removed.id);
+    }
+    _nextShuffleIndex = null;
+    emit(state.copyWith(
+      queue: updatedQueue,
+      currentIndex: newCurrentIndex,
+      userQueuedTrackIds: updatedUserQueued,
+    ));
+  }
+
+  /// Efface tous les titres ajoutés manuellement dans « À lire ensuite » après le morceau actif.
+  void clearUserUpNext() {
+    if (state.userQueuedTrackIds.isEmpty) return;
+    final currentId = state.currentTrack?.id;
+    final updatedQueue = <TrackModel>[];
+    for (int i = 0; i < state.queue.length; i++) {
+      final t = state.queue[i];
+      if (i <= state.currentIndex || !state.userQueuedTrackIds.contains(t.id)) {
+        updatedQueue.add(t);
+      }
+    }
+    final newIdx = currentId != null
+        ? updatedQueue.indexWhere((t) => t.id == currentId)
+        : 0;
+    _nextShuffleIndex = null;
+    emit(state.copyWith(
+      queue: updatedQueue,
+      currentIndex: newIdx >= 0 ? newIdx : 0,
+      userQueuedTrackIds: const <String>{},
+    ));
   }
 
   void addToQueue(TrackModel track) {

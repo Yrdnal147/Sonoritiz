@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../features/library/presentation/cubit/library_cubit.dart';
 import '../../../features/player/data/models/track_model.dart';
 import '../../../features/player/presentation/cubit/player_cubit.dart';
 import '../../../features/player/presentation/cubit/player_state.dart';
@@ -24,6 +26,7 @@ class SonoritizTrackTile extends StatelessWidget {
   final ValueChanged<bool?>? onSelectionChanged;
   final int? playlistId;
   final String? playbackSource;
+  final bool enableSwipeActions;
 
   const SonoritizTrackTile({
     Key? key,
@@ -39,6 +42,7 @@ class SonoritizTrackTile extends StatelessWidget {
     this.onSelectionChanged,
     this.playlistId,
     this.playbackSource,
+    this.enableSwipeActions = true,
   }) : super(key: key);
 
   @override
@@ -51,7 +55,7 @@ class SonoritizTrackTile extends StatelessWidget {
     return BlocSelector<PlayerCubit, PlayerState, bool>(
       selector: (state) => state.currentTrack?.id == track.id,
       builder: (context, isCurrentTrack) {
-        return AnimatedContainer(
+        final Widget tileContent = AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
           margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
@@ -194,6 +198,173 @@ class SonoritizTrackTile extends StatelessWidget {
                       playlistId: playlistId,
                     ),
           ),
+        );
+
+        if (isSelectionMode || !enableSwipeActions) {
+          return tileContent;
+        }
+
+        // Gestes rapides « Swipe-to-Queue (Lire ensuite) » (droite) & « Swipe-to-Like » (gauche)
+        return Dismissible(
+          key: ValueKey('swipe_tile_${track.id}_${index ?? 0}'),
+          direction: DismissDirection.horizontal,
+          dismissThresholds: const {
+            DismissDirection.startToEnd: 0.26,
+            DismissDirection.endToStart: 0.26,
+          },
+          confirmDismiss: (direction) async {
+            if (direction == DismissDirection.startToEnd) {
+              HapticFeedback.mediumImpact();
+              context.read<PlayerCubit>().playTrackNext(track);
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor: const Color(0xFF181820),
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 2),
+                  content: Row(
+                    children: [
+                      const Icon(
+                        Icons.playlist_play_rounded,
+                        color: AppColors.primary,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '« ${track.title} » sera lu juste après',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            } else if (direction == DismissDirection.endToStart) {
+              HapticFeedback.lightImpact();
+              try {
+                final libCubit = context.read<LibraryCubit>();
+                final alreadyFav = libCubit.isFavorite(
+                  track.id,
+                  title: track.title,
+                  artist: track.artistName,
+                );
+                if (alreadyFav) {
+                  libCubit.removeFavorite(track.id);
+                } else {
+                  libCubit.addFavorite(track);
+                }
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: const Color(0xFF181820),
+                    behavior: SnackBarBehavior.floating,
+                    duration: const Duration(seconds: 2),
+                    content: Row(
+                      children: [
+                        Icon(
+                          alreadyFav
+                              ? Icons.favorite_border_rounded
+                              : Icons.favorite_rounded,
+                          color: AppColors.primary,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            alreadyFav
+                                ? 'Retiré des favoris : « ${track.title} »'
+                                : 'Ajouté aux favoris : « ${track.title} »',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              } catch (_) {}
+            }
+            return false; // Retour élastique sans supprimer la ligne
+          },
+          background: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            alignment: Alignment.centerLeft,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primary.withValues(alpha: 0.34),
+                  AppColors.primary.withValues(alpha: 0.08),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.48),
+              ),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.playlist_play_rounded,
+                  color: AppColors.primary,
+                  size: 22,
+                ),
+                SizedBox(width: 8),
+                Text(
+                  "Lire ensuite",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          secondaryBackground: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            alignment: Alignment.centerRight,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.pinkAccent.withValues(alpha: 0.08),
+                  Colors.pinkAccent.withValues(alpha: 0.30),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.pinkAccent.withValues(alpha: 0.45),
+              ),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "Favoris",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                SizedBox(width: 8),
+                Icon(
+                  Icons.favorite_rounded,
+                  color: Colors.pinkAccent,
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
+          child: tileContent,
         );
       },
     );

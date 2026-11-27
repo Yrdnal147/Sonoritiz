@@ -39,8 +39,8 @@ class PlayerSecondaryControls extends StatelessWidget {
           ),
           if (onKaraokeTapped != null)
             SonoritizIconButton(
-              icon: Icons.celebration_rounded,
-              tooltip: "Mode Party / Karaoké",
+              icon: Icons.mic_external_on_rounded,
+              tooltip: "Mode Karaoké",
               color: Colors.white,
               onPressed: onKaraokeTapped!,
             ),

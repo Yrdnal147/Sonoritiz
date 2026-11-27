@@ -1,12 +1,9 @@
 import 'dart:async';
-import 'dart:io';
-import 'dart:ui';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:palette_generator/palette_generator.dart';
 
+import '../../../../core/services/palette_service.dart';
 import '../../../../core/services/screen_wake_service.dart';
 import '../../../../core/widgets/sonoritiz_artwork.dart';
 import '../../data/models/lyrics_model.dart';
@@ -17,13 +14,13 @@ import '../cubit/player_state.dart';
 import '../widgets/player_components/immersive_player_widgets.dart';
 import '../widgets/vocal_remover_slider.dart';
 
-/// Écran dédié « Party / Karaoké » de Sonoritiz
+/// Écran dédié « Mode Karaoké » de Sonoritiz
 /// - Mode plein écran immersif total (barres système masquées)
-/// - Bascule fluide Portrait / Mode Paysage (Soirée / Salon / TV)
+/// - Bascule fluide Portrait / Mode Paysage (Scène / Salon / TV)
 /// - Typographie cinétique XXL avec mise en avant dynamique
 /// - Radar d'anticipation de la phrase suivante
 /// - Indicateur de transition musicale / solo instrumental
-/// - Curseur tactile Vocal Remover intégré
+/// - Curseur tactile Vocal Remover intégré (atténuation de la voix du chanteur)
 class KaraokePartyScreen extends StatefulWidget {
   const KaraokePartyScreen({super.key});
 
@@ -33,9 +30,6 @@ class KaraokePartyScreen extends StatefulWidget {
 
 class _KaraokePartyScreenState extends State<KaraokePartyScreen>
     with SingleTickerProviderStateMixin {
-  static final Map<String, ImmersivePalette> _paletteCache =
-      <String, ImmersivePalette>{};
-
   final LyricsService _lyricsService = LyricsService();
   final ScrollController _scrollController = ScrollController();
 
@@ -102,37 +96,14 @@ class _KaraokePartyScreenState extends State<KaraokePartyScreen>
     if (trimmed.isEmpty || _lastCoverUrl == trimmed) return;
     _lastCoverUrl = trimmed;
 
-    final cached = _paletteCache[trimmed];
+    final cached = PaletteService.getCached(trimmed);
     if (cached != null) {
       if (mounted) setState(() => _palette = cached);
       return;
     }
 
     try {
-      ImageProvider baseProvider;
-      if (trimmed.startsWith('file://')) {
-        final file = File(trimmed.replaceFirst('file://', ''));
-        if (!file.existsSync()) return;
-        baseProvider = FileImage(file);
-      } else if (trimmed.startsWith('http://') ||
-          trimmed.startsWith('https://')) {
-        baseProvider = CachedNetworkImageProvider(trimmed);
-      } else {
-        return;
-      }
-
-      final resized = ResizeImage(baseProvider, width: 48, height: 48);
-      final gen = await PaletteGenerator.fromImageProvider(
-        resized,
-        maximumColorCount: 8,
-      );
-      final extracted = ImmersivePalette.fromExtracted(
-        dominant: gen.dominantColor?.color,
-        vibrant: gen.vibrantColor?.color,
-        muted: gen.mutedColor?.color,
-        darkMuted: gen.darkMutedColor?.color,
-      );
-      _paletteCache[trimmed] = extracted;
+      final extracted = await PaletteService.getPalette(trimmed);
       if (mounted && _lastCoverUrl == trimmed) {
         setState(() => _palette = extracted);
       }
@@ -373,14 +344,25 @@ class _KaraokePartyScreenState extends State<KaraokePartyScreen>
                       color: _palette.accentColor.withValues(alpha: 0.25),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(
-                      'PARTY',
-                      style: TextStyle(
-                        color: _palette.accentColor,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 10,
-                        letterSpacing: 0.8,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.mic_external_on_rounded,
+                          size: 11,
+                          color: _palette.accentColor,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          'KARAOKÉ',
+                          style: TextStyle(
+                            color: _palette.accentColor,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 10,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -442,11 +424,11 @@ class _KaraokePartyScreenState extends State<KaraokePartyScreen>
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.celebration_rounded,
+                Icon(Icons.mic_external_on_rounded,
                     size: 14, color: _palette.accentColor),
                 const SizedBox(width: 6),
                 Text(
-                  'SONORITIZ PARTY STAGE',
+                  'SONORITIZ KARAOKÉ STUDIO',
                   style: TextStyle(
                     color: _palette.accentColor,
                     fontWeight: FontWeight.w900,

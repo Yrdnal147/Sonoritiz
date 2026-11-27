@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 import '../../features/player/data/models/track_model.dart';
 
@@ -634,6 +635,350 @@ class ShareCardGenerator {
       return outputFile;
     } catch (e) {
       debugPrint("Erreur generateWrappedShareCard: $e");
+      return null;
+    }
+  }
+
+  static Future<ui.Image?> _loadAssetImage(String assetPath) async {
+    try {
+      final data = await rootBundle.load(assetPath);
+      final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+      final frame = await codec.getNextFrame();
+      return frame.image;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Génère une Carte Visuelle de Paroles (« Sonoritiz Lyric Card » 1080x1350) :
+  /// - Fond teinté avec la couleur dominante extraite de la pochette
+  /// - En haut à gauche : Pochette + Titre + Artiste
+  /// - Au centre : 1 à 4 lignes de paroles avec `assets/images/logo_transparent.png` en filigrane central (8% d'opacité)
+  /// - En bas à droite : Médaillon officiel `assets/images/logo_transparent.png` + signature SONORITIZ à gauche.
+  static Future<File?> generateLyricsShareCard({
+    required TrackModel track,
+    required List<String> lyricLines,
+    File? coverFile,
+    Color dominantColor = const Color(0xFFFA7921),
+    Color deepColor = const Color(0xFF101016),
+    Color accentColor = const Color(0xFFFA7921),
+  }) async {
+    try {
+      const double w = 1080.0;
+      const double h = 1350.0;
+
+      final ui.Image? coverImage =
+          (coverFile != null && coverFile.existsSync())
+              ? await _loadImageFromFile(coverFile)
+              : null;
+      final ui.Image? logoImage =
+          await _loadAssetImage('assets/images/logo_transparent.png');
+
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));
+
+      final Color topTint =
+          Color.lerp(dominantColor, const Color(0xFF14141A), 0.16) ??
+              dominantColor;
+      final Color midTint =
+          Color.lerp(dominantColor, deepColor, 0.52) ?? deepColor;
+      final Color bottomTint =
+          Color.lerp(deepColor, const Color(0xFF09090D), 0.35) ?? deepColor;
+
+      // 1. Fond dégradé chromatique de la pochette
+      final bgPaint = Paint()
+        ..shader = ui.Gradient.linear(
+          const Offset(0, 0),
+          const Offset(w, h),
+          [topTint, midTint, bottomTint],
+          [0.0, 0.55, 1.0],
+        );
+      canvas.drawRect(const Rect.fromLTWH(0, 0, w, h), bgPaint);
+
+      // Lueur radiale douce de la couleur dominante
+      final glowPaint = Paint()
+        ..shader = ui.Gradient.radial(
+          const Offset(w * 0.5, h * 0.48),
+          560,
+          [
+            accentColor.withValues(alpha: 0.24),
+            dominantColor.withValues(alpha: 0.10),
+            Colors.transparent,
+          ],
+          [0.0, 0.55, 1.0],
+        );
+      canvas.drawCircle(const Offset(w * 0.5, h * 0.48), 560, glowPaint);
+
+      // Cadre intérieur vitré
+      final cardRect = const Rect.fromLTWH(48, 48, w - 96, h - 96);
+      final cardRRect =
+          RRect.fromRectAndRadius(cardRect, const Radius.circular(48));
+      canvas.drawRRect(
+        cardRRect,
+        Paint()..color = Colors.black.withValues(alpha: 0.18),
+      );
+      canvas.drawRRect(
+        cardRRect,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.4
+          ..color = Colors.white.withValues(alpha: 0.20),
+      );
+
+      // 2. Filigrane central semi-transparent du logo Sonoritiz derrière les paroles
+      if (logoImage != null) {
+        const double wmSize = 460.0;
+        final wmRect = Rect.fromLTWH(
+          (w - wmSize) / 2,
+          (h - wmSize) / 2 + 10,
+          wmSize,
+          wmSize,
+        );
+        canvas.drawImageRect(
+          logoImage,
+          Rect.fromLTWH(
+            0,
+            0,
+            logoImage.width.toDouble(),
+            logoImage.height.toDouble(),
+          ),
+          wmRect,
+          Paint()
+            ..filterQuality = FilterQuality.high
+            ..color = Colors.white.withValues(alpha: 0.085),
+        );
+      }
+
+      // 3. En-tête excentré en haut à gauche : Pochette + Titre + Artiste
+      const double headerLeft = 104.0;
+      const double headerTop = 108.0;
+      const double coverSize = 136.0;
+      final coverRect =
+          const Rect.fromLTWH(headerLeft, headerTop, coverSize, coverSize);
+      final coverRRect =
+          RRect.fromRectAndRadius(coverRect, const Radius.circular(28));
+
+      canvas.drawRRect(
+        coverRRect.shift(const Offset(0, 10)),
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.45)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
+      );
+
+      if (coverImage != null) {
+        canvas.save();
+        canvas.clipRRect(coverRRect);
+        canvas.drawImageRect(
+          coverImage,
+          Rect.fromLTWH(
+            0,
+            0,
+            coverImage.width.toDouble(),
+            coverImage.height.toDouble(),
+          ),
+          coverRect,
+          Paint()..filterQuality = FilterQuality.high,
+        );
+        canvas.restore();
+      } else {
+        canvas.drawRRect(
+          coverRRect,
+          Paint()..color = const Color(0xFF1A1A22),
+        );
+      }
+      canvas.drawRRect(
+        coverRRect,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0
+          ..color = Colors.white.withValues(alpha: 0.28),
+      );
+
+      const double textLeft = headerLeft + coverSize + 32.0;
+      const double maxHeaderTextW = w - textLeft - 104.0;
+
+      final titleTp = TextPainter(
+        text: TextSpan(
+          text: track.title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 38,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.6,
+            height: 1.15,
+          ),
+        ),
+        maxLines: 2,
+        ellipsis: '...',
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: maxHeaderTextW);
+      titleTp.paint(canvas, const Offset(textLeft, headerTop + 14));
+
+      final artistTp = TextPainter(
+        text: TextSpan(
+          text: track.artistName,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.78),
+            fontSize: 27,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.2,
+          ),
+        ),
+        maxLines: 1,
+        ellipsis: '...',
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: maxHeaderTextW);
+      artistTp.paint(
+        canvas,
+        Offset(textLeft, headerTop + 22 + titleTp.height),
+      );
+
+      // Ligne séparatrice subtile sous l'en-tête
+      canvas.drawLine(
+        const Offset(104, 286),
+        const Offset(w - 104, 286),
+        Paint()
+          ..strokeWidth = 1.5
+          ..color = Colors.white.withValues(alpha: 0.14),
+      );
+
+      // 4. Paroles sélectionnées au centre
+      final cleanedLines = lyricLines
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty && l != '♪')
+          .take(4)
+          .toList();
+      final String joinedLyrics = cleanedLines.isNotEmpty
+          ? cleanedLines.map((l) => '« $l »').join('\n\n')
+          : '« ${track.title} »';
+
+      final double fontSize = cleanedLines.length <= 1
+          ? 54.0
+          : (cleanedLines.length == 2
+              ? 46.0
+              : (cleanedLines.length == 3 ? 40.0 : 35.0));
+
+      final lyricsTp = TextPainter(
+        text: TextSpan(
+          text: joinedLyrics,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: fontSize,
+            fontWeight: FontWeight.w900,
+            height: 1.34,
+            letterSpacing: -0.5,
+            shadows: [
+              Shadow(
+                color: Colors.black.withValues(alpha: 0.42),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+        ),
+        textAlign: TextAlign.left,
+        maxLines: 9,
+        ellipsis: '...',
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: w - 216);
+
+      const double zoneTop = 320.0;
+      const double zoneBottom = 1120.0;
+      final double lyricsTop =
+          (zoneTop + ((zoneBottom - zoneTop) - lyricsTp.height) / 2)
+              .clamp(zoneTop, zoneBottom - 100);
+      lyricsTp.paint(canvas, Offset(108, lyricsTop));
+
+      // 5. Pied de carte : Signature SONORITIZ à gauche + Médaillon logo_transparent.png en bas à droite
+      const double footerY = 1152.0;
+      canvas.drawLine(
+        const Offset(104, footerY - 24),
+        const Offset(w - 104, footerY - 24),
+        Paint()
+          ..strokeWidth = 1.5
+          ..color = Colors.white.withValues(alpha: 0.14),
+      );
+
+      final brandTp = TextPainter(
+        text: TextSpan(
+          children: [
+            const TextSpan(
+              text: "S O N O R I T I Z\n",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 25,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 4.5,
+                height: 1.25,
+              ),
+            ),
+            TextSpan(
+              text: "Paroles synchronisées • Haute fidélité",
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.68),
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ],
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      brandTp.paint(canvas, const Offset(104, footerY + 6));
+
+      // Médaillon officiel en bas à droite avec logo_transparent.png
+      const double badgeSize = 86.0;
+      final badgeRect = const Rect.fromLTWH(
+        w - 104 - badgeSize,
+        footerY - 4,
+        badgeSize,
+        badgeSize,
+      );
+      final badgeRRect =
+          RRect.fromRectAndRadius(badgeRect, const Radius.circular(22));
+      canvas.drawRRect(
+        badgeRRect,
+        Paint()..color = const Color(0xFF121218).withValues(alpha: 0.88),
+      );
+      canvas.drawRRect(
+        badgeRRect,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0
+          ..color = Colors.white.withValues(alpha: 0.26),
+      );
+      if (logoImage != null) {
+        final innerRect = badgeRect.deflate(12);
+        canvas.drawImageRect(
+          logoImage,
+          Rect.fromLTWH(
+            0,
+            0,
+            logoImage.width.toDouble(),
+            logoImage.height.toDouble(),
+          ),
+          innerRect,
+          Paint()..filterQuality = FilterQuality.high,
+        );
+      }
+
+      final picture = recorder.endRecording();
+      final ui.Image finalImage =
+          await picture.toImage(w.toInt(), h.toInt());
+      final ByteData? byteData =
+          await finalImage.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return null;
+
+      final tempDir = await getTemporaryDirectory();
+      final safeId = track.id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+      final outputFile = File(
+        '${tempDir.path}/sonoritiz_lyrics_${safeId}_${DateTime.now().millisecondsSinceEpoch}.png',
+      );
+      await outputFile.writeAsBytes(byteData.buffer.asUint8List());
+      return outputFile;
+    } catch (e) {
+      debugPrint("Erreur generateLyricsShareCard: $e");
       return null;
     }
   }

@@ -15,6 +15,7 @@ import '../../../core/storage/storage_service.dart';
 import '../../player/data/models/track_model.dart';
 import '../../player/presentation/cubit/player_cubit.dart';
 import '../../player/presentation/cubit/player_state.dart';
+import '../../player/presentation/screens/lyrics_screen.dart';
 import '../data/repositories/connect_repository.dart';
 import 'cubit/connect_cubit.dart';
 import 'cubit/connect_state.dart';
@@ -140,7 +141,52 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
     );
   }
 
-  Widget _buildNowPlayingPreview() {
+  Widget _buildAutoDjPill(BuildContext context, ConnectActive state) {
+    final bool enabled = state.autoDjEnabled;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        context.read<ConnectCubit>().toggleAutoDj();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+        decoration: BoxDecoration(
+          color: enabled
+              ? AppColors.primary
+              : Colors.white.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: enabled
+                ? AppColors.primary
+                : Colors.white.withValues(alpha: 0.16),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.auto_awesome_rounded,
+              size: 13,
+              color: enabled ? Colors.black : AppColors.primary,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              enabled ? "Auto-DJ ACTIF" : "Auto-DJ",
+              style: TextStyle(
+                color: enabled ? Colors.black : Colors.white70,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNowPlayingPreview({ConnectActive? activeState}) {
     return BlocBuilder<PlayerCubit, PlayerState>(
       buildWhen: (prev, cur) =>
           prev.currentTrack != cur.currentTrack ||
@@ -177,14 +223,22 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  "EN ÉCOUTE DANS LE SALON",
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.50),
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.1,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        "EN ÉCOUTE DANS LE SALON",
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.50),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                    ),
+                    if (activeState != null && activeState.isHost)
+                      _buildAutoDjPill(context, activeState),
+                  ],
                 ),
                 const SizedBox(height: 10),
                 Row(
@@ -272,6 +326,92 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
                       ),
                     ),
                   ],
+                ),
+                // Ligne de paroles synchronisée en direct dans le salon Connect
+                BlocSelector<PlayerCubit, PlayerState, String?>(
+                  selector: (pState) {
+                    final lyrics = pState.currentLyrics;
+                    final lines = lyrics?.parsedSyncedLyrics;
+                    if (lyrics == null ||
+                        !lyrics.hasSynced ||
+                        lines == null ||
+                        lines.isEmpty) {
+                      return null;
+                    }
+                    final effectivePos = pState.position;
+                    for (int i = lines.length - 1; i >= 0; i--) {
+                      if (effectivePos >= lines[i].time) {
+                        final text = lines[i].text.trim();
+                        return text.isNotEmpty ? text : null;
+                      }
+                    }
+                    return null;
+                  },
+                  builder: (context, activeLyricLine) {
+                    if (activeLyricLine == null || activeLyricLine.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const LyricsScreen(),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 9,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.primary.withValues(alpha: 0.22),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.lyrics_rounded,
+                                color: AppColors.primary,
+                                size: 15,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 220),
+                                  child: Text(
+                                    "« $activeLyricLine »",
+                                    key: ValueKey(activeLyricLine),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12.8,
+                                      fontWeight: FontWeight.w700,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Icon(
+                                Icons.open_in_full_rounded,
+                                size: 13,
+                                color: Colors.white.withValues(alpha: 0.45),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -563,7 +703,7 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
           const SizedBox(height: 20),
 
           // Titre synchronisé en direct
-          _buildNowPlayingPreview(),
+          _buildNowPlayingPreview(activeState: state),
 
           // Bouton principal ADN Sonoritiz : lancer (Hôte) ou suggérer (Invité) une playlist / un album / un son
           _buildMusicPickerBanner(context, state),
@@ -1003,6 +1143,7 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
                 ),
               ),
             ),
+            if (state.isHost) _buildAutoDjPill(context, state),
           ],
         ),
         const SizedBox(height: 11),
