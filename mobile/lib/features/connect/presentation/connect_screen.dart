@@ -423,8 +423,10 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
 
   Widget _buildIdleView(BuildContext context) {
     return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
+      physics: const AlwaysScrollableScrollPhysics(
+        parent: BouncingScrollPhysics(),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 220),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -664,8 +666,10 @@ class _ConnectScreenBodyState extends State<_ConnectScreenBody> {
     const List<String> reactionEmojis = ['🔥', '❤️', '👏', '😍', '⚡'];
 
     return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 125),
+      physics: const AlwaysScrollableScrollPhysics(
+        parent: BouncingScrollPhysics(),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 220),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

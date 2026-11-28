@@ -471,6 +471,47 @@ class StorageService {
   Future<void> setAudioPreset(String value) =>
       _prefs.setString(_scopedKey('pref_audio_preset'), value);
 
+  int get crossfadeSeconds =>
+      (_prefs.getInt(_scopedKey('pref_crossfade_seconds')) ?? 0).clamp(0, 12);
+  Future<void> setCrossfadeSeconds(int seconds) =>
+      _prefs.setInt(_scopedKey('pref_crossfade_seconds'), seconds.clamp(0, 12));
+
+  bool get concertModeEnabled =>
+      _prefs.getBool(_scopedKey('pref_concert_mode')) ?? false;
+  Future<void> setConcertModeEnabled(bool value) =>
+      _prefs.setBool(_scopedKey('pref_concert_mode'), value);
+
+  List<double> get customEqBands {
+    final raw = _prefs.getString(_scopedKey('pref_custom_eq_bands'));
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final list = jsonDecode(raw);
+        if (list is List && list.length == 5) {
+          return list
+              .map((e) => (e is num ? e.toDouble() : 0.0).clamp(-1.0, 1.0))
+              .toList();
+        }
+      } catch (_) {}
+    }
+    return const <double>[0.0, 0.0, 0.0, 0.0, 0.0];
+  }
+
+  Future<void> setCustomEqBands(List<double> bands) async {
+    final normalized = List<double>.generate(
+      5,
+      (i) => i < bands.length ? bands[i].clamp(-1.0, 1.0) : 0.0,
+    );
+    await _prefs.setString(
+      _scopedKey('pref_custom_eq_bands'),
+      jsonEncode(normalized),
+    );
+  }
+
+  String get lyricsTranslationLang =>
+      _prefs.getString(_scopedKey('pref_lyrics_translation_lang')) ?? '';
+  Future<void> setLyricsTranslationLang(String langCode) =>
+      _prefs.setString(_scopedKey('pref_lyrics_translation_lang'), langCode);
+
   // Style du lecteur ('vertical' pour Signature Sonoritiz ou 'default' pour Classique Immersif)
   String get playerStyle {
     final rawStyle = _prefs.getString(_scopedKey('pref_player_style')) ??

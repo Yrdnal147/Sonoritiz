@@ -28,6 +28,7 @@ import '../../player/presentation/cubit/superlike_state.dart';
 import '../../player/presentation/widgets/player_components/immersive_player_widgets.dart';
 import '../../../core/widgets/superlike_torch_badge.dart';
 import '../../search/presentation/widgets/voice_search_bottom_sheet.dart';
+import '../data/repositories/catalog_repository.dart';
 
 import 'cubit/home_cubit.dart';
 import 'cubit/home_state.dart';
@@ -53,6 +54,9 @@ class _HomeScreenBody extends StatefulWidget {
 
 class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliveClientMixin {
   late int _lyricSeed;
+  List<TrackModel> _releaseRadarTracks = const [];
+  String _lastRadarArtistsSig = '';
+  bool _loadingRadar = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -66,6 +70,46 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
         storage.getRecentPodcastsRaw();
     StorageService.connectRecommendationsNotifier.value =
         storage.getConnectGuestRecommendationsRaw();
+  }
+
+  void _ensureReleaseRadarLoaded(HomeLoaded state) {
+    final followed = StorageService().getFollowedArtists();
+    final favNames = state.favoriteArtists
+        .map((a) => (a['name'] ?? '').trim())
+        .where((n) => n.isNotEmpty)
+        .toList();
+    final allArtists = <String>{...followed, ...favNames}
+        .where((n) => n.toLowerCase() != 'inconnu')
+        .take(5)
+        .toList();
+    final sig = allArtists.join('|');
+    if (sig.isEmpty || sig == _lastRadarArtistsSig || _loadingRadar) return;
+    _lastRadarArtistsSig = sig;
+    _loadingRadar = true;
+
+    Future.microtask(() async {
+      final repo = CatalogRepository();
+      final List<TrackModel> collected = [];
+      final Set<String> seenIds = {};
+      try {
+        final futures = allArtists
+            .take(4)
+            .map((artist) => repo.getArtistTopTracks(artist, limit: 4));
+        final lists = await Future.wait(futures);
+        for (final list in lists) {
+          for (final t in list) {
+            if (seenIds.add(t.id)) {
+              collected.add(t);
+            }
+          }
+        }
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() {
+        _releaseRadarTracks = collected;
+        _loadingRadar = false;
+      });
+    });
   }
 
   String _getRandomLyricSnippet(
@@ -113,6 +157,7 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
             }
 
             if (state is HomeLoaded) {
+              _ensureReleaseRadarLoaded(state);
               return RefreshIndicator(
                 color: Theme.of(context).colorScheme.primary,
                 backgroundColor: Theme.of(context).colorScheme.surface,
@@ -136,6 +181,9 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
                               _buildNewReleaseTracksSection(context, state),
                               const SizedBox(height: AppDimensions.spacingXl),
                             ],
+
+                            // 1c. Radar des Sorties (Nouveautés de vos artistes suivis)
+                            _buildReleaseRadarSection(context, state),
 
                             // 2. Écouté récemment
                             if (state.recentlyPlayed.isNotEmpty) ...[
@@ -1230,7 +1278,129 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
     );
   }
 
-  // --- 3. SONS BASÉS SUR VOS ÉCOUTES (5 PLAYLISTS RECTANGULAIRES) ---
+  Widget _buildReleaseRadarSection(BuildContext context, HomeLoaded state) {
+    final followed = StorageService().getFollowedArtists();
+    final favNames = state.favoriteArtists
+        .map((a) => (a['name'] ?? '').trim())
+        .where((n) => n.isNotEmpty)
+        .toList();
+    final artistSet = <String>{
+      ...followed.map((e) => e.toLowerCase().trim()),
+      ...favNames.map((e) => e.toLowerCase().trim()),
+    }..removeWhere((e) => e.isEmpty || e == 'inconnu');
+
+    final List<TrackModel> radarPool = [];
+    final Set<String> seenIds = {};
+    for (final t in _releaseRadarTracks) {
+      if (seenIds.add(t.id)) radarPool.add(t);
+    }
+    for (final t in [...state.newReleases, ...state.similarToArtistTracks]) {
+      final aLower = t.artistName.toLowerCase();
+      if (artistSet.any((name) => aLower.contains(name)) && seenIds.add(t.id)) {
+        radarPool.add(t);
+      }
+    }
+
+    if (radarPool.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: AppDimensions.spacingMd),
+          child: Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.45),
+                  ),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.radar_rounded,
+                      color: AppColors.primary,
+                      size: 13,
+                    ),
+                    SizedBox(width: 4),
+                    Text(
+                      'RADAR',
+                      style: TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 9),
+              const Expanded(
+                child: Text(
+                  'Radar des Sorties',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  context.read<PlayerCubit>().playTrack(
+                        radarPool.first,
+                        queue: radarPool,
+                        source: 'Radar des Sorties',
+                      );
+                },
+                child: const Text(
+                  'Tout écouter',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 3),
+        Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: AppDimensions.spacingMd),
+          child: Text(
+            'Sélection fraîche de vos artistes suivis et favoris',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.62),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        const SizedBox(height: AppDimensions.spacingSm),
+        _buildTrackCarousel(
+          context,
+          radarPool.take(18).toList(),
+          source: 'Radar des Sorties',
+        ),
+        const SizedBox(height: AppDimensions.spacingXl),
+      ],
+    );
+  }
+
+  // --- 3. SONS BASÉS SUR VOS ÉCOUTES (DESIGN « VINYL & GLASS DECK ») ---
   Widget _buildWeeklyCuratedPlaylistsSection(BuildContext context, HomeLoaded state) {
     final playlists = state.weeklyCuratedPlaylists;
     if (playlists.isEmpty) return const SizedBox.shrink();
@@ -1254,7 +1424,7 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
               ),
               const SizedBox(height: 3),
               Text(
-                "5 sélections personnalisées selon vos écoutes",
+                "5 sélections personnalisées selon votre ADN musical",
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.7),
                   fontSize: 13.5,
@@ -1266,7 +1436,7 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
         ),
         const SizedBox(height: 14),
         SizedBox(
-          height: 228,
+          height: 196,
           child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingMd),
             scrollDirection: Axis.horizontal,
@@ -1969,217 +2139,315 @@ class _WeeklyCuratedCardState extends State<_WeeklyCuratedCard> {
     );
   }
 
+  String _buildArtistsPreview() {
+    final seen = <String>{};
+    final names = <String>[];
+    for (final t in widget.tracks) {
+      final primary = t.artistName
+          .split(RegExp(r'\s*(?:,|feat\.?|ft\.?|&)\s*', caseSensitive: false))
+          .first
+          .trim();
+      if (primary.isNotEmpty &&
+          primary.toLowerCase() != 'inconnu' &&
+          seen.add(primary.toLowerCase())) {
+        names.add(primary);
+        if (names.length >= 3) break;
+      }
+    }
+    if (names.isEmpty) return widget.subtitle;
+    return 'Avec ${names.join(', ')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final Color rawDominant = _palette?.dominantColor ?? widget.fallbackAccent;
     final hsl = HSLColor.fromColor(rawDominant);
-    final Color borderColor = hsl.saturation < 0.08
-        ? Colors.white.withValues(alpha: 0.42)
+    final Color accentColor = hsl.saturation < 0.08
+        ? AppColors.primary
         : hsl
-            .withSaturation(hsl.saturation.clamp(0.48, 0.92))
-            .withLightness(hsl.lightness.clamp(0.44, 0.65))
+            .withSaturation(hsl.saturation.clamp(0.52, 0.94))
+            .withLightness(hsl.lightness.clamp(0.46, 0.64))
             .toColor();
-    final Color barColor = _palette?.cardBarColor ??
-        HSLColor.fromColor(widget.fallbackAccent)
-            .withSaturation(0.55)
-            .withLightness(0.28)
-            .toColor();
+    final Color topSurface =
+        Color.lerp(rawDominant, const Color(0xFF14151C), 0.56) ??
+            const Color(0xFF1B1C24);
+    final Color bottomSurface =
+        Color.lerp(rawDominant, const Color(0xFF0A0A0E), 0.82) ??
+            const Color(0xFF101116);
     final Color playIconColor =
-        ThemeData.estimateBrightnessForColor(borderColor) == Brightness.light
+        ThemeData.estimateBrightnessForColor(accentColor) == Brightness.light
             ? Colors.black
             : Colors.white;
+
+    final String cover0 = widget.heroCover.isNotEmpty
+        ? widget.heroCover
+        : (widget.covers.isNotEmpty ? widget.covers.first : '');
+    final String cover1 =
+        widget.covers.length > 1 ? widget.covers[1] : cover0;
+    final String cover2 =
+        widget.covers.length > 2 ? widget.covers[2] : cover1;
 
     return GestureDetector(
       onTap: widget.onTap,
       onLongPress: widget.onLongPress,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 350),
+        duration: const Duration(milliseconds: 320),
         curve: Curves.easeOutCubic,
-        width: 268,
+        width: 306,
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: barColor,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(22),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [topSurface, bottomSurface],
+          ),
           border: Border.all(
-            color: borderColor,
-            width: 1.6,
+            color: accentColor.withValues(alpha: 0.42),
+            width: 1.2,
           ),
           boxShadow: [
             BoxShadow(
-              color: borderColor.withValues(alpha: 0.24),
+              color: accentColor.withValues(alpha: 0.18),
               blurRadius: 18,
-              offset: const Offset(0, 6),
+              offset: const Offset(0, 7),
             ),
           ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16.4)),
-              child: SizedBox(
-                height: 132,
-                width: double.infinity,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (widget.covers.length >= 3)
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 2,
-                            child: SizedBox.expand(
-                              child: _coverTile(widget.covers[0], borderColor),
-                            ),
+            // Colonne gauche : Empilement 3D en cascade des 3 pochettes + Vrai logo d'origine
+            SizedBox(
+              width: 120,
+              height: 162,
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.centerLeft,
+                children: [
+                  // 3e pochette (arrière-plan décalé à droite)
+                  Positioned(
+                    left: 34,
+                    top: 24,
+                    child: Transform.rotate(
+                      angle: 0.10,
+                      child: Container(
+                        width: 84,
+                        height: 84,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.16),
                           ),
-                          const SizedBox(width: 2),
-                          Expanded(
-                            flex: 1,
-                            child: Column(
-                              children: [
-                                Expanded(
-                                  child: SizedBox.expand(
-                                    child: _coverTile(widget.covers[1], borderColor),
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Expanded(
-                                  child: SizedBox.expand(
-                                    child: _coverTile(widget.covers[2], borderColor),
-                                  ),
-                                ),
-                              ],
-                            ),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Opacity(
+                          opacity: 0.55,
+                          child: _coverTile(cover2, accentColor),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // 2e pochette (plan intermédiaire)
+                  Positioned(
+                    left: 18,
+                    top: 16,
+                    child: Transform.rotate(
+                      angle: 0.045,
+                      child: Container(
+                        width: 96,
+                        height: 96,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.22),
+                          ),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Opacity(
+                          opacity: 0.80,
+                          child: _coverTile(cover1, accentColor),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // 1re pochette Hero au premier plan
+                  Positioned(
+                    left: 0,
+                    top: 10,
+                    child: Container(
+                      width: 108,
+                      height: 108,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.34),
+                          width: 1.1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.48),
+                            blurRadius: 14,
+                            offset: const Offset(0, 6),
                           ),
                         ],
-                      )
-                    else
-                      _coverTile(widget.heroCover, borderColor),
-                    DecoratedBox(
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: _coverTile(cover0, accentColor),
+                    ),
+                  ),
+                  // Médaillon discret du vrai logo d'origine (orange & blanc) en bas à gauche
+                  Positioned(
+                    left: 6,
+                    bottom: 24,
+                    child: Container(
+                      width: 26,
+                      height: 26,
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.transparent,
-                            barColor.withValues(alpha: 0.85),
-                          ],
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.32),
+                          width: 0.9,
                         ),
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: Center(
-                          child: Container(
-                            width: 48,
-                            height: 48,
-                            padding: const EdgeInsets.all(7),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.30),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Opacity(
-                              opacity: 0.90,
-                              child: Image.asset(
-                                'assets/images/logo_transparent.png',
-                                fit: BoxFit.contain,
-                              ),
-                            ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            blurRadius: 6,
                           ),
-                        ),
+                        ],
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Image.asset(
+                        'assets/images/app_logo.png',
+                        fit: BoxFit.cover,
                       ),
                     ),
-                    Positioned(
-                      left: 10,
-                      bottom: 10,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Colonne droite : Métadonnées éditoriales + Bouton Play capsule + Options •••
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.62),
-                          borderRadius: BorderRadius.circular(8),
+                          color: accentColor.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(7),
                           border: Border.all(
-                            color: borderColor.withValues(alpha: 0.8),
-                            width: 1,
+                            color: accentColor.withValues(alpha: 0.45),
+                            width: 0.8,
                           ),
                         ),
                         child: Text(
-                          "${widget.tracks.length} ${widget.tracks.length > 1 ? 'TITRES' : 'TITRE'}",
+                          'MIX • ${widget.tracks.length} TITRES',
                           style: TextStyle(
-                            color: borderColor,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.4,
+                            color: accentColor,
+                            fontSize: 9.8,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.6,
                           ),
                         ),
                       ),
-                    ),
-                    Positioned(
-                      right: 10,
-                      bottom: 10,
-                      child: GestureDetector(
+                      const SizedBox(height: 8),
+                      Text(
+                        widget.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16.5,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.3,
+                          height: 1.16,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        _buildArtistsPreview(),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.72),
+                          fontSize: 12.0,
+                          fontWeight: FontWeight.w500,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      GestureDetector(
                         onTap: widget.onPlayTap,
                         child: Container(
-                          width: 40,
-                          height: 40,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 13,
+                            vertical: 7,
+                          ),
                           decoration: BoxDecoration(
-                            color: borderColor,
-                            shape: BoxShape.circle,
+                            color: accentColor,
+                            borderRadius: BorderRadius.circular(18),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.35),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
+                                color: accentColor.withValues(alpha: 0.35),
+                                blurRadius: 10,
+                                offset: const Offset(0, 3),
                               ),
                             ],
                           ),
-                          child: Icon(
-                            Icons.play_arrow_rounded,
-                            color: playIconColor,
-                            size: 25,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.play_arrow_rounded,
+                                color: playIconColor,
+                                size: 17,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Écouter',
+                                style: TextStyle(
+                                  color: playIconColor,
+                                  fontSize: 12.2,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            // Barre du titre colorée avec la couleur dominante de la pochette
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
-                decoration: BoxDecoration(
-                  color: barColor,
-                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16.4)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      widget.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      widget.subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.82),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
+                      const Spacer(),
+                      if (widget.onLongPress != null)
+                        GestureDetector(
+                          onTap: widget.onLongPress,
+                          child: Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.08),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.more_horiz_rounded,
+                              color: Colors.white.withValues(alpha: 0.75),
+                              size: 17,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ],

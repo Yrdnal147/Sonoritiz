@@ -686,6 +686,41 @@ class LibraryCubit extends Cubit<LibraryState> {
     }
   }
 
+  /// Réorganise les morceaux d'une playlist par glisser-déposer (Drag-and-Drop) et sauvegarde l'ordre.
+  Future<void> reorderPlaylistTracks(
+    int playlistId,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    final effectiveId = resolvePlaylistId(playlistId);
+    _markPlaylistMutated(playlistId);
+
+    if (state is LibraryLoaded) {
+      final loadedState = state as LibraryLoaded;
+      final updatedPlaylists = loadedState.playlists.map((p) {
+        if (p.id == playlistId || p.id == effectiveId) {
+          final updatedTracks = List<TrackModel>.from(p.tracks);
+          if (oldIndex < 0 || oldIndex >= updatedTracks.length) return p;
+          int targetIdx = newIndex;
+          if (oldIndex < targetIdx) {
+            targetIdx -= 1;
+          }
+          targetIdx = targetIdx.clamp(0, updatedTracks.length - 1);
+          final moved = updatedTracks.removeAt(oldIndex);
+          updatedTracks.insert(targetIdx, moved);
+          return p.copyWith(
+            tracks: updatedTracks,
+            tracksCount: updatedTracks.length,
+          );
+        }
+        return p;
+      }).toList();
+      await _updateStateAndCache(
+        loadedState.copyWith(playlists: updatedPlaylists),
+      );
+    }
+  }
+
   Future<void> addFavorite(TrackModel track) async {
     if (state is LibraryLoaded) {
       final loadedState = state as LibraryLoaded;

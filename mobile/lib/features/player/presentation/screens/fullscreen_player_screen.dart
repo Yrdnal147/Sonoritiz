@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../../../../core/utils/responsive_utils.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart' as import_go_router;
 
 import '../../../../core/services/palette_service.dart';
 import '../../../../core/storage/storage_service.dart';
@@ -496,6 +497,115 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                                 behavior: SnackBarBehavior.floating,
                                 duration: const Duration(seconds: 2),
                               ),
+                            );
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(
+                            Icons.sensors_rounded,
+                            color: AppColors.primary,
+                          ),
+                          title: const Text(
+                            "Lancer la radio du titre",
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            context.read<PlayerCubit>().startTrackRadio(track);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  "Radio lancée autour de « ${track.title} »",
+                                ),
+                                behavior: SnackBarBehavior.floating,
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.album_outlined),
+                          title: const Text("Voir l'album"),
+                          onTap: () async {
+                            final router = import_go_router.GoRouter.of(context);
+                            Navigator.pop(sheetContext);
+                            Navigator.of(context, rootNavigator: true)
+                                .popUntil((route) => route is! PopupRoute);
+                            int albumId = 0;
+                            String albumTitle = track.albumName.trim();
+                            try {
+                              final repo = CatalogRepository();
+                              final cleanArtist = track.artistName
+                                  .split(RegExp(r',|&|feat\.|ft\.',
+                                      caseSensitive: false))
+                                  .first
+                                  .trim();
+                              final albums = await repo.searchAlbums(
+                                albumTitle.isNotEmpty &&
+                                        albumTitle != 'YouTube Audio' &&
+                                        albumTitle != 'Unknown Album'
+                                    ? '$cleanArtist $albumTitle'
+                                    : '$cleanArtist ${track.title}',
+                                limit: 4,
+                              );
+                              if (albums.isNotEmpty) {
+                                albumId = int.tryParse(
+                                        '${albums.first['id'] ?? 0}') ??
+                                    0;
+                                albumTitle =
+                                    (albums.first['title'] ?? albumTitle)
+                                        .toString();
+                              }
+                            } catch (_) {}
+                            if (albumId > 0) {
+                              router.push('/album', extra: {
+                                'id': albumId,
+                                'title': albumTitle,
+                                'artistName': track.artistName,
+                                'coverUrl': track.coverUrl,
+                              });
+                            } else {
+                              router.push('/collection', extra: {
+                                'title': albumTitle.isNotEmpty
+                                    ? albumTitle
+                                    : track.title,
+                                'badgeLabel': 'ALBUM',
+                                'subtitle': track.artistName,
+                                'coverUrl': track.coverUrl,
+                                'tracks': [track],
+                                'playbackSource': albumTitle.isNotEmpty
+                                    ? albumTitle
+                                    : track.title,
+                              });
+                            }
+                          },
+                        ),
+                        BlocSelector<PlayerCubit, PlayerState, bool>(
+                          selector: (s) => s.isConcertModeEnabled,
+                          builder: (context, isConcert) {
+                            return ListTile(
+                              leading: Icon(
+                                Icons.stadium_rounded,
+                                color:
+                                    isConcert ? AppColors.primary : Colors.white,
+                              ),
+                              title: Text(
+                                isConcert
+                                    ? "Désactiver le Mode Concert Live 🏟️"
+                                    : "Activer le Mode Concert Live 🏟️",
+                                style: TextStyle(
+                                  color: isConcert
+                                      ? AppColors.primary
+                                      : Colors.white,
+                                  fontWeight: isConcert
+                                      ? FontWeight.w800
+                                      : FontWeight.w500,
+                                ),
+                              ),
+                              onTap: () {
+                                Navigator.pop(sheetContext);
+                                context.read<PlayerCubit>().toggleConcertMode();
+                              },
                             );
                           },
                         ),
@@ -2102,6 +2212,9 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                         onNext: () => context.read<PlayerCubit>().playNext(),
                         onShuffle: () => context.read<PlayerCubit>().toggleShuffle(),
                         onRepeat: () => context.read<PlayerCubit>().toggleRepeat(),
+                      ),
+                      SonoritizPodcastQuickControlsRow(
+                        palette: _immersivePalette,
                       ),
 
                       const SizedBox(height: 16),

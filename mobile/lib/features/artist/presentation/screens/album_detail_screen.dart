@@ -4,6 +4,7 @@ import '../../../../core/storage/storage_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/share_utils.dart';
 import '../../../../core/widgets/collection_context_menu.dart';
+import '../../../../core/widgets/sonoritiz_artwork.dart';
 import '../../../../core/widgets/sonoritiz_cover_atmosphere.dart';
 import '../../../library/data/repositories/library_repository.dart';
 import '../../../library/presentation/cubit/library_cubit.dart';
@@ -24,6 +25,7 @@ class AlbumDetailScreen extends StatefulWidget {
 
 class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   List<TrackModel> _tracks = [];
+  List<Map<String, dynamic>> _moreByArtistAlbums = [];
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -186,6 +188,32 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           _errorMessage = null;
         });
       }
+
+      // Charger en arrière-plan la section « Plus de [Artiste] »
+      if (!isPlaylist &&
+          artist.isNotEmpty &&
+          artist != 'Artiste Inconnu' &&
+          artist != 'Sonoritiz') {
+        try {
+          final cleanArtist = artist
+              .split(RegExp(r',|&|feat\.|ft\.', caseSensitive: false))
+              .first
+              .trim();
+          final related = await repository.searchAlbums(
+            cleanArtist.isNotEmpty ? cleanArtist : artist,
+            limit: 12,
+          );
+          final filtered = related.where((a) {
+            final aTitle = (a['title'] ?? '').toString().trim().toLowerCase();
+            return aTitle.isNotEmpty && aTitle != title.trim().toLowerCase();
+          }).toList();
+          if (mounted) {
+            setState(() {
+              _moreByArtistAlbums = filtered;
+            });
+          }
+        } catch (_) {}
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -305,6 +333,145 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           },
           emptyMessage: 'Aucun morceau disponible actuellement.',
           showTrackCovers: _isPlaylist,
+          footerSlivers: [
+            if (!_isPlaylist && _moreByArtistAlbums.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 28, bottom: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Plus de $displayArtist',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                            ),
+                            if (canOpenArtist)
+                              GestureDetector(
+                                onTap: () => context.push(
+                                  '/artist',
+                                  extra: {'name': displayArtist},
+                                ),
+                                child: const Text(
+                                  'Voir profil',
+                                  style: TextStyle(
+                                    color: AppColors.primary,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        height: 196,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          itemCount: _moreByArtistAlbums.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(width: 14),
+                          itemBuilder: (context, index) {
+                            final alb = _moreByArtistAlbums[index];
+                            final aId = (alb['id'] ?? '').toString();
+                            final aTitle =
+                                (alb['title'] ?? 'Album').toString();
+                            final aArtist =
+                                (alb['artist_name'] ??
+                                        alb['artist'] ??
+                                        displayArtist)
+                                    .toString();
+                            final aCover =
+                                (alb['cover'] ?? alb['cover_url'] ?? '')
+                                    .toString();
+                            final aYear = (alb['year'] ?? '').toString();
+
+                            return GestureDetector(
+                              onTap: () => context.push(
+                                '/album',
+                                extra: {
+                                  'id': aId,
+                                  'title': aTitle,
+                                  'artistName': aArtist,
+                                  'coverUrl': aCover,
+                                  'year': aYear,
+                                },
+                              ),
+                              onLongPress: () =>
+                                  CollectionContextMenu.showForAlbum(
+                                context,
+                                albumId: aId,
+                                title: aTitle,
+                                artistName: aArtist,
+                                coverUrl: aCover,
+                                year: aYear,
+                              ),
+                              child: SizedBox(
+                                width: 138,
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    SonoritizArtwork(
+                                      imageUrl: aCover,
+                                      width: 138,
+                                      height: 138,
+                                      borderRadius: 14,
+                                      cacheMaxDimension: 320,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      aTitle,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13.8,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      aYear.isNotEmpty
+                                          ? 'Album • $aYear'
+                                          : aArtist,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.56),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
           trailingActionButton: _isPlaylist
               ? null
               : GestureDetector(

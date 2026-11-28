@@ -20,6 +20,8 @@ class PlayerState extends Equatable {
   final String playbackSource;
   final double vocalAttenuationLevel;
   final Set<String> userQueuedTrackIds;
+  final bool isConcertModeEnabled;
+  final double playbackSpeed;
 
   const PlayerState({
     this.queue = const [],
@@ -38,6 +40,8 @@ class PlayerState extends Equatable {
     this.playbackSource = '',
     this.vocalAttenuationLevel = 0.0,
     this.userQueuedTrackIds = const <String>{},
+    this.isConcertModeEnabled = false,
+    this.playbackSpeed = 1.0,
   });
 
   TrackModel? get currentTrack {
@@ -67,6 +71,8 @@ class PlayerState extends Equatable {
     String? playbackSource,
     double? vocalAttenuationLevel,
     Set<String>? userQueuedTrackIds,
+    bool? isConcertModeEnabled,
+    double? playbackSpeed,
   }) {
     return PlayerState(
       queue: queue ?? this.queue,
@@ -86,6 +92,8 @@ class PlayerState extends Equatable {
       vocalAttenuationLevel:
           vocalAttenuationLevel ?? this.vocalAttenuationLevel,
       userQueuedTrackIds: userQueuedTrackIds ?? this.userQueuedTrackIds,
+      isConcertModeEnabled: isConcertModeEnabled ?? this.isConcertModeEnabled,
+      playbackSpeed: playbackSpeed ?? this.playbackSpeed,
     );
   }
 
@@ -107,5 +115,7 @@ class PlayerState extends Equatable {
         playbackSource,
         vocalAttenuationLevel,
         userQueuedTrackIds,
+        isConcertModeEnabled,
+        playbackSpeed,
       ];
 }

@@ -33,39 +33,38 @@ class _MainShellScreenState extends State<MainShellScreen> {
 
   bool _handleScrollMetricsNotification(
       ScrollMetricsNotification notification) {
-    if (notification.metrics.axis != Axis.vertical) return false;
-    // Si la page n'est pas scrollable (ou tient entièrement à l'écran),
-    // toujours forcer l'affichage de la barre de navigation !
-    if (notification.metrics.maxScrollExtent <= 28.0 && !_isBottomNavVisible) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_isBottomNavVisible) {
-          setState(() => _isBottomNavVisible = true);
-        }
-      });
-    }
     return false;
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
     if (notification.metrics.axis != Axis.vertical) return false;
-    if (notification.metrics.maxScrollExtent <= 28.0) {
-      if (!_isBottomNavVisible) {
-        setState(() => _isBottomNavVisible = true);
-      }
-      return false;
-    }
     if (notification is ScrollUpdateNotification) {
       final delta = notification.scrollDelta ?? 0.0;
       final pixels = notification.metrics.pixels;
-      if (pixels <= 16.0) {
+      final maxExtent = notification.metrics.maxScrollExtent;
+      final bool isUserDragging = notification.dragDetails != null;
+
+      // Sur les pages courtes (ou en rebond élastique comme Connect),
+      // réagir directement au glissement du doigt sans que le rebond à 0 ne bloque le masquage.
+      if (maxExtent <= 80.0) {
+        if (!isUserDragging) return false;
+        if (delta > 4.0 && _isBottomNavVisible) {
+          setState(() => _isBottomNavVisible = false);
+        } else if (delta < -4.0 && !_isBottomNavVisible) {
+          setState(() => _isBottomNavVisible = true);
+        }
+        return false;
+      }
+
+      if (pixels <= 12.0 && delta <= 0) {
         if (!_isBottomNavVisible) {
           setState(() => _isBottomNavVisible = true);
         }
-      } else if (delta > 6.0 && pixels > 40.0) {
+      } else if (delta > 5.5 && (pixels > 28.0 || isUserDragging)) {
         if (_isBottomNavVisible) {
           setState(() => _isBottomNavVisible = false);
         }
-      } else if (delta < -6.0) {
+      } else if (delta < -5.5) {
         if (!_isBottomNavVisible) {
           setState(() => _isBottomNavVisible = true);
         }

@@ -9,6 +9,7 @@ import '../../features/library/presentation/cubit/library_cubit.dart';
 import '../../features/library/presentation/cubit/library_state.dart';
 import 'artist_name_display.dart';
 import '../../../features/offline/presentation/cubit/download_cubit.dart';
+import '../../../features/home/data/repositories/catalog_repository.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/share_utils.dart';
 
@@ -198,6 +199,79 @@ class TrackContextMenu extends StatelessWidget {
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
+              },
+            ),
+            const SizedBox(height: 12),
+
+            // Action: Lancer la radio du titre
+            _buildMenuOption(
+              icon: Icons.sensors_rounded,
+              iconColor: AppColors.primary,
+              title: "Lancer la radio du titre",
+              onTap: () {
+                context.read<PlayerCubit>().startTrackRadio(track);
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text("Radio lancée autour de « ${track.title} »"),
+                    backgroundColor: AppColors.surface,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+
+            // Action: Voir l'album
+            _buildMenuOption(
+              icon: Icons.album_outlined,
+              title: "Voir l'album",
+              onTap: () async {
+                final router = import_go_router.GoRouter.of(context);
+                Navigator.pop(context);
+                int albumId = 0;
+                String albumTitle = track.albumName.trim();
+                try {
+                  final repo = CatalogRepository();
+                  final cleanArtist = track.artistName
+                      .split(RegExp(r',|&|feat\.|ft\.', caseSensitive: false))
+                      .first
+                      .trim();
+                  final albums = await repo.searchAlbums(
+                    albumTitle.isNotEmpty &&
+                            albumTitle != 'YouTube Audio' &&
+                            albumTitle != 'Unknown Album'
+                        ? '$cleanArtist $albumTitle'
+                        : '$cleanArtist ${track.title}',
+                    limit: 4,
+                  );
+                  if (albums.isNotEmpty) {
+                    albumId =
+                        int.tryParse('${albums.first['id'] ?? 0}') ?? 0;
+                    albumTitle =
+                        (albums.first['title'] ?? albumTitle).toString();
+                  }
+                } catch (_) {}
+
+                if (albumId > 0) {
+                  router.push('/album', extra: {
+                    'id': albumId,
+                    'title': albumTitle,
+                    'artistName': track.artistName,
+                    'coverUrl': track.coverUrl,
+                  });
+                } else {
+                  router.push('/collection', extra: {
+                    'title':
+                        albumTitle.isNotEmpty ? albumTitle : track.title,
+                    'badgeLabel': 'ALBUM',
+                    'subtitle': track.artistName,
+                    'coverUrl': track.coverUrl,
+                    'tracks': [track],
+                    'playbackSource':
+                        albumTitle.isNotEmpty ? albumTitle : track.title,
+                  });
+                }
               },
             ),
             const SizedBox(height: 12),

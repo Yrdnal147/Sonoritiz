@@ -12,6 +12,7 @@ import '../../../../core/storage/storage_service.dart';
 import '../../data/models/lyrics_model.dart';
 import '../../data/models/track_model.dart';
 import '../../data/services/lyrics_service.dart';
+import '../../../home/data/repositories/catalog_repository.dart';
 import '../../../library/data/repositories/library_repository.dart';
 import 'player_state.dart';
 
@@ -34,7 +35,11 @@ class PlayerCubit extends Cubit<PlayerState> {
   Timer? _prefetchTimer;
   Timer? _bufferingWatchdog;
   int? _nextShuffleIndex;
+  final Set<int> _playedShuffleIndices = <int>{};
   String? _lastThirtySecPrefetchedForTrackId;
+  String? _crossfadeTriggeredForTrackId;
+  bool _isCrossfading = false;
+  bool _isAutoplayFetching = false;
   bool _isResolving = false;
   bool _isPlayerLoading = false;
   int _consecutiveErrors = 0;
@@ -48,7 +53,12 @@ class PlayerCubit extends Cubit<PlayerState> {
     required SonoritizAudioHandler audioHandler,
     this.libraryRepository,
   })  : _audioHandler = audioHandler,
-        super(PlayerState(isFreeLyricsMode: StorageService().isFreeLyricsMode)) {
+        super(
+          PlayerState(
+            isFreeLyricsMode: StorageService().isFreeLyricsMode,
+            isConcertModeEnabled: StorageService().concertModeEnabled,
+          ),
+        ) {
     _initSubscriptions();
 
     _audioHandler.onToggleFavorite = (trackId) {
@@ -315,6 +325,33 @@ class PlayerCubit extends Cubit<PlayerState> {
         _lastThirtySecPrefetchedForTrackId = currentId;
         _triggerNextTrackZeroLatencyPrefetch();
       }
+
+      // Fondu enchaîné (Crossfade 1s à 12s) entre les morceaux
+      final int crossfadeSec = StorageService().crossfadeSeconds;
+      if (crossfadeSec > 0 &&
+          currentId != null &&
+          totalSec > crossfadeSec + 12 &&
+          state.isPlaying &&
+          !state.isBuffering &&
+          state.loopMode != LoopMode.one) {
+        final double remainingMs =
+            (state.duration.inMilliseconds - pos.inMilliseconds).toDouble();
+        final double crossfadeMs = crossfadeSec * 1000.0;
+        if (remainingMs > 0 && remainingMs <= crossfadeMs) {
+          _isCrossfading = true;
+          final double baseVol = state.isConcertModeEnabled
+              ? 0.96
+              : (StorageService().volumeNormalizationEnabled ? 0.92 : 1.0);
+          final double ratio = (remainingMs / crossfadeMs).clamp(0.08, 1.0);
+          unawaited(_audioHandler.player.setVolume(baseVol * ratio));
+
+          if (remainingMs <= 750 &&
+              _crossfadeTriggeredForTrackId != currentId) {
+            _crossfadeTriggeredForTrackId = currentId;
+            _handleTrackCompleted();
+          }
+        }
+      }
     });
 
     _durationSubscription = _audioHandler.player.durationStream.listen((dur) {
@@ -326,23 +363,121 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   void _handleTrackCompleted() {
+    if (_isCrossfading) {
+      _isCrossfading = false;
+      unawaited(_audioHandler.applyUserAudioSettings());
+    }
     if (state.loopMode == LoopMode.one) {
       _audioHandler.seek(Duration.zero);
       _audioHandler.play();
-    } else {
-      if (state.currentIndex < state.queue.length - 1) {
-        playNext();
-      } else {
-        if (state.loopMode == LoopMode.all) {
-          playNext();
-        } else {
-          _audioHandler.pause();
-          _audioHandler.seek(Duration.zero);
-          emit(state.copyWith(isPlaying: false));
-          _syncWidgetPlaybackState(force: true);
+      return;
+    }
+    if (state.currentIndex < state.queue.length - 1 ||
+        state.isShuffleModeEnabled) {
+      if (state.isShuffleModeEnabled &&
+          _playedShuffleIndices.length >= state.queue.length &&
+          state.loopMode == LoopMode.off) {
+        if (StorageService().autoplayEnabled) {
+          unawaited(_triggerAutoplayInfiniteRadio());
+          return;
         }
       }
+      playNext();
+      return;
     }
+    if (state.loopMode == LoopMode.all) {
+      playNext();
+      return;
+    }
+    // Fin de la file d'attente : si Lecture automatique (Autoplay) est activée,
+    // générer et enchaîner automatiquement une radio infinie basée sur le dernier titre !
+    if (StorageService().autoplayEnabled && state.currentTrack != null) {
+      unawaited(_triggerAutoplayInfiniteRadio());
+      return;
+    }
+    _audioHandler.pause();
+    _audioHandler.seek(Duration.zero);
+    emit(state.copyWith(isPlaying: false));
+    _syncWidgetPlaybackState(force: true);
+  }
+
+  Future<void> _triggerAutoplayInfiniteRadio() async {
+    if (_isAutoplayFetching) return;
+    final seedTrack = state.currentTrack;
+    if (seedTrack == null) return;
+    _isAutoplayFetching = true;
+    try {
+      final cleanArtist = seedTrack.artistName
+          .split(RegExp(r',|&|feat\.|ft\.', caseSensitive: false))
+          .first
+          .trim();
+      final queryArtist =
+          cleanArtist.isNotEmpty ? cleanArtist : seedTrack.artistName;
+      final repo = CatalogRepository();
+      final similar = await repo.getSimilarTracks(queryArtist, limit: 20);
+      if (isClosed) return;
+
+      final existingIds = state.queue.map((t) => t.id).toSet();
+      final freshTracks =
+          similar.where((t) => !existingIds.contains(t.id)).toList();
+
+      if (freshTracks.isNotEmpty) {
+        final updatedQueue = List<TrackModel>.from(state.queue)
+          ..addAll(freshTracks);
+        final nextIdx = state.currentIndex + 1;
+        final nextTrack = updatedQueue[nextIdx];
+        emit(state.copyWith(
+          queue: updatedQueue,
+          currentIndex: nextIdx,
+          duration: Duration(seconds: nextTrack.durationSeconds),
+          position: Duration.zero,
+          playbackSource: 'Radio • ${seedTrack.title}',
+          isBuffering: true,
+          isPlaying: true,
+          clearError: true,
+        ));
+        await _startTrack(nextTrack);
+        return;
+      }
+    } catch (_) {
+    } finally {
+      _isAutoplayFetching = false;
+    }
+
+    _audioHandler.pause();
+    _audioHandler.seek(Duration.zero);
+    emit(state.copyWith(isPlaying: false));
+    _syncWidgetPlaybackState(force: true);
+  }
+
+  /// Lance instantanément une Radio de 25 titres basée sur un morceau (« Lancer la radio du titre »).
+  Future<void> startTrackRadio(TrackModel seedTrack) async {
+    await playTrack(
+      seedTrack,
+      queue: [seedTrack],
+      source: 'Radio • ${seedTrack.title}',
+    );
+    try {
+      final cleanArtist = seedTrack.artistName
+          .split(RegExp(r',|&|feat\.|ft\.', caseSensitive: false))
+          .first
+          .trim();
+      final queryArtist =
+          cleanArtist.isNotEmpty ? cleanArtist : seedTrack.artistName;
+      final repo = CatalogRepository();
+      final similar = await repo.getSimilarTracks(queryArtist, limit: 24);
+      if (isClosed || state.currentTrack?.id != seedTrack.id) return;
+      final radioQueue = <TrackModel>[
+        seedTrack,
+        ...similar.where((t) => t.id != seedTrack.id),
+      ];
+      emit(state.copyWith(
+        queue: radioQueue,
+        currentIndex: 0,
+        playbackSource: 'Radio • ${seedTrack.title}',
+      ));
+      _schedulePrefetchOfNext(seedTrack);
+    } catch (_) {}
   }
 
   String _toLightweightWidgetCoverUrl(String url) {
@@ -764,6 +899,13 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   Future<void> _startTrack(TrackModel track) async {
     _prefetchTimer?.cancel();
+    if (_isCrossfading) {
+      _isCrossfading = false;
+      unawaited(_audioHandler.applyUserAudioSettings());
+    }
+    if (state.currentIndex >= 0) {
+      _playedShuffleIndices.add(state.currentIndex);
+    }
     StorageService().recordLifetimeTrackPlay(track.toJson());
 
     // 100 % de la bande passante réseau dédiée au démarrage du flux audio d'abord
@@ -807,7 +949,27 @@ class PlayerCubit extends Cubit<PlayerState> {
     }
   }
 
-  /// Retourne le prochain morceau qui sera réellement joué (prend en compte le mode aléatoire et LoopMode).
+  /// Sélectionne un index aléatoire sans remise (Fisher-Yates) parmi les titres non encore joués du cycle.
+  int _pickUnplayedShuffleIndex() {
+    if (state.queue.length <= 1) return 0;
+    final List<int> unplayed = [];
+    for (int i = 0; i < state.queue.length; i++) {
+      if (i != state.currentIndex && !_playedShuffleIndices.contains(i)) {
+        unplayed.add(i);
+      }
+    }
+    if (unplayed.isEmpty) {
+      _playedShuffleIndices
+        ..clear()
+        ..add(state.currentIndex);
+      for (int i = 0; i < state.queue.length; i++) {
+        if (i != state.currentIndex) unplayed.add(i);
+      }
+    }
+    return unplayed[Random().nextInt(unplayed.length)];
+  }
+
+  /// Retourne le prochain morceau qui sera réellement joué (prend en compte le mode aléatoire sans remise et LoopMode).
   TrackModel? get peekNextTrack {
     if (state.loopMode == LoopMode.one || state.queue.isEmpty) return null;
     if (state.isShuffleModeEnabled && state.queue.length > 1) {
@@ -815,11 +977,7 @@ class PlayerCubit extends Cubit<PlayerState> {
           _nextShuffleIndex! < 0 ||
           _nextShuffleIndex! >= state.queue.length ||
           _nextShuffleIndex == state.currentIndex) {
-        int candidate = state.currentIndex;
-        while (candidate == state.currentIndex) {
-          candidate = Random().nextInt(state.queue.length);
-        }
-        _nextShuffleIndex = candidate;
+        _nextShuffleIndex = _pickUnplayedShuffleIndex();
       }
       return state.queue[_nextShuffleIndex!];
     }
@@ -1099,7 +1257,37 @@ class PlayerCubit extends Cubit<PlayerState> {
     await setVocalAttenuation(0.0);
   }
 
+  /// Active ou désactive le Mode Concert Live 🏟️ (acoustique de salle/stade + ambiance stéréo live).
+  Future<void> toggleConcertMode() async {
+    final nextVal = !state.isConcertModeEnabled;
+    emit(state.copyWith(isConcertModeEnabled: nextVal));
+    await _audioHandler.setConcertMode(nextVal);
+  }
+
+  /// Modifie la vitesse de lecture (ex: 0.75x, 1.0x, 1.25x, 1.5x, 2.0x pour Podcasts / Livres audio).
+  Future<void> setPlaybackSpeed(double speed) async {
+    final clamped = speed.clamp(0.5, 2.5);
+    emit(state.copyWith(playbackSpeed: clamped));
+    await _audioHandler.setPlaybackSpeed(clamped);
+  }
+
+  /// Avance ou recule de [deltaSeconds] secondes (ex: -15s / +30s).
+  Future<void> skipBySeconds(int deltaSeconds) async {
+    final totalMs = state.duration.inMilliseconds;
+    final targetMs =
+        (state.position.inMilliseconds + (deltaSeconds * 1000)).clamp(
+      0,
+      totalMs > 0 ? totalMs : 86400000,
+    );
+    await seek(Duration(milliseconds: targetMs));
+  }
+
   Future<void> applyAudioSettings({bool clearResolvedStreams = false}) async {
+    emit(
+      state.copyWith(
+        isConcertModeEnabled: StorageService().concertModeEnabled,
+      ),
+    );
     await _audioHandler.applyUserAudioSettings(
       clearResolvedStreams: clearResolvedStreams,
     );
@@ -1168,10 +1356,7 @@ class PlayerCubit extends Cubit<PlayerState> {
         nextIndex = _nextShuffleIndex!;
         _nextShuffleIndex = null;
       } else {
-        nextIndex = state.currentIndex;
-        while (nextIndex == state.currentIndex) {
-          nextIndex = Random().nextInt(state.queue.length);
-        }
+        nextIndex = _pickUnplayedShuffleIndex();
       }
     } else {
       nextIndex = (state.currentIndex + 1) % state.queue.length;
@@ -1368,6 +1553,10 @@ class PlayerCubit extends Cubit<PlayerState> {
 
   Future<void> toggleShuffle() async {
     final newShuffleMode = !state.isShuffleModeEnabled;
+    _playedShuffleIndices.clear();
+    if (newShuffleMode && state.currentIndex >= 0) {
+      _playedShuffleIndices.add(state.currentIndex);
+    }
     emit(state.copyWith(isShuffleModeEnabled: newShuffleMode));
     await _audioHandler.setShuffleModeEnabled(newShuffleMode);
 

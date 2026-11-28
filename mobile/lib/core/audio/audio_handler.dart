@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:dio/dio.dart';
@@ -60,6 +62,152 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
   double _vocalAttenuationLevel = 0.0;
   double get vocalAttenuationLevel => _vocalAttenuationLevel;
 
+  // Mode Concert Live (acoustique de salle/stade + ambiance stéréo live synchronisée)
+  bool _isConcertModeEnabled = false;
+  bool get isConcertModeEnabled => _isConcertModeEnabled;
+  AudioPlayer? _concertAmbiencePlayer;
+  StreamSubscription<bool>? _concertPlayingSub;
+  String? _concertWavPath;
+
+  Future<String?> _ensureConcertArenaWavFile() async {
+    if (_concertWavPath != null && File(_concertWavPath!).existsSync()) {
+      return _concertWavPath;
+    }
+    try {
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}/sonoritiz_concert_arena_v1.wav';
+      final file = File(path);
+      if (file.existsSync() && file.lengthSync() > 10000) {
+        _concertWavPath = path;
+        return path;
+      }
+
+      // Synthèse stéréo 16-bit PCM (16000 Hz, 6 secondes bouclables sans clic)
+      // Modélise la résonance acoustique d'une arène + souffle/murmure stéréo enveloppant d'un public de concert
+      const int sampleRate = 16000;
+      const int durationSec = 6;
+      const int numSamples = sampleRate * durationSec;
+      const int numChannels = 2;
+      const int byteRate = sampleRate * numChannels * 2;
+      const int dataSize = numSamples * numChannels * 2;
+
+      final ByteData buffer = ByteData(44 + dataSize);
+      void writeAscii(int offset, String s) {
+        for (int i = 0; i < s.length; i++) {
+          buffer.setUint8(offset + i, s.codeUnitAt(i));
+        }
+      }
+
+      writeAscii(0, 'RIFF');
+      buffer.setUint32(4, 36 + dataSize, Endian.little);
+      writeAscii(8, 'WAVE');
+      writeAscii(12, 'fmt ');
+      buffer.setUint32(16, 16, Endian.little);
+      buffer.setUint16(20, 1, Endian.little); // PCM
+      buffer.setUint16(22, numChannels, Endian.little);
+      buffer.setUint32(24, sampleRate, Endian.little);
+      buffer.setUint32(28, byteRate, Endian.little);
+      buffer.setUint16(32, numChannels * 2, Endian.little);
+      buffer.setUint16(34, 16, Endian.little);
+      writeAscii(36, 'data');
+      buffer.setUint32(40, dataSize, Endian.little);
+
+      final rngL = math.Random(42);
+      final rngR = math.Random(1337);
+      double lpL = 0.0, lp2L = 0.0, hpL = 0.0;
+      double lpR = 0.0, lp2R = 0.0, hpR = 0.0;
+
+      for (int i = 0; i < numSamples; i++) {
+        final double t = i / sampleRate;
+        // Enveloppe périodique douce (0..2π sur 6s) pour une boucle 100 % continue
+        final double phase = (2 * math.pi * i) / numSamples;
+        final double crowdSwell =
+            0.78 + 0.22 * math.sin(phase) + 0.10 * math.cos(phase * 2);
+
+        // Résonance grave de grande salle (hall modes ~55 Hz & 110 Hz)
+        final double hallResL =
+            0.14 * math.sin(2 * math.pi * 55.0 * t) +
+            0.09 * math.sin(2 * math.pi * 110.0 * t + 0.6);
+        final double hallResR =
+            0.14 * math.sin(2 * math.pi * 55.0 * t + 0.9) +
+            0.09 * math.sin(2 * math.pi * 110.0 * t + 1.7);
+
+        // Bruit rose/brun filtré (texture acoustique de foule + air de stade décorrélé G/D)
+        final double whiteL = (rngL.nextDouble() * 2.0 - 1.0);
+        final double whiteR = (rngR.nextDouble() * 2.0 - 1.0);
+
+        lpL = lpL * 0.93 + whiteL * 0.07;
+        lp2L = lp2L * 0.82 + lpL * 0.18;
+        hpL = hpL * 0.985 + lp2L * 0.015;
+        final double bandL = (lp2L - hpL) * crowdSwell + hallResL;
+
+        lpR = lpR * 0.93 + whiteR * 0.07;
+        lp2R = lp2R * 0.82 + lpR * 0.18;
+        hpR = hpR * 0.985 + lp2R * 0.015;
+        final double bandR = (lp2R - hpR) * crowdSwell + hallResR;
+
+        final int sL = (bandL * 9500).round().clamp(-32760, 32760);
+        final int sR = (bandR * 9500).round().clamp(-32760, 32760);
+
+        final int byteOffset = 44 + i * 4;
+        buffer.setInt16(byteOffset, sL, Endian.little);
+        buffer.setInt16(byteOffset + 2, sR, Endian.little);
+      }
+
+      await file.writeAsBytes(buffer.buffer.asUint8List(), flush: true);
+      _concertWavPath = path;
+      return path;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setConcertMode(bool enabled) async {
+    _isConcertModeEnabled = enabled;
+    await StorageService().setConcertModeEnabled(enabled);
+    await applyUserAudioSettings();
+    await _syncConcertAmbiencePlayback();
+  }
+
+  Future<void> _syncConcertAmbiencePlayback() async {
+    try {
+      if (!_isConcertModeEnabled) {
+        await _concertAmbiencePlayer?.pause();
+        return;
+      }
+      if (_concertAmbiencePlayer == null) {
+        final wavPath = await _ensureConcertArenaWavFile();
+        if (wavPath == null) return;
+        _concertAmbiencePlayer = AudioPlayer(
+          handleInterruptions: false,
+          handleAudioSessionActivation: false,
+        );
+        await _concertAmbiencePlayer!.setFilePath(wavPath);
+        await _concertAmbiencePlayer!.setLoopMode(LoopMode.one);
+        await _concertAmbiencePlayer!.setVolume(0.14);
+
+        _concertPlayingSub ??= _player.playingStream.listen((isPlaying) {
+          if (_isConcertModeEnabled && isPlaying) {
+            _concertAmbiencePlayer?.play();
+          } else {
+            _concertAmbiencePlayer?.pause();
+          }
+        });
+      }
+      if (_player.playing) {
+        unawaited(_concertAmbiencePlayer!.play());
+      } else {
+        await _concertAmbiencePlayer!.pause();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> setPlaybackSpeed(double speed) async {
+    try {
+      await _player.setSpeed(speed.clamp(0.5, 2.5));
+    } catch (_) {}
+  }
+
   Future<void> setVocalAttenuation(double level) async {
     final clamped = level.clamp(0.0, 1.0);
     _vocalAttenuationLevel = clamped;
@@ -103,14 +251,18 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
 
     try {
       final storage = StorageService();
+      _isConcertModeEnabled = storage.concertModeEnabled;
       final normalize = storage.volumeNormalizationEnabled;
-      await _player.setVolume(normalize ? 0.92 : 1.0);
+      await _player.setVolume(
+        _isConcertModeEnabled ? 0.96 : (normalize ? 0.92 : 1.0),
+      );
+      unawaited(_syncConcertAmbiencePlayback());
 
       if (_vocalAttenuationLevel > 0.01) return;
       final equalizer = _equalizer;
       if (!_isAndroidNative || equalizer == null) return;
 
-      final preset = storage.audioPreset;
+      final preset = _isConcertModeEnabled ? 'Concert Live' : storage.audioPreset;
       if (preset == 'Studio') {
         if (equalizer.enabled) {
           final params = await equalizer.parameters;
@@ -128,11 +280,29 @@ class SonoritizAudioHandler extends BaseAudioHandler with SeekHandler {
       final params = await equalizer.parameters;
       final maxDb = params.maxDecibels;
       final minDb = params.minDecibels;
+      final customBands = storage.customEqBands;
 
-      for (final band in params.bands) {
+      for (int i = 0; i < params.bands.length; i++) {
+        final band = params.bands[i];
         final f = band.centerFrequency;
         double ratio = 0.0;
         switch (preset) {
+          case 'Concert Live':
+            // Acoustique de Stade / Arena : sub-basses profondes, recul spatial bas-médium, projection aérienne
+            if (f <= 180) {
+              ratio = 0.72;
+            } else if (f > 180 && f <= 850) {
+              ratio = -0.28;
+            } else if (f > 850 && f <= 4200) {
+              ratio = 0.36;
+            } else {
+              ratio = 0.54;
+            }
+            break;
+          case 'Personnalisé':
+            final int slot = i.clamp(0, customBands.length - 1);
+            ratio = customBands[slot].clamp(-1.0, 1.0);
+            break;
           case 'Bass Boost':
             if (f <= 250) {
               ratio = 0.55;

@@ -25,6 +25,16 @@ class _AudioSettingsScreenState extends State<AudioSettingsScreen> {
   late bool _autoplay;
   late bool _volumeNormalization;
   late String _audioPreset;
+  late bool _concertMode;
+  late int _crossfadeSeconds;
+  late List<double> _customEqBands;
+  static const List<String> _eqFreqLabels = [
+    '60 Hz',
+    '230 Hz',
+    '910 Hz',
+    '3.6 kHz',
+    '14 kHz',
+  ];
 
   final List<Map<String, dynamic>> _qualityOptions = const [
     {
@@ -92,6 +102,11 @@ class _AudioSettingsScreenState extends State<AudioSettingsScreen> {
       'desc': 'Adoucit les fréquences vives pour une écoute reposante.',
       'icon': Icons.bedtime_outlined,
     },
+    {
+      'name': 'Personnalisé',
+      'desc': 'Votre courbe 5 bandes réglée sur mesure au décibel près.',
+      'icon': Icons.tune_rounded,
+    },
   ];
 
   @override
@@ -101,6 +116,9 @@ class _AudioSettingsScreenState extends State<AudioSettingsScreen> {
     _autoplay = _storage.autoplayEnabled;
     _volumeNormalization = _storage.volumeNormalizationEnabled;
     _audioPreset = _storage.audioPreset;
+    _concertMode = _storage.concertModeEnabled;
+    _crossfadeSeconds = _storage.crossfadeSeconds;
+    _customEqBands = List<double>.from(_storage.customEqBands);
   }
 
   String _activeQualityLabel() {
@@ -326,6 +344,272 @@ class _AudioSettingsScreenState extends State<AudioSettingsScreen> {
                           );
                         }).toList(),
                       ),
+                      const SizedBox(height: 24),
+
+                      // Mode Concert Live 🏟️ (Acoustique d'arène + Ambiance stéréo de salle)
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.mediumImpact();
+                          final nextVal = !_concertMode;
+                          setState(() => _concertMode = nextVal);
+                          try {
+                            context.read<PlayerCubit>().toggleConcertMode();
+                          } catch (_) {
+                            _storage.setConcertModeEnabled(nextVal);
+                          }
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 240),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: _concertMode
+                                  ? [
+                                      AppColors.primary.withValues(alpha: 0.26),
+                                      const Color(0xFF1A1510),
+                                    ]
+                                  : [
+                                      Colors.white.withValues(alpha: 0.05),
+                                      const Color(0xFF121216),
+                                    ],
+                            ),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: _concertMode
+                                  ? AppColors.primary
+                                  : Colors.white.withValues(alpha: 0.12),
+                              width: _concertMode ? 1.5 : 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: _concertMode
+                                      ? AppColors.primary
+                                      : Colors.white.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(13),
+                                ),
+                                child: Icon(
+                                  Icons.stadium_rounded,
+                                  color: _concertMode
+                                      ? Colors.black
+                                      : AppColors.primary,
+                                  size: 23,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Text(
+                                          'Mode Concert Live',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 7,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: _concertMode
+                                                ? AppColors.primary
+                                                : Colors.white
+                                                    .withValues(alpha: 0.10),
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            _concertMode ? 'ACTIF' : 'ARENA 3D',
+                                            style: TextStyle(
+                                              color: _concertMode
+                                                  ? Colors.black
+                                                  : Colors.white70,
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.w900,
+                                              letterSpacing: 0.6,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Recrée la frappe sub-basse de scène, l’espace acoustique d’une arène et le souffle enveloppant d’une salle en direct.',
+                                      style: TextStyle(
+                                        color:
+                                            Colors.white.withValues(alpha: 0.62),
+                                        fontSize: 12.2,
+                                        height: 1.32,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Switch(
+                                value: _concertMode,
+                                activeThumbColor: AppColors.primary,
+                                onChanged: (val) {
+                                  HapticFeedback.mediumImpact();
+                                  setState(() => _concertMode = val);
+                                  try {
+                                    context
+                                        .read<PlayerCubit>()
+                                        .toggleConcertMode();
+                                  } catch (_) {
+                                    _storage.setConcertModeEnabled(val);
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 26),
+
+                      // Égaliseur Graphique Manuel 5 bandes (-12 dB à +12 dB)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Égaliseur Graphique 5 bandes',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              setState(() {
+                                _customEqBands = [0.0, 0.0, 0.0, 0.0, 0.0];
+                              });
+                              _storage.setCustomEqBands(_customEqBands);
+                              try {
+                                context
+                                    .read<PlayerCubit>()
+                                    .applyAudioSettings();
+                              } catch (_) {}
+                            },
+                            child: Text(
+                              'Réinitialiser (0 dB)',
+                              style: TextStyle(
+                                color: AppColors.primary.withValues(alpha: 0.9),
+                                fontSize: 12.2,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(12, 16, 12, 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.04),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: List.generate(5, (bandIdx) {
+                            final double val = _customEqBands[bandIdx];
+                            final int db = (val * 12).round();
+                            final String dbText =
+                                db > 0 ? '+$db dB' : '$db dB';
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  dbText,
+                                  style: TextStyle(
+                                    color: db != 0
+                                        ? AppColors.primary
+                                        : Colors.white54,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                SizedBox(
+                                  height: 132,
+                                  width: 36,
+                                  child: RotatedBox(
+                                    quarterTurns: 3,
+                                    child: SliderTheme(
+                                      data: SliderTheme.of(context).copyWith(
+                                        trackHeight: 4,
+                                        activeTrackColor: AppColors.primary,
+                                        inactiveTrackColor: Colors.white
+                                            .withValues(alpha: 0.14),
+                                        thumbColor: Colors.white,
+                                        thumbShape:
+                                            const RoundSliderThumbShape(
+                                          enabledThumbRadius: 7,
+                                        ),
+                                        overlayShape:
+                                            const RoundSliderOverlayShape(
+                                          overlayRadius: 14,
+                                        ),
+                                      ),
+                                      child: Slider(
+                                        value: val.clamp(-1.0, 1.0),
+                                        min: -1.0,
+                                        max: 1.0,
+                                        onChanged: (newVal) {
+                                          setState(() {
+                                            _customEqBands[bandIdx] = newVal;
+                                            _audioPreset = 'Personnalisé';
+                                          });
+                                          _storage.setAudioPreset(
+                                            'Personnalisé',
+                                          );
+                                          _storage.setCustomEqBands(
+                                            _customEqBands,
+                                          );
+                                          try {
+                                            context
+                                                .read<PlayerCubit>()
+                                                .applyAudioSettings();
+                                          } catch (_) {}
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  _eqFreqLabels[bandIdx],
+                                  style: TextStyle(
+                                    color:
+                                        Colors.white.withValues(alpha: 0.68),
+                                    fontSize: 11.2,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            );
+                          }),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -509,13 +793,95 @@ class _AudioSettingsScreenState extends State<AudioSettingsScreen> {
                         icon: Icons.autorenew_rounded,
                         title: 'Lecture continue (Autoplay)',
                         subtitle:
-                            'Enchaîne avec des titres proches en fin de file.',
+                            'Enchaîne automatiquement une radio infinie en fin de file.',
                         value: _autoplay,
                         onChanged: (val) {
                           HapticFeedback.selectionClick();
                           setState(() => _autoplay = val);
                           _storage.setAutoplayEnabled(val);
                         },
+                      ),
+                      _subtleDivider(),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(
+                                Icons.compare_arrows_rounded,
+                                color: Colors.white70,
+                                size: 22,
+                              ),
+                              SizedBox(width: 16),
+                              Text(
+                                'Fondu enchaîné (Crossfade)',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _crossfadeSeconds > 0
+                                  ? AppColors.primary.withValues(alpha: 0.18)
+                                  : Colors.white.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              _crossfadeSeconds == 0
+                                  ? 'Désactivé'
+                                  : '$_crossfadeSeconds s',
+                              style: TextStyle(
+                                color: _crossfadeSeconds > 0
+                                    ? AppColors.primary
+                                    : Colors.white60,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 38),
+                        child: Text(
+                          'Superpose en douceur la fin d’un titre et le début du suivant (0 à 12 secondes).',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.45),
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ),
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          activeTrackColor: AppColors.primary,
+                          inactiveTrackColor:
+                              Colors.white.withValues(alpha: 0.14),
+                          thumbColor: Colors.white,
+                        ),
+                        child: Slider(
+                          value: _crossfadeSeconds.toDouble(),
+                          min: 0,
+                          max: 12,
+                          divisions: 12,
+                          onChanged: (v) {
+                            final sec = v.round();
+                            if (sec != _crossfadeSeconds) {
+                              HapticFeedback.selectionClick();
+                              setState(() => _crossfadeSeconds = sec);
+                              _storage.setCrossfadeSeconds(sec);
+                            }
+                          },
+                        ),
                       ),
                     ],
                   ),

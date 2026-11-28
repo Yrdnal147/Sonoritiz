@@ -14,6 +14,7 @@ import '../../../../home/data/repositories/catalog_repository.dart';
 import '../../../../offline/presentation/cubit/download_cubit.dart';
 import '../../../data/models/track_model.dart';
 import '../../cubit/player_cubit.dart';
+import '../../cubit/player_state.dart';
 import 'immersive_player_widgets.dart';
 import 'player_favorite_button.dart';
 
@@ -799,6 +800,145 @@ class SonoritizSignatureTransportRow extends StatelessWidget {
   }
 }
 
+/// Barre de contrôles dédiée aux Podcasts & Livres Audio : -15s • Vitesse (0.75x..2.0x) • +30s
+class SonoritizPodcastQuickControlsRow extends StatelessWidget {
+  final ImmersivePalette palette;
+
+  const SonoritizPodcastQuickControlsRow({
+    super.key,
+    required this.palette,
+  });
+
+  static const List<double> _speeds = [0.75, 1.0, 1.25, 1.5, 2.0];
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<PlayerCubit, PlayerState>(
+      buildWhen: (prev, cur) =>
+          prev.currentTrack?.id != cur.currentTrack?.id ||
+          prev.playbackSpeed != cur.playbackSpeed,
+      builder: (context, pState) {
+        final track = pState.currentTrack;
+        if (track == null || !track.isPodcastOrBook) {
+          return const SizedBox.shrink();
+        }
+        final speed = pState.playbackSpeed;
+        final speedLabel = speed == speed.roundToDouble()
+            ? '${speed.toInt()}.0x'
+            : '${speed}x';
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildChip(
+                icon: Icons.replay_10_rounded,
+                label: '-15s',
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  context.read<PlayerCubit>().skipBySeconds(-15);
+                },
+              ),
+              const SizedBox(width: 12),
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  final idx = _speeds.indexWhere((s) => (s - speed).abs() < 0.05);
+                  final nextSpeed = _speeds[(idx + 1) % _speeds.length];
+                  context.read<PlayerCubit>().setPlaybackSpeed(nextSpeed);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 13,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: (speed - 1.0).abs() > 0.05
+                        ? palette.accentColor
+                        : Colors.black.withValues(alpha: 0.36),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.20),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.speed_rounded,
+                        size: 14,
+                        color: (speed - 1.0).abs() > 0.05
+                            ? Colors.black
+                            : Colors.white,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        'Vitesse $speedLabel',
+                        style: TextStyle(
+                          color: (speed - 1.0).abs() > 0.05
+                              ? Colors.black
+                              : Colors.white,
+                          fontSize: 11.8,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              _buildChip(
+                icon: Icons.forward_30_rounded,
+                label: '+30s',
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  context.read<PlayerCubit>().skipBySeconds(30);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildChip({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.36),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.16),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: Colors.white),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// ============================================================================
 /// 4. PILULE VERTICALE À DROITE (« RAIL D'ACTIONS SIGNATURE » COMME HALO ORBITAL) :
 ///    Regroupe de haut en bas :
@@ -938,6 +1078,46 @@ class SonoritizRightActionRail extends StatelessWidget {
               size: 19.5,
               color: Colors.white.withValues(alpha: 0.92),
             ),
+          ),
+          _horizontalHairline(),
+
+          // 4b. Mode Concert Live 🏟️ (Ambiance sonore de salle / stade)
+          BlocSelector<PlayerCubit, PlayerState, bool>(
+            selector: (pState) => pState.isConcertModeEnabled,
+            builder: (context, isConcert) {
+              return _railSlot(
+                tooltip: isConcert
+                    ? 'Mode Concert Live actif'
+                    : 'Activer le Mode Concert Live',
+                onTap: () {
+                  context.read<PlayerCubit>().toggleConcertMode();
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      backgroundColor: const Color(0xFF181820),
+                      behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 2),
+                      content: Text(
+                        !isConcert
+                            ? '🏟️ Mode Concert Live activé (Acoustique Arena 3D)'
+                            : 'Mode Concert Live désactivé',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                child: Icon(
+                  Icons.stadium_rounded,
+                  size: 18.5,
+                  color: isConcert
+                      ? palette.accentColor
+                      : Colors.white.withValues(alpha: 0.92),
+                ),
+              );
+            },
           ),
           _horizontalHairline(),
 

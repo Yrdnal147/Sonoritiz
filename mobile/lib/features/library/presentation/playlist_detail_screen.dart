@@ -1243,6 +1243,38 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                           ),
                         ),
                       )
+                    else if (_sortOption == PlaylistSortOption.custom &&
+                        !_isSelectionMode &&
+                        _searchQuery.trim().isEmpty &&
+                        (_selectedArtistFilter == null ||
+                            _selectedArtistFilter!.isEmpty))
+                      SliverReorderableList(
+                        itemCount: displayedTracks.length,
+                        onReorder: (oldIndex, newIndex) {
+                          context.read<LibraryCubit>().reorderPlaylistTracks(
+                                livePlaylist.id,
+                                oldIndex,
+                                newIndex,
+                              );
+                        },
+                        itemBuilder: (context, index) {
+                          final track = displayedTracks[index];
+                          return KeyedSubtree(
+                            key: ValueKey(
+                              'reorder_pl_${livePlaylist.id}_${track.id}_$index',
+                            ),
+                            child: _buildRichTrackItem(
+                              context: context,
+                              track: track,
+                              queue: displayedTracks,
+                              index: index,
+                              playlistId: livePlaylist.id,
+                              sourceLabel: sourceLabel,
+                              enableReorderHandle: true,
+                            ),
+                          );
+                        },
+                      )
                     else
                       SliverList(
                         delegate: SliverChildBuilderDelegate(
@@ -1370,6 +1402,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     required int index,
     required int playlistId,
     required String sourceLabel,
+    bool enableReorderHandle = false,
   }) {
     return BlocSelector<PlayerCubit, PlayerState, bool>(
       selector: (state) => state.currentTrack?.id == track.id,
@@ -1590,6 +1623,18 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                             playlistId: playlistId,
                           ),
                         ),
+                        if (enableReorderHandle)
+                          ReorderableDragStartListener(
+                            index: index,
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 2, right: 4),
+                              child: Icon(
+                                Icons.drag_handle_rounded,
+                                color: Colors.white.withValues(alpha: 0.38),
+                                size: 20,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                 ],

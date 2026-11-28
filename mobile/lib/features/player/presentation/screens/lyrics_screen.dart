@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/services/palette_service.dart';
+import '../../../../core/storage/storage_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/share_utils.dart';
 import '../../../../core/widgets/artist_name_display.dart';
@@ -36,6 +38,242 @@ class _LyricsScreenState extends State<LyricsScreen> {
   bool _isSelectingForShare = false;
   final Set<int> _selectedShareLineIndices = <int>{};
   bool _isGeneratingShareCard = false;
+
+  // Traduction des paroles sous chaque ligne d'origine (façon Spotify)
+  static final Map<String, Map<int, String>> _translationCache =
+      <String, Map<int, String>>{};
+  final Dio _translateDio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 7),
+      receiveTimeout: const Duration(seconds: 10),
+    ),
+  );
+  String _translationLang = '';
+  Map<int, String> _translatedLines = const <int, String>{};
+  bool _isTranslating = false;
+  String _lastTranslationSig = '';
+
+  static const List<Map<String, String>> _supportedLanguages = [
+    {'code': '', 'label': 'Original uniquement (Désactivé)', 'flag': '🎵'},
+    {'code': 'fr', 'label': 'Français', 'flag': '🇫🇷'},
+    {'code': 'en', 'label': 'English', 'flag': '🇬🇧'},
+    {'code': 'es', 'label': 'Español', 'flag': '🇪🇸'},
+    {'code': 'pt', 'label': 'Português', 'flag': '🇧🇷'},
+    {'code': 'ar', 'label': 'العربية', 'flag': '🇸🇦'},
+    {'code': 'de', 'label': 'Deutsch', 'flag': '🇩🇪'},
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _translationLang = StorageService().lyricsTranslationLang;
+  }
+
+  Future<void> _ensureTranslationForTrack({
+    required String trackId,
+    required List<String> rawLines,
+  }) async {
+    final lang = _translationLang.trim();
+    if (lang.isEmpty || rawLines.isEmpty) {
+      if (_translatedLines.isNotEmpty || _isTranslating) {
+        setState(() {
+          _translatedLines = const <int, String>{};
+          _isTranslating = false;
+          _lastTranslationSig = '';
+        });
+      }
+      return;
+    }
+
+    final sig = '${trackId}_${lang}_${rawLines.length}';
+    if (sig == _lastTranslationSig) return;
+    _lastTranslationSig = sig;
+
+    final cached = _translationCache[sig];
+    if (cached != null) {
+      if (mounted) {
+        setState(() {
+          _translatedLines = cached;
+          _isTranslating = false;
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() => _isTranslating = true);
+    }
+
+    final Map<int, String> translatedMap = <int, String>{};
+    try {
+      // Traduire par lots de 18 lignes pour une réponse ultra-rapide
+      const int chunkSize = 18;
+      for (int start = 0; start < rawLines.length; start += chunkSize) {
+        final int end = (start + chunkSize < rawLines.length)
+            ? start + chunkSize
+            : rawLines.length;
+        final List<int> validIndices = <int>[];
+        final List<String> chunkTexts = <String>[];
+
+        for (int i = start; i < end; i++) {
+          final clean = rawLines[i].trim();
+          if (clean.isNotEmpty && clean != '♪') {
+            validIndices.add(i);
+            chunkTexts.add(clean);
+          }
+        }
+        if (chunkTexts.isEmpty) continue;
+
+        final joined = chunkTexts.join('\n');
+        final url =
+            'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=$lang&dt=t&q=${Uri.encodeComponent(joined)}';
+        final res = await _translateDio.get(url);
+        if (res.statusCode == 200 && res.data is List) {
+          final dataList = res.data as List;
+          if (dataList.isNotEmpty && dataList[0] is List) {
+            final segments = dataList[0] as List;
+            final buffer = StringBuffer();
+            for (final seg in segments) {
+              if (seg is List && seg.isNotEmpty && seg[0] != null) {
+                buffer.write(seg[0].toString());
+              }
+            }
+            final translatedLinesList = buffer.toString().split('\n');
+            for (int k = 0;
+                k < validIndices.length && k < translatedLinesList.length;
+                k++) {
+              translatedMap[validIndices[k]] =
+                  translatedLinesList[k].trim();
+            }
+          }
+        }
+      }
+
+      if (_translationCache.length >= 40) {
+        _translationCache.remove(_translationCache.keys.first);
+      }
+      _translationCache[sig] = translatedMap;
+    } catch (_) {}
+
+    if (mounted && _lastTranslationSig == sig) {
+      setState(() {
+        _translatedLines = translatedMap;
+        _isTranslating = false;
+      });
+    }
+  }
+
+  void _showTranslationLanguageSheet(
+    BuildContext context, {
+    required String trackId,
+    required List<String> currentLines,
+  }) {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF14141A),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.10),
+            ),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.24),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                const Row(
+                  children: [
+                    Icon(
+                      Icons.translate_rounded,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+                    SizedBox(width: 10),
+                    Text(
+                      'Traduire les paroles',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Affiche la traduction en petit sous chaque ligne de parole d’origine.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.58),
+                    fontSize: 12.5,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ..._supportedLanguages.map((lang) {
+                  final code = lang['code']!;
+                  final isSelected = _translationLang == code;
+                  return ListTile(
+                    dense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 6),
+                    leading: Text(
+                      lang['flag']!,
+                      style: const TextStyle(fontSize: 20),
+                    ),
+                    title: Text(
+                      lang['label']!,
+                      style: TextStyle(
+                        color: isSelected ? AppColors.primary : Colors.white,
+                        fontSize: 14.5,
+                        fontWeight:
+                            isSelected ? FontWeight.w800 : FontWeight.w600,
+                      ),
+                    ),
+                    trailing: isSelected
+                        ? const Icon(
+                            Icons.check_circle_rounded,
+                            color: AppColors.primary,
+                            size: 20,
+                          )
+                        : null,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      Navigator.pop(sheetCtx);
+                      setState(() {
+                        _translationLang = code;
+                        _lastTranslationSig = '';
+                      });
+                      StorageService().setLyricsTranslationLang(code);
+                      _ensureTranslationForTrack(
+                        trackId: trackId,
+                        rawLines: currentLines,
+                      );
+                    },
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   Future<void> _updatePaletteForCover(String coverUrl) async {
     final trimmed = coverUrl.trim();
@@ -414,6 +652,24 @@ class _LyricsScreenState extends State<LyricsScreen> {
                               lyricsModel.hasSynced
                                   ? lyricsModel.parsedSyncedLyrics
                                   : null;
+                          final List<String> rawLineTexts = syncedLines != null
+                              ? syncedLines.map((e) => e.text).toList()
+                              : (lyricsModel.plainLyrics ?? '')
+                                  .split('\n')
+                                  .map((e) => e.trim())
+                                  .where((e) => e.isNotEmpty)
+                                  .toList();
+
+                          if (_translationLang.isNotEmpty) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted) {
+                                _ensureTranslationForTrack(
+                                  trackId: track.id,
+                                  rawLines: rawLineTexts,
+                                );
+                              }
+                            });
+                          }
 
                           return Stack(
                             children: [
@@ -424,6 +680,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
                                   builder: (context, livePosition) {
                                     return SyncedLyricsWidget(
                                       lines: syncedLines,
+                                      translatedLines: _translatedLines,
                                       currentPosition: livePosition,
                                       syncOffsetMilliseconds:
                                           _syncOffsetMilliseconds,
@@ -445,27 +702,56 @@ class _LyricsScreenState extends State<LyricsScreen> {
                                   },
                                 )
                               else
-                                ListView(
+                                ListView.builder(
                                   padding: const EdgeInsets.fromLTRB(
                                     28,
                                     18,
                                     28,
-                                    120,
+                                    130,
                                   ),
                                   physics: const BouncingScrollPhysics(),
-                                  children: [
-                                    Text(
-                                      lyricsModel.plainLyrics!,
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.92),
-                                        fontSize: 21,
-                                        fontWeight: FontWeight.w700,
-                                        height: 1.65,
+                                  itemCount: rawLineTexts.length,
+                                  itemBuilder: (context, idx) {
+                                    final orig = rawLineTexts[idx];
+                                    final trans = _translatedLines[idx];
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 7,
                                       ),
-                                    ),
-                                  ],
+                                      child: Column(
+                                        children: [
+                                          Text(
+                                            orig,
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.92),
+                                              fontSize: 20.5,
+                                              fontWeight: FontWeight.w700,
+                                              height: 1.38,
+                                            ),
+                                          ),
+                                          if (trans != null &&
+                                              trans.isNotEmpty &&
+                                              trans.toLowerCase() !=
+                                                  orig.toLowerCase()) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              trans,
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                color: _palette.accentColor
+                                                    .withValues(alpha: 0.88),
+                                                fontSize: 13.8,
+                                                fontWeight: FontWeight.w600,
+                                                height: 1.28,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    );
+                                  },
                                 ),
 
                               // 3. Dock Flottant Paroles en bas (ou barre de validation de partage)
@@ -728,6 +1014,59 @@ class _LyricsScreenState extends State<LyricsScreen> {
             accentColor: _palette.accentColor,
           ),
 
+          // 2b. Traduction des paroles sous chaque ligne (FR, EN, ES, PT, AR, DE)
+          ImmersiveGlassCircleButton(
+            tooltip: _translationLang.isEmpty
+                ? 'Traduire les paroles'
+                : 'Traduction : ${_translationLang.toUpperCase()}',
+            isHighlighted: _translationLang.isNotEmpty,
+            onTap: () {
+              final rawLines = syncedLines != null
+                  ? syncedLines.map((e) => e.text).toList()
+                  : (plainLyrics ?? '')
+                      .split('\n')
+                      .map((e) => e.trim())
+                      .where((e) => e.isNotEmpty)
+                      .toList();
+              _showTranslationLanguageSheet(
+                context,
+                trackId: track.id,
+                currentLines: rawLines,
+              );
+            },
+            child: _isTranslating
+                ? const SizedBox(
+                    width: 15,
+                    height: 15,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(
+                    Icons.translate_rounded,
+                    size: 18,
+                    color: Colors.white,
+                  ),
+          ),
+
+          // 2c. Mode Concert Live 🏟️
+          ImmersiveGlassCircleButton(
+            tooltip: state.isConcertModeEnabled
+                ? 'Mode Concert Live actif'
+                : 'Mode Concert Live',
+            isHighlighted: state.isConcertModeEnabled,
+            onTap: () {
+              HapticFeedback.mediumImpact();
+              context.read<PlayerCubit>().toggleConcertMode();
+            },
+            child: const Icon(
+              Icons.stadium_rounded,
+              size: 18,
+              color: Colors.white,
+            ),
+          ),
+
           // 3. Mode Karaoké (icône Microphone de scène, remplace les confettis et le doublon Party XXL)
           ImmersiveGlassCircleButton(
             tooltip: 'Mode Karaoké',
@@ -803,6 +1142,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
 
 class SyncedLyricsWidget extends StatefulWidget {
   final List<LrcLine> lines;
+  final Map<int, String> translatedLines;
   final Duration currentPosition;
   final int syncOffsetMilliseconds;
   final Color accentColor;
@@ -814,6 +1154,7 @@ class SyncedLyricsWidget extends StatefulWidget {
   const SyncedLyricsWidget({
     super.key,
     required this.lines,
+    this.translatedLines = const <int, String>{},
     required this.currentPosition,
     this.syncOffsetMilliseconds = 0,
     this.accentColor = AppColors.primary,
@@ -965,35 +1306,85 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget> {
                     const SizedBox(width: 10),
                   ],
                   Expanded(
-                    child: AnimatedDefaultTextStyle(
-                      duration: const Duration(milliseconds: 220),
-                      curve: Curves.easeOutCubic,
-                      style: TextStyle(
-                        color: (isActive || isSelectedForShare)
-                            ? Colors.white
-                            : Colors.white
-                                .withValues(alpha: isPast ? 0.32 : 0.50),
-                        fontSize: isActive ? 24.0 : 19.0,
-                        fontWeight: (isActive || isSelectedForShare)
-                            ? FontWeight.w800
-                            : FontWeight.w600,
-                        height: 1.32,
-                        shadows: isActive
-                            ? [
-                                Shadow(
-                                  color: widget.accentColor
-                                      .withValues(alpha: 0.55),
-                                  blurRadius: 16,
+                    child: Builder(
+                      builder: (context) {
+                        final String? translated =
+                            widget.translatedLines[index]?.trim();
+                        final bool hasDistinctTranslation =
+                            translated != null &&
+                            translated.isNotEmpty &&
+                            translated.toLowerCase() !=
+                                line.text.trim().toLowerCase();
+
+                        return Column(
+                          crossAxisAlignment: widget.isSelectingForShare
+                              ? CrossAxisAlignment.start
+                              : CrossAxisAlignment.center,
+                          children: [
+                            AnimatedDefaultTextStyle(
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOutCubic,
+                              style: TextStyle(
+                                color: (isActive || isSelectedForShare)
+                                    ? Colors.white
+                                    : Colors.white.withValues(
+                                        alpha: isPast ? 0.32 : 0.50,
+                                      ),
+                                fontSize: isActive ? 24.0 : 19.0,
+                                fontWeight: (isActive || isSelectedForShare)
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
+                                height: 1.32,
+                                shadows: isActive
+                                    ? [
+                                        Shadow(
+                                          color: widget.accentColor
+                                              .withValues(alpha: 0.55),
+                                          blurRadius: 16,
+                                        ),
+                                      ]
+                                    : null,
+                              ),
+                              child: Text(
+                                line.text.isEmpty ? '♪' : line.text,
+                                textAlign: widget.isSelectingForShare
+                                    ? TextAlign.left
+                                    : TextAlign.center,
+                              ),
+                            ),
+                            if (hasDistinctTranslation) ...[
+                              const SizedBox(height: 5),
+                              AnimatedDefaultTextStyle(
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeOutCubic,
+                                style: TextStyle(
+                                  color: (isActive || isSelectedForShare)
+                                      ? Color.lerp(
+                                          widget.accentColor,
+                                          Colors.white,
+                                          0.35,
+                                        )!
+                                      : Colors.white.withValues(
+                                          alpha: isPast ? 0.24 : 0.38,
+                                        ),
+                                  fontSize: isActive ? 15.0 : 13.0,
+                                  fontWeight: isActive
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  fontStyle: FontStyle.italic,
+                                  height: 1.26,
                                 ),
-                              ]
-                            : null,
-                      ),
-                      child: Text(
-                        line.text.isEmpty ? '♪' : line.text,
-                        textAlign: widget.isSelectingForShare
-                            ? TextAlign.left
-                            : TextAlign.center,
-                      ),
+                                child: Text(
+                                  translated,
+                                  textAlign: widget.isSelectingForShare
+                                      ? TextAlign.left
+                                      : TextAlign.center,
+                                ),
+                              ),
+                            ],
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ],
