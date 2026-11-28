@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart' show Color;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
@@ -2558,7 +2559,7 @@ class CatalogRepository {
     return result;
   }
 
-  /// 4.4 Rubrique Sonoritiz Random : Découvertes fraîches fidèles à l'univers de l'utilisateur
+  /// 4.4 Rubrique Sonoritiz Random : Sélection de sons aléatoires pour sortir de la routine
   Future<List<TrackModel>> getSonoritizRandomTracks({
     int limit = 25,
     List<String> userArtists = const [],
@@ -2576,54 +2577,148 @@ class CatalogRepository {
           searchedArtists: const [],
         );
 
+    const Map<TasteFamily, List<String>> serendipityPools = {
+      TasteFamily.jazzSoul: [
+        'Nina Simone Ray Charles Jazz Soul Classics',
+        'Neo Soul Erykah Badu Leon Bridges Vibes',
+        'Smooth Jazz Lounge Saxophone Night',
+      ],
+      TasteFamily.classical: [
+        'Ludovico Einaudi Max Richter Neo Classical Piano',
+        'Chopin Debussy Clair De Lune Piano',
+        'Hans Zimmer Ennio Morricone Soundtrack Masterpieces',
+      ],
+      TasteFamily.latinWorld: [
+        'Stan Getz Joao Gilberto Bossa Nova Classics',
+        'Buena Vista Social Club Cuban Acoustic',
+        'Flamenco Guitar Mediterranean Acoustic Gems',
+      ],
+      TasteFamily.popRock: [
+        'Fleetwood Mac Queen Indie Rock Classics',
+        'Tame Impala Arctic Monkeys Alternative Pop',
+        'Coldplay Oasis Acoustic Rock Anthems',
+      ],
+      TasteFamily.electro: [
+        'Daft Punk Air French Touch Electronic',
+        'Rufus Du Sol Ben Bohmer Melodic House',
+        'Bonobo Tycho Chill Electronic Downtempo',
+      ],
+      TasteFamily.chanson: [
+        'Charles Aznavour Jacques Brel Chanson Francaise',
+        'Pomme Clara Luciani Stromae Indie Francophone',
+        'Francis Cabrel Jean Jacques Goldman Acoustique',
+      ],
+      TasteFamily.rnb: [
+        'SadeAlicia Keys Marvin Gaye Soul R&B',
+        'Frank Ocean Daniel Caesar H.E.R. R&B',
+        'Stevie Wonder Bill Withers Golden Soul',
+      ],
+      TasteFamily.afro: [
+        'Fela Kuti Manu Dibango Afrobeat Legends',
+        'Tems Burna Boy Wizkid Afro Soul Chill',
+        'Cesaria Evora Youssou Ndour World Music Gems',
+      ],
+      TasteFamily.hipHop: [
+        'A Tribe Called Quest Nujabes Jazz Hop Chill',
+        'MC Solaar IAM Oxmo Puccino Rap Classique',
+        'Kendrick Lamar J Cole Lauryn Hill Hip Hop Soul',
+      ],
+    };
+
+    final rng = math.Random();
+    final routineFamilies = effectiveProfile.dominantFamilies.take(2).toSet();
+
+    // Prioriser les familles musicales EN DEHORS de la routine quotidienne de l'utilisateur
+    final antiRoutineFamilies = TasteFamily.values
+        .where((f) => !routineFamilies.contains(f))
+        .toList()
+      ..shuffle(rng);
+
+    final selectedFamilies = <TasteFamily>[
+      ...antiRoutineFamilies.take(4),
+      if (antiRoutineFamilies.length > 4) antiRoutineFamilies[4],
+    ];
+
     final List<String> discoveryQueries = [];
-    if (!effectiveProfile.isColdStart && effectiveProfile.dominantFamilies.isNotEmpty) {
-      for (final family in effectiveProfile.dominantFamilies.take(3)) {
-        final seed = _familySearchSeed(family);
-        if (seed != null) discoveryQueries.add(seed);
+    for (final family in selectedFamilies) {
+      final pool = serendipityPools[family];
+      if (pool != null && pool.isNotEmpty) {
+        discoveryQueries.add(pool[rng.nextInt(pool.length)]);
       }
-      for (final anchor in effectiveProfile.topAnchorArtists.take(2)) {
-        discoveryQueries.add('$anchor similar radio');
-      }
-    } else {
+    }
+
+    if (discoveryQueries.isEmpty) {
       discoveryQueries.addAll(const [
         'Bossa Nova Jazz Classics',
-        'Classical Piano Essentials',
-        'Indie Pop Acoustic Favorites',
-        'Global Music Gems Curated',
+        'Ludovico Einaudi Neo Classical Piano',
+        'Fleetwood Mac Indie Rock Classics',
+        'Daft Punk French Touch Electronic',
       ]);
     }
 
-    final Set<String> excludedArtists = userArtists
-        .map((a) => a.trim().toLowerCase())
-        .where((a) => a.isNotEmpty)
-        .toSet();
+    // Exclure tous les artistes déjà présents dans la routine de l'utilisateur
+    final Set<String> excludedArtists = {
+      ...userArtists.map((a) => a.trim().toLowerCase()).where((a) => a.isNotEmpty),
+      ...effectiveProfile.artistWeights.keys
+          .map((a) => a.trim().toLowerCase())
+          .where((a) => a.isNotEmpty),
+    };
+
+    final Set<String> excludedTrackIds = {
+      ...effectiveProfile.preferredTrackIds,
+      ...effectiveProfile.dislikedOrFilteredIds,
+    };
 
     final batches = await Future.wait(
-      discoveryQueries.take(4).map((q) => searchTracks(query: q, limit: 12)),
+      discoveryQueries.take(5).map((q) => searchTracks(query: q, limit: 12)),
     );
 
-    final List<TrackModel> candidates = [];
-    for (final batch in batches) {
-      for (final t in batch) {
-        final artistLower = t.artistName.toLowerCase();
-        final isAlreadyOverplayed = excludedArtists.any((ex) => artistLower == ex);
-        if (!isAlreadyOverplayed) {
-          candidates.add(t);
+    // Mélange interne de chaque lot pour varier l'ordre à chaque session
+    final List<List<TrackModel>> shuffledBatches = batches.map((b) {
+      final copy = List<TrackModel>.from(b)..shuffle(rng);
+      return copy;
+    }).toList();
+
+    // Entrelacement (Round-Robin) entre les styles opposés avec 1 seul son max par artiste
+    final List<TrackModel> selected = [];
+    final Set<String> seenArtists = {};
+    final Set<String> seenTrackIds = {};
+
+    int maxBatchLen = 0;
+    for (final b in shuffledBatches) {
+      if (b.length > maxBatchLen) maxBatchLen = b.length;
+    }
+
+    for (int i = 0; i < maxBatchLen && selected.length < limit; i++) {
+      for (final batch in shuffledBatches) {
+        if (i >= batch.length || selected.length >= limit) continue;
+        final t = batch[i];
+        if (t.id.isEmpty ||
+            seenTrackIds.contains(t.id) ||
+            excludedTrackIds.contains(t.id)) {
+          continue;
         }
+        final titleLower = t.title.toLowerCase();
+        if (titleLower.contains('karaoke') ||
+            titleLower.contains('tribute') ||
+            titleLower.contains('ringtone')) {
+          continue;
+        }
+        final artistLower = t.artistName.trim().toLowerCase();
+        if (artistLower.isEmpty || seenArtists.contains(artistLower)) {
+          continue;
+        }
+        final isRoutineArtist = excludedArtists.any(
+          (ex) => artistLower == ex || artistLower.contains(ex),
+        );
+        if (isRoutineArtist) continue;
+
+        seenTrackIds.add(t.id);
+        seenArtists.add(artistLower);
+        selected.add(t);
       }
     }
 
-    final ranked = RecommendationEngine.rankTracksForProfile(
-      candidates,
-      effectiveProfile,
-      limit: limit,
-      maxPerArtist: 2,
-      strictGate: !effectiveProfile.isColdStart,
-    );
-    if (ranked.isNotEmpty) {
-      return ranked;
-    }
-    return candidates.take(limit).toList();
+    return selected;
   }
 }

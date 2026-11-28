@@ -1530,7 +1530,7 @@ class _HomeScreenBodyState extends State<_HomeScreenBody> with AutomaticKeepAliv
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spacingMd),
           child: Text(
-            "Découvertes fraîches sélectionnées en harmonie avec votre univers musical.",
+            "Découvrez une Sélection de sons aléatoires à votre routine",
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.60),
               fontSize: 12.5,

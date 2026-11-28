@@ -395,6 +395,8 @@ class _LyricsScreenState extends State<LyricsScreen> {
             prev.currentTrack != cur.currentTrack ||
             prev.currentLyrics != cur.currentLyrics ||
             prev.isFreeLyricsMode != cur.isFreeLyricsMode ||
+            prev.isConcertModeEnabled != cur.isConcertModeEnabled ||
+            prev.vocalAttenuationLevel != cur.vocalAttenuationLevel ||
             prev.isPlaying != cur.isPlaying,
         builder: (context, state) {
           final track = state.currentTrack;
@@ -533,6 +535,18 @@ class _LyricsScreenState extends State<LyricsScreen> {
                                   ),
                                 ),
                               ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          ImmersiveGlassCircleButton(
+                            tooltip: 'Plus d’options',
+                            isHighlighted: state.isConcertModeEnabled ||
+                                state.vocalAttenuationLevel > 0.05,
+                            onTap: () => _showLyricsMoreOptionsSheet(context),
+                            child: const Icon(
+                              Icons.more_horiz_rounded,
+                              size: 22,
+                              color: Colors.white,
                             ),
                           ),
                         ],
@@ -909,6 +923,299 @@ class _LyricsScreenState extends State<LyricsScreen> {
     );
   }
 
+  void _showLyricsMoreOptionsSheet(BuildContext context) {
+    HapticFeedback.selectionClick();
+    final playerCubit = context.read<PlayerCubit>();
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetCtx) {
+        return BlocProvider.value(
+          value: playerCubit,
+          child: BlocBuilder<PlayerCubit, PlayerState>(
+            buildWhen: (prev, cur) =>
+                prev.isConcertModeEnabled != cur.isConcertModeEnabled ||
+                prev.vocalAttenuationLevel != cur.vocalAttenuationLevel,
+            builder: (ctx, state) {
+              return Container(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF14141A),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(28)),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.12),
+                  ),
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.24),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                      const Row(
+                        children: [
+                          Icon(
+                            Icons.tune_rounded,
+                            color: AppColors.primary,
+                            size: 20,
+                          ),
+                          SizedBox(width: 10),
+                          Text(
+                            'Options Audio & Paroles',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // 1. 🎙️ Instrumental (bouton compact d'atténuation vocale)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: state.vocalAttenuationLevel > 0.05
+                                ? _palette.accentColor.withValues(alpha: 0.50)
+                                : Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: _palette.accentColor
+                                    .withValues(alpha: 0.16),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                Icons.mic_rounded,
+                                color: _palette.accentColor,
+                                size: 21,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Instrumental',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Atténuation vocale en temps réel',
+                                    style: TextStyle(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.58),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            VocalRemoverCompactButton(
+                              accentColor: _palette.accentColor,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // 2. 🏟️ Mode Concert Live
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.mediumImpact();
+                          playerCubit.toggleConcertMode();
+                        },
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: state.isConcertModeEnabled
+                                  ? _palette.accentColor.withValues(alpha: 0.50)
+                                  : Colors.white.withValues(alpha: 0.08),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: _palette.accentColor
+                                      .withValues(alpha: 0.16),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Icon(
+                                  Icons.stadium_rounded,
+                                  color: _palette.accentColor,
+                                  size: 21,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Mode Concert Live',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Acoustique d’arène 3D & ambiance live',
+                                      style: TextStyle(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.58),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Switch.adaptive(
+                                value: state.isConcertModeEnabled,
+                                activeColor: _palette.accentColor,
+                                onChanged: (_) {
+                                  HapticFeedback.mediumImpact();
+                                  playerCubit.toggleConcertMode();
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // 3. 🎤 Mode Karaoké Studio
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.mediumImpact();
+                          Navigator.pop(sheetCtx);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => BlocProvider.value(
+                                value: playerCubit,
+                                child: const KaraokePartyScreen(),
+                              ),
+                            ),
+                          );
+                        },
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.08),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: _palette.accentColor
+                                      .withValues(alpha: 0.16),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Icon(
+                                  Icons.mic_external_on_rounded,
+                                  color: _palette.accentColor,
+                                  size: 21,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Studio Karaoké',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Ouvrir la scène karaoké plein écran',
+                                      style: TextStyle(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.58),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                Icons.arrow_forward_ios_rounded,
+                                size: 15,
+                                color: Colors.white.withValues(alpha: 0.45),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildBottomLyricsToolsDock(
     BuildContext context, {
     required TrackModel track,
@@ -936,7 +1243,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // 1. Contrôle direct [ - Sync 0.0s + ] conservé en 1 clic dans le dock inférieur
+          // 1. ⏱️ Synchronisation des paroles : réglage [ - 0.5s ] Sync 0.0s [ + 0.5s ] + bouton « Réinitialiser »
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             decoration: BoxDecoration(
@@ -959,7 +1266,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
                   },
                   behavior: HitTestBehavior.opaque,
                   child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 5),
                     child: Icon(
                       Icons.remove_rounded,
                       size: 15,
@@ -975,7 +1282,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
                           setState(() => _syncOffsetMilliseconds = 0);
                         },
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 5),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Text(
                       _syncOffsetMilliseconds == 0
                           ? 'Sync 0.0s'
@@ -997,7 +1304,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
                   },
                   behavior: HitTestBehavior.opaque,
                   child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 5),
                     child: Icon(
                       Icons.add_rounded,
                       size: 15,
@@ -1005,16 +1312,57 @@ class _LyricsScreenState extends State<LyricsScreen> {
                     ),
                   ),
                 ),
+                if (_syncOffsetMilliseconds != 0)
+                  GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _syncOffsetMilliseconds = 0);
+                    },
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      margin: const EdgeInsets.only(left: 2, right: 3),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _palette.accentColor.withValues(alpha: 0.22),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        'Réinitialiser',
+                        style: TextStyle(
+                          color: _palette.accentColor,
+                          fontSize: 9.8,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
 
-          // 2. Atténuation vocale / Instrumental
-          VocalRemoverCompactButton(
-            accentColor: _palette.accentColor,
+          // 2. 💬 Sous-titres / Paroles sur le lecteur principal
+          ImmersiveGlassCircleButton(
+            tooltip: state.isFreeLyricsMode
+                ? 'Paroles sur lecteur : Activé'
+                : 'Paroles sur lecteur : Désactivé',
+            isHighlighted: state.isFreeLyricsMode,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              context.read<PlayerCubit>().toggleFreeLyricsMode();
+            },
+            child: Icon(
+              state.isFreeLyricsMode
+                  ? Icons.subtitles_rounded
+                  : Icons.subtitles_off_outlined,
+              size: 19,
+              color: Colors.white,
+            ),
           ),
 
-          // 2b. Traduction des paroles sous chaque ligne (FR, EN, ES, PT, AR, DE)
+          // 3. 🌐 Traduction des paroles sous chaque ligne (FR, EN, ES, PT, AR, DE)
           ImmersiveGlassCircleButton(
             tooltip: _translationLang.isEmpty
                 ? 'Traduire les paroles'
@@ -1050,46 +1398,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
                   ),
           ),
 
-          // 2c. Mode Concert Live 🏟️
-          ImmersiveGlassCircleButton(
-            tooltip: state.isConcertModeEnabled
-                ? 'Mode Concert Live actif'
-                : 'Mode Concert Live',
-            isHighlighted: state.isConcertModeEnabled,
-            onTap: () {
-              HapticFeedback.mediumImpact();
-              context.read<PlayerCubit>().toggleConcertMode();
-            },
-            child: const Icon(
-              Icons.stadium_rounded,
-              size: 18,
-              color: Colors.white,
-            ),
-          ),
-
-          // 3. Mode Karaoké (icône Microphone de scène, remplace les confettis et le doublon Party XXL)
-          ImmersiveGlassCircleButton(
-            tooltip: 'Mode Karaoké',
-            onTap: () {
-              HapticFeedback.mediumImpact();
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => BlocProvider.value(
-                    value: context.read<PlayerCubit>(),
-                    child: const KaraokePartyScreen(),
-                  ),
-                ),
-              );
-            },
-            child: const Icon(
-              Icons.mic_external_on_rounded,
-              size: 19,
-              color: Colors.white,
-            ),
-          ),
-
-          // 4. Partager en Carte Paroles (« Sonoritiz Lyric Card » avec logo transparent)
+          // 4. 📤 Partager en Carte Paroles (« Sonoritiz Lyric Card »)
           ImmersiveGlassCircleButton(
             tooltip: 'Partager des paroles en carte',
             onTap: () {
@@ -1112,25 +1421,6 @@ class _LyricsScreenState extends State<LyricsScreen> {
             child: const Icon(
               Icons.ios_share_rounded,
               size: 18,
-              color: Colors.white,
-            ),
-          ),
-
-          // 5. Sous-titres / Paroles sur le lecteur
-          ImmersiveGlassCircleButton(
-            tooltip: state.isFreeLyricsMode
-                ? 'Paroles sur lecteur : Activé'
-                : 'Paroles sur lecteur : Désactivé',
-            isHighlighted: state.isFreeLyricsMode,
-            onTap: () {
-              HapticFeedback.selectionClick();
-              context.read<PlayerCubit>().toggleFreeLyricsMode();
-            },
-            child: Icon(
-              state.isFreeLyricsMode
-                  ? Icons.subtitles_rounded
-                  : Icons.subtitles_off_outlined,
-              size: 19,
               color: Colors.white,
             ),
           ),
