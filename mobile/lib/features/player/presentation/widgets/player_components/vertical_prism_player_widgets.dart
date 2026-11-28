@@ -1019,7 +1019,10 @@ class SonoritizRightActionRail extends StatelessWidget {
           // 7. Partager
           _railSlot(
             tooltip: 'Partager',
-            onTap: () => ShareUtils.shareTrack(currentTrack),
+            onTap: () => ShareUtils.shareTrack(
+              currentTrack,
+              context: context,
+            ),
             child: Icon(
               Icons.ios_share_rounded,
               size: 18.0,

@@ -511,8 +511,12 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
                           leading: const Icon(Icons.share_rounded),
                           title: const Text("Partager"),
                           onTap: () {
+                            final rootCtx = Navigator.of(
+                              sheetContext,
+                              rootNavigator: true,
+                            ).context;
                             Navigator.pop(sheetContext);
-                            ShareUtils.shareTrack(track);
+                            ShareUtils.shareTrack(track, context: rootCtx);
                           },
                         ),
                       ],

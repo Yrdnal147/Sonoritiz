@@ -128,6 +128,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
     setState(() => _isGeneratingShareCard = true);
     try {
       await ShareUtils.shareLyricsCard(
+        context: context,
         track: track,
         lyricLines: linesToShare,
         dominantColor: _palette.dominantColor,

@@ -274,8 +274,10 @@ class TrackContextMenu extends StatelessWidget {
               icon: Icons.share_rounded,
               title: "Partager",
               onTap: () {
+                final rootCtx =
+                    Navigator.of(context, rootNavigator: true).context;
                 Navigator.pop(context);
-                ShareUtils.shareTrack(track);
+                ShareUtils.shareTrack(track, context: rootCtx);
               },
             ),
             const SizedBox(height: 12),

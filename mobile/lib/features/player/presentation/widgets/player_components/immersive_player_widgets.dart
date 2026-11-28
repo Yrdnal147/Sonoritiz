@@ -459,8 +459,8 @@ class ImmersiveFloatingSideRail extends StatelessWidget {
           if (onKaraokeTapped != null) ...[
             _horizontalHairline(),
             _railAction(
-              icon: Icons.celebration_rounded,
-              tooltip: 'Mode Party / Karaoké',
+              icon: Icons.mic_external_on_rounded,
+              tooltip: 'Mode Karaoké',
               onTap: onKaraokeTapped!,
             ),
           ],

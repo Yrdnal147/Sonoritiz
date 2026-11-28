@@ -921,6 +921,7 @@ class _SonoritizLyricsExcerptCardState
                               .map((e) => e.text)
                               .toList();
                           ShareUtils.shareLyricsCard(
+                            context: context,
                             track: widget.track,
                             lyricLines: shareLines,
                             dominantColor: _palette.dominantColor,
