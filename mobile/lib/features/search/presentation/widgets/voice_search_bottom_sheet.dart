@@ -329,7 +329,9 @@ class _VoiceSearchBottomSheetState extends State<VoiceSearchBottomSheet> {
 
     try {
       final List<String> knownArtists = [
-        ...ArtistsData.allArtists,
+        ...ArtistsData.globalArtists
+            .map((a) => (a['name'] ?? '').toLowerCase().trim())
+            .where((name) => name.isNotEmpty),
         'leto',
         'zola',
         'koba lad',
